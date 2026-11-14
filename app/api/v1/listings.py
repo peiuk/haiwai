@@ -406,47 +406,50 @@ def discover_items(
 ) -> dict[str, object]:
     region = effective_region(session, user) if user else "GLOBAL"
     bounded = min(max(limit, 1), 50)
-    rows = session.scalars(
-        select(ChannelItem)
-        .join(Content, Content.id == ChannelItem.content_id)
-        .join(Channel, Channel.id == ChannelItem.channel_id)
-        .where(
-            Content.status == "published",
-            Content.deleted_at.is_(None),
-            Content.type != "listing",
-            Content.type != "embed",
-            Content.type != "repost",
-            ChannelItem.origin_room_id.is_(None),
-            Channel.kind != "room",
-            Channel.is_active.is_(True),
+    # 过滤、计数、分页都交给数据库：原来每次请求把全部频道条目读进内存再筛，内容越多越慢，且游客就能触发。
+    visible_where = [
+        Content.status == "published",
+        Content.deleted_at.is_(None),
+        Content.type.not_in(("listing", "embed", "repost")),
+        ChannelItem.origin_room_id.is_(None),
+        Channel.kind != "room",
+        Channel.is_active.is_(True),
+        Channel.region_code.in_(("GLOBAL", region)),  # 与 _visible 相同：国际频道 + 当前国家
+    ]
+
+    def scoped(*columns):
+        return (
+            select(*columns)
+            .select_from(ChannelItem)
+            .join(Content, Content.id == ChannelItem.content_id)
+            .join(Channel, Channel.id == ChannelItem.channel_id)
         )
+
+    categories = sorted(
+        value for value in session.scalars(scoped(Channel.category).where(*visible_where).distinct()).all() if value
+    )
+    # 地区筛选只能在「用户本来就看得到」的范围里再收窄（国际 / 当前国家），不会放宽可见范围。
+    wanted_region = (region_filter or "").upper()
+    filtered_where = list(visible_where)
+    if category:
+        filtered_where.append(Channel.category == category)
+    if wanted_region:
+        filtered_where.append(Channel.region_code == wanted_region)
+    updated_count = session.scalar(
+        scoped(func.count()).where(*filtered_where, ChannelItem.added_at >= utcnow() - timedelta(days=7))
+    ) or 0
+    page = session.scalars(
+        scoped(ChannelItem)
+        .where(*filtered_where)
         .options(joinedload(ChannelItem.channel), joinedload(ChannelItem.content))
         .order_by(ChannelItem.added_at.desc())
+        .limit(bounded)
     ).unique().all()
     joined: set[str] = set()
     if user is not None:
         joined = set(
             session.scalars(select(ChannelSubscription.channel_id).where(ChannelSubscription.user_id == user.id)).all()
         )
-    in_region = [item for item in rows if _visible(item.channel, region)]
-    categories = sorted({item.channel.category for item in in_region if item.channel.category})
-    # 地区筛选只能在「用户本来就看得到」的范围里再收窄（国际 / 当前国家），不会放宽可见范围。
-    wanted_region = (region_filter or "").upper()
-    visible = [
-        item
-        for item in in_region
-        if (not category or item.channel.category == category)
-        and (not wanted_region or item.channel.region_code == wanted_region)
-    ]
-    cutoff = utcnow() - timedelta(days=7)
-    updated_count = 0
-    for item in visible:
-        added = item.added_at
-        if added.tzinfo is None:
-            added = added.replace(tzinfo=timezone.utc)
-        if added >= cutoff:
-            updated_count += 1
-    page = visible[:bounded]
     authors = author_names(session, [item.content.author_id for item in page])
     # 登录用户带上自己的点赞 / 收藏 / 转发状态（与推荐流一致），游客全为 False。
     user_id = user.id if user else None

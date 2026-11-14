@@ -252,6 +252,9 @@ def test_publish_keywords_are_capped_and_searchable(client):
     assert hit["type"] == "post"
     missed = client.get("/api/v1/search?q=家具")
     assert all(item["content_id"] != content_id for item in missed.json()["contents"])
+    # % 和 _ 按字面匹配，不再当通配符命中全部内容
+    assert client.get("/api/v1/search", params={"q": "%"}).json()["contents"] == []
+    assert client.get("/api/v1/search", params={"q": "_"}).json()["contents"] == []
     hashed = client.get("/api/v1/search", params={"q": "#租房"}).json()
     assert content_id in [item["content_id"] for item in hashed["contents"]]
     assert hashed["users"] == []

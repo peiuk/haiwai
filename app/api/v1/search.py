@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.keywords import load_keywords
-from app.privacy import can_view_content, is_private_room_content
+from app.privacy import can_view_content
 from app.models import Channel, ChannelItem, Content, User, utcnow
 
 router = APIRouter()
@@ -22,15 +22,23 @@ def trending_keywords(limit: int = 5, session: Session = Depends(get_db)) -> dic
     """
     bounded = min(max(limit, 1), 20)
     cutoff = utcnow() - timedelta(days=30)
+    # 私密房间的内容在 SQL 里排除，只取关键词这一列：原来每条内容再查一次库，右栏每次加载都要跑几百上千次查询。
+    in_private_room = exists(
+        select(ChannelItem.content_id)
+        .join(Channel, Channel.id == ChannelItem.channel_id)
+        .where(ChannelItem.content_id == Content.id, Channel.kind == "room", Channel.is_private.is_(True))
+    )
     rows = session.scalars(
-        select(Content)
-        .where(Content.status == "published", Content.deleted_at.is_(None), Content.published_at >= cutoff)
+        select(Content.keywords_json).where(
+            Content.status == "published",
+            Content.deleted_at.is_(None),
+            Content.published_at >= cutoff,
+            ~in_private_room,
+        )
     ).all()
     counter: Counter[str] = Counter()
-    for content in rows:
-        if is_private_room_content(session, content):
-            continue
-        for word in load_keywords(content.keywords_json):
+    for raw in rows:
+        for word in load_keywords(raw):
             counter[word] += 1
     keywords = [{"keyword": word, "count": count} for word, count in counter.most_common(bounded)]
     return {"keywords": keywords, "window_days": 30, "generated": utcnow().isoformat()}
@@ -45,8 +53,10 @@ def search(q: str = "", session: Session = Depends(get_db)) -> dict[str, list[di
     needle = raw[1:].strip() if raw[0] in "#@" else raw
     if not needle:
         return {"channels": [], "contents": [], "users": []}
-    pattern = f"%{needle}%"
-    handle_pattern = f"%{needle.lower()}%"
+    # 用户输入的 % 和 _ 按字面匹配，不当通配符（否则搜「%」会匹配全部内容并整表扫描）。
+    literal = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{literal}%"
+    handle_pattern = f"%{literal.lower()}%"
     has_published = exists(
         select(ChannelItem.channel_id)
         .join(Content, Content.id == ChannelItem.content_id)
@@ -63,7 +73,7 @@ def search(q: str = "", session: Session = Depends(get_db)) -> dict[str, list[di
             Channel.visibility == "public",
             Channel.is_private.is_(False),
             or_(Channel.kind != "room", has_published),
-            or_(Channel.name_hans.like(pattern), Channel.name_hant.like(pattern), Channel.code.like(pattern)),
+            or_(Channel.name_hans.like(pattern, escape="\\"), Channel.name_hant.like(pattern, escape="\\"), Channel.code.like(pattern, escape="\\")),
         )
         .order_by(Channel.code)
         .limit(20)
@@ -75,11 +85,11 @@ def search(q: str = "", session: Session = Depends(get_db)) -> dict[str, list[di
             Content.status == "published",
             Content.deleted_at.is_(None),
             or_(
-                Content.title.like(pattern),
-                Content.summary.like(pattern),
-                Content.keywords_json.like(pattern),
-                Content.city_topic.like(pattern),
-                User.handle.like(handle_pattern),
+                Content.title.like(pattern, escape="\\"),
+                Content.summary.like(pattern, escape="\\"),
+                Content.keywords_json.like(pattern, escape="\\"),
+                Content.city_topic.like(pattern, escape="\\"),
+                User.handle.like(handle_pattern, escape="\\"),
             ),
         )
         .order_by(Content.published_at.desc())
@@ -116,7 +126,7 @@ def search(q: str = "", session: Session = Depends(get_db)) -> dict[str, list[di
             .where(
                 User.deleted_at.is_(None),
                 User.status == "active",
-                User.handle.like(handle_pattern),
+                User.handle.like(handle_pattern, escape="\\"),
             )
             .order_by(User.handle)
             .limit(20)

@@ -103,10 +103,14 @@ class PostBody(BaseModel):
         return value
 
 
-def _aware(value):
-    if value.tzinfo is None:
-        return value.replace(tzinfo=utcnow().tzinfo)
-    return value
+def _check_hourly_limit(session: Session, user_id: str) -> None:
+    # 只数最近一小时的条数：原来把作者全部帖子的时间都读出来再在 Python 里过滤，帖子越多越慢。
+    cutoff = utcnow() - timedelta(hours=1)
+    count = session.scalar(
+        select(func.count()).select_from(Content).where(Content.author_id == user_id, Content.created_at >= cutoff)
+    )
+    if (count or 0) >= HOURLY_POST_LIMIT:
+        raise APIError(429, "RATE_LIMITED", "每小时最多发布 5 条")
 
 
 @router.post("/contents")
@@ -144,10 +148,7 @@ def create_post(
         keys = [body.image_key]
     for key in keys:
         owned_upload(session, user, key)
-    cutoff = utcnow() - timedelta(hours=1)
-    recent = session.scalars(select(Content.created_at).where(Content.author_id == user.id)).all()
-    if sum(1 for created_at in recent if _aware(created_at) >= cutoff) >= HOURLY_POST_LIMIT:
-        raise APIError(429, "RATE_LIMITED", "每小时最多发布 5 条")
+    _check_hourly_limit(session, user.id)
     prior = session.scalar(
         select(func.count()).select_from(Content).where(Content.author_id == user.id, Content.deleted_at.is_(None))
     )
@@ -463,10 +464,16 @@ def create_reply(
     if body.image_key:
         owned_upload(session, user, body.image_key)
     now = utcnow()
-    recent = session.scalars(
-        select(RoomComment.created_at).where(RoomComment.content_id == content.id, RoomComment.author_id == user.id)
-    ).all()
-    if sum(1 for created_at in recent if _aware(created_at) >= now - timedelta(minutes=1)) >= 5:
+    recent = session.scalar(
+        select(func.count())
+        .select_from(RoomComment)
+        .where(
+            RoomComment.content_id == content.id,
+            RoomComment.author_id == user.id,
+            RoomComment.created_at >= now - timedelta(minutes=1),
+        )
+    )
+    if (recent or 0) >= 5:
         raise APIError(429, "RATE_LIMITED", "回复太频繁")
     comment = RoomComment(
         room_id=item.channel_id,
@@ -551,10 +558,7 @@ def repost_content(
     )
     if existing is not None:
         return {"content_id": existing.id, "status": existing.status}
-    cutoff = utcnow() - timedelta(hours=1)
-    recent = session.scalars(select(Content.created_at).where(Content.author_id == user.id)).all()
-    if sum(1 for created_at in recent if _aware(created_at) >= cutoff) >= HOURLY_POST_LIMIT:
-        raise APIError(429, "RATE_LIMITED", "每小时最多发布 5 条")
+    _check_hourly_limit(session, user.id)
     now = utcnow()
     note = body.body or original.summary or ""
     content = Content(
