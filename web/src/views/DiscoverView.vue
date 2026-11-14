@@ -27,7 +27,6 @@ const activeContentId = ref<string | null>(null);
 const listings = ref<ListingCardItem[]>([]);
 const items = ref<DiscoverItem[]>([]);
 const categories = ref<string[]>([]);
-const updatedCount = ref(0);
 const activeCategory = ref("");
 // 地区筛选：空 = 全部地区；GLOBAL = 国际；其余为当前开通国家代码（后端只在可见范围内收窄）
 const activeRegion = ref("");
@@ -78,7 +77,6 @@ async function load(): Promise<void> {
     listings.value = listingBody.items;
     items.value = discoverBody.items;
     categories.value = discoverBody.categories;
-    updatedCount.value = discoverBody.updated_count;
     if (discoverBody.region) region.value = discoverBody.region;
     // 登录 / 切换国家后原来选中的地区可能已不存在，回到「全部地区」避免一直空白。
     if (activeRegion.value && ![ "GLOBAL", region.value.code ].includes(activeRegion.value)) activeRegion.value = "";
@@ -141,11 +139,7 @@ watch(
       <!-- 为你推荐：单一信息流，分类信息与普通内容合并 -->
       <section class="discover-section">
         <header class="section-head">
-          <h2 class="section-title">为你推荐</h2>
-          <p class="section-note">
-            按频道分类与近 7 天更新排序 · {{ updatedCount }} 条近期更新 ·
-            推荐参数可在设置中查看和调整
-          </p>
+          <h2 class="section-title">频道新动态</h2>
         </header>
 
         <!-- DiscoverChipRow（MASTER §22.11）：一行横滑，先地区 chip，竖线分隔，再分类 chip -->
@@ -277,12 +271,6 @@ watch(
 .section-title {
   margin: 0;
   font-size: var(--fs-16);
-}
-.section-note {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-12);
-  line-height: 1.6;
 }
 .discover-intro {
   display: flex;

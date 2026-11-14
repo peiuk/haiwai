@@ -152,7 +152,7 @@ void load();
 <template>
   <div class="recommend-tab">
     <div class="rec-note">
-      <span>为你推荐 · {{ order === "ranked" ? "频道和区域信号排序" : "严格按时间排序" }} · 已显示 {{ visibleItems.length }} 条</span>
+      <span>{{ order === "ranked" ? "按推荐排序" : "按时间排序" }}</span>
       <button type="button" class="rec-order" @click="order = order === 'ranked' ? 'time' : 'ranked'">
         {{ order === "ranked" ? "切到时间序" : "切到推荐序" }}
       </button>

@@ -154,6 +154,16 @@ async function submit(): Promise<void> {
   font-size: var(--fs-12);
   white-space: nowrap;
   cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.report-trigger:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.report-trigger:active:not(:disabled) {
+  transform: scale(0.96);
 }
 .report-trigger.compact {
   min-width: var(--tap);

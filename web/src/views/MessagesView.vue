@@ -6,9 +6,12 @@ import { ref } from "vue";
 import { useRoute } from "vue-router";
 import NotificationCenter from "../components/NotificationCenter.vue";
 import DmInbox from "../components/messages/DmInbox.vue";
+import EmptyState from "../components/base/EmptyState.vue";
 import { useAuthStore } from "../stores/auth";
+import { useLoginPromptStore } from "../stores/loginPrompt";
 
 const auth = useAuthStore();
+const loginPrompt = useLoginPromptStore();
 const route = useRoute();
 
 const tabs = [
@@ -46,7 +49,13 @@ const unreadDm = ref(0);
       </button>
     </div>
 
-    <p v-if="!auth.isLoggedIn" class="empty">注册或登录后查看私信与通知。</p>
+    <EmptyState
+      v-if="!auth.isLoggedIn"
+      class="empty"
+      title="登录后查看私信与通知"
+      action-label="登录 / 注册"
+      @action="loginPrompt.require('登录后查看私信与通知')"
+    />
 
     <div v-else class="tabpanel" role="tabpanel">
       <DmInbox v-if="active === 'dm'" @unread="unreadDm = $event" />

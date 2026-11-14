@@ -210,8 +210,6 @@ watch(() => auth.isLoggedIn, () => void load());
     </template>
     <span v-else class="rchip">未定位</span>
 
-    <span class="rchip global">国际频道 · 共享</span>
-
     <div class="region-picker">
       <button
         type="button"
@@ -236,10 +234,7 @@ watch(() => auth.isLoggedIn, () => void load());
           :disabled="busy"
           @click="setRegion(region.code)"
         >
-          <span>
-            {{ region.name }}
-            <span v-if="region.city" class="city">{{ region.city }}</span>
-          </span>
+          <span>{{ region.name }}</span>
           <span v-if="(pref?.region_code ?? 'GLOBAL') === region.code" class="active-mark"><BaseIcon name="i-check" :size="14" /></span>
         </button>
       </div>
@@ -255,13 +250,8 @@ watch(() => auth.isLoggedIn, () => void load());
   flex-wrap: nowrap;
   padding: 4px 14px;
   min-height: 44px;
-  overflow-x: auto;
-  scrollbar-width: none;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
-}
-.region-bar::-webkit-scrollbar {
-  display: none;
 }
 .lb {
   font-size: var(--fs-12);
@@ -334,12 +324,6 @@ watch(() => auth.isLoggedIn, () => void load());
 }
 .region-option.active {
   font-weight: var(--fw-bold);
-}
-.city {
-  margin-left: 6px;
-  font-size: var(--fs-11);
-  color: var(--muted);
-  font-weight: 400;
 }
 .region-option:disabled {
   opacity: 0.6;

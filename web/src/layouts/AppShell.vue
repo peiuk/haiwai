@@ -63,6 +63,7 @@ function langLabel(): string {
 
 // 全站搜索框仅在首页 / 发现页显示（对齐原型 ['home','discover']）
 const showSearch = computed(() => route.name === "home" || route.name === "discover");
+const showFab = computed(() => ["home", "discover", "channel"].includes(String(route.name ?? "")));
 
 // 吸顶栏标题：首页显示「首页」、发现显示「发现」，其余页面不显示标题（由页面自身渲染）
 const PAGE_TITLES: Record<string, string> = {
@@ -278,9 +279,9 @@ watch(
       </RouterLink>
     </nav>
 
-    <!-- 移动端发布 FAB -->
+    <!-- 移动端发布 FAB：只在看内容的页面出现，消息 / 我的 / 详情页不需要 -->
     <RouterLink
-      v-if="route.name !== 'publish'"
+      v-if="showFab"
       to="/publish"
       class="fab"
       aria-label="发布内容"
@@ -521,8 +522,10 @@ watch(
 
   .shell-body {
     grid-template-columns: minmax(0, 1fr);
+    max-width: 640px;
     padding: 0 var(--sp-4);
-    padding-bottom: calc(var(--bottom-bar) + var(--sp-6));
+    /* 底栏 + 发布按钮（56px + 间距）的高度，最后一条内容不会被压住 */
+    padding-bottom: calc(var(--bottom-bar) + 88px + env(safe-area-inset-bottom));
   }
   .left-col {
     display: none;
@@ -569,7 +572,8 @@ watch(
     left: 0;
     right: 0;
     z-index: var(--z-bottom-bar);
-    height: var(--bottom-bar);
+    height: calc(var(--bottom-bar) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
     background: var(--bg);
     border-top: 1px solid var(--border);
   }
@@ -595,7 +599,7 @@ watch(
     place-items: center;
     position: fixed;
     right: var(--sp-4);
-    bottom: calc(var(--bottom-bar) + var(--sp-4));
+    bottom: calc(var(--bottom-bar) + var(--sp-4) + env(safe-area-inset-bottom));
     width: 56px;
     height: 56px;
     border-radius: 50%;

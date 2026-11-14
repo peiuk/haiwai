@@ -142,7 +142,9 @@ watch(
         type="search"
         autocomplete="off"
         placeholder="搜索内容、频道、@用户、#关键词"
+        enterkeyhint="search"
         @input="onInput"
+        @keydown.enter.prevent="runSearch"
         @focus="hasQuery && (open = true)"
       />
       <button
@@ -238,6 +240,15 @@ watch(
 }
 .gsearch-input input:focus {
   outline: none;
+}
+/* 输入框去掉了 outline，焦点改由外框表达 */
+.gsearch-input:focus-within {
+  border-color: var(--accent);
+}
+/* 手机顶栏太窄：输入即搜（已有 200ms 防抖），去掉「搜索」按钮把宽度留给输入框 */
+@media (max-width: 759px) {
+  .gsearch-submit { display: none; }
+  .gsearch-clear { min-width: 32px; }
 }
 .gsearch-clear {
   display: grid;

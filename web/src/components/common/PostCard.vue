@@ -144,6 +144,19 @@ watch(
   },
 );
 
+// ---- 「⋯」更多菜单：低频操作（减少此类内容 / 举报）收在这里，不占操作栏 ----
+const menuOpen = ref(false);
+const menuRef = ref<HTMLElement | null>(null);
+
+function onDocPointer(ev: PointerEvent): void {
+  if (menuRef.value && !menuRef.value.contains(ev.target as Node)) menuOpen.value = false;
+}
+
+watch(menuOpen, (open) => {
+  if (open) document.addEventListener("pointerdown", onDocPointer);
+  else document.removeEventListener("pointerdown", onDocPointer);
+});
+
 // ---- 图片灯箱（X 平台式：点击放大、多图左右切换） ----
 const lightboxIndex = ref(-1);
 
@@ -214,6 +227,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", onDocPointer);
   if (observer) {
     observer.disconnect();
     observer = null;
@@ -268,20 +282,43 @@ onBeforeUnmount(() => {
           <span v-else-if="showJoin && isJoined" class="post-joined">
             <BaseIcon name="i-check" :size="13" /> 已加入
           </span>
-          <button type="button" class="post-more" aria-label="更多操作" @click="emit('open')">
-            <BaseIcon name="i-more" :size="16" />
-          </button>
+          <div ref="menuRef" class="post-more" @keydown.esc="menuOpen = false">
+            <button
+              type="button"
+              class="post-more-btn"
+              aria-label="更多操作"
+              :aria-expanded="menuOpen"
+              @click="menuOpen = !menuOpen"
+            >
+              <BaseIcon name="i-more" :size="18" />
+            </button>
+            <!-- v-show 而非 v-if：举报弹窗挂在 ReportButton 里，菜单收起时不能卸载它 -->
+            <div v-show="menuOpen" class="post-menu" @click="menuOpen = false">
+              <button v-if="whyText" type="button" class="post-menu-item" @click="emit('less-like')">
+                <BaseIcon name="i-mute" :size="16" /> 减少此类内容
+              </button>
+              <ReportButton kind="content" :id="contentId" @reported="emit('reported', $event)" />
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- card-copy -->
       <div class="post-copy">
-        <h3 v-if="hasOwnTitle(title, summary)" class="post-title" data-ugc>{{ title }}</h3>
+        <h3
+          v-if="hasOwnTitle(title, summary)"
+          class="post-title post-title--link"
+          data-ugc
+          role="link"
+          tabindex="0"
+          @click="emit('open')"
+          @keydown.enter="emit('open')"
+          @keydown.space.prevent="emit('open')"
+        >{{ title }}</h3>
         <p v-if="summary" class="post-summary" data-ugc>{{ summary }}</p>
         <div v-if="keywords.length" class="post-tags" data-ugc>
           <span v-for="kw in keywords" :key="kw" class="post-tag">#{{ kw }}</span>
         </div>
-        <button v-if="whyText" type="button" class="post-less" @click="emit('less-like')">减少此类内容</button>
       </div>
 
       <!-- 媒体：图片网格（点击开灯箱） / 视频（内联自动播放） -->
@@ -375,12 +412,6 @@ onBeforeUnmount(() => {
         <button type="button" class="act" aria-label="分享" @click="shareContent">
           <BaseIcon name="i-share" :size="17" />
         </button>
-        <ReportButton
-          kind="content"
-          :id="contentId"
-          compact
-          @reported="emit('reported', $event)"
-        />
         <slot name="extra" />
       </div>
     </div>
@@ -467,22 +498,6 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 2px;
 }
-.post-more {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  min-height: 30px;
-  border-radius: 50%;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.post-more:hover {
-  background: var(--hover);
-  color: var(--text);
-}
 .post-join {
   min-height: 30px;
   padding: 0 var(--sp-3);
@@ -521,6 +536,18 @@ onBeforeUnmount(() => {
   line-height: var(--lh-heading);
   overflow-wrap: anywhere;
 }
+.post-title--link {
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.post-title--link:hover {
+  color: var(--accent-ink);
+}
+.post-title--link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
 .post-summary {
   margin: 0;
   color: var(--text);
@@ -541,19 +568,60 @@ onBeforeUnmount(() => {
 .post-tag:hover {
   text-decoration: underline;
 }
-.post-less {
+.post-more {
+  position: relative;
+}
+.post-more-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
   border: 0;
+  border-radius: 50%;
   background: transparent;
   color: var(--muted);
-  font-size: var(--fs-12);
-  text-decoration: underline;
   cursor: pointer;
-  padding: 0;
-  justify-self: start;
-  margin-top: 2px;
 }
-.post-less:hover {
-  color: var(--accent-ink);
+.post-more-btn:hover,
+.post-more-btn[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--text);
+}
+.post-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-sticky);
+  display: grid;
+  min-width: 168px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: var(--shadow-md, 0 8px 24px rgb(0 0 0 / 0.12));
+}
+.post-menu-item,
+.post-menu :deep(.report-trigger) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm, 8px);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-14);
+  text-align: left;
+  cursor: pointer;
+}
+.post-menu-item:hover {
+  background: var(--hover);
+}
+.post-menu :deep(.report-wrap) {
+  display: grid;
 }
 
 /* 媒体网格（对齐原型 media--grid2/3/4） */
@@ -633,7 +701,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: var(--sp-2);
   flex-wrap: wrap;
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   color: var(--muted);
   line-height: 1.5;
 }

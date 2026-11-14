@@ -19,6 +19,7 @@ import {
 } from "../api";
 import { useAuthStore } from "../stores/auth";
 import { useToastStore } from "../stores/toast";
+import { useLoginPromptStore } from "../stores/loginPrompt";
 import Avatar from "../components/base/Avatar.vue";
 import BaseIcon from "../components/base/BaseIcon.vue";
 import BaseButton from "../components/base/BaseButton.vue";
@@ -31,6 +32,7 @@ import AiKeywordChips from "../components/publish/AiKeywordChips.vue";
 import ListingForm from "../components/publish/ListingForm.vue";
 
 const auth = useAuthStore();
+const loginPrompt = useLoginPromptStore();
 const toast = useToastStore();
 const router = useRouter();
 const route = useRoute();
@@ -351,7 +353,7 @@ watch(
               </button>
             </div>
           </div>
-          <span class="compose-switch-hint">{{ currentType === 'info' ? '按分类填写信息' : '分享给海外圈' }}</span>
+          <span v-if="currentType === 'info'" class="compose-switch-hint">按分类填写信息</span>
           <span v-if="currentType !== 'info'" id="dest-hint" class="dest-hint">审核通过后公开</span>
         </div>
 
@@ -443,14 +445,17 @@ watch(
       </div>
     </section>
 
-    <p v-if="!auth.isLoggedIn" class="guest-note" role="note">登录或注册后可以发布，草稿会保存在这台设备上。</p>
+    <div v-if="!auth.isLoggedIn" class="guest-note" role="note">
+      <span>登录后才能发布，草稿会先保存在这台设备上。</span>
+      <BaseButton type="button" variant="outline" size="sm" @click="loginPrompt.require('登录后发布内容')">登录 / 注册</BaseButton>
+    </div>
 
     <!-- 成功 -->
     <p v-if="success" class="success" role="status">{{ success }}</p>
 
     <!-- 我的发布（可折叠 feed）-->
     <details class="published-history" :open="feedOpen" @toggle="feedOpen = ($event.target as HTMLDetailsElement).open">
-      <summary>我的发布</summary>
+      <summary>我的发布 <BaseIcon name="i-chev" :size="16" class="history-chev" /></summary>
       <section class="feed" aria-label="已发布内容">
         <p v-if="feedLoading" class="feed-note">正在加载…</p>
         <p v-else-if="!feed.length" class="feed-note">还没有发布内容。</p>
@@ -514,6 +519,10 @@ watch(
 .topbar > button:last-child { flex-shrink: 0; }
 /* 游客提示 */
 .guest-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
   margin: 0;
   padding: 10px 20px;
   border-bottom: 1px solid var(--border);
@@ -795,8 +804,8 @@ watch(
   font-weight: 700;
 }
 .published-history summary::-webkit-details-marker { display: none; }
-.published-history summary::after { content: '⌄'; color: var(--muted); font-size: 18px; transition: transform .2s; }
-.published-history[open] summary::after { transform: rotate(180deg); }
+.history-chev { color: var(--muted); transition: transform .2s; }
+.published-history[open] .history-chev { transform: rotate(180deg); }
 .feed { padding: 0 var(--sp-4) var(--sp-4); }
 .feed-note { padding: var(--sp-4) 0; color: var(--muted); font-size: var(--fs-13); }
 .post {
@@ -827,8 +836,10 @@ watch(
 /* 与 AppShell 单栏断点（759px）对齐，避免 481–759px 顶栏被目标选择器撑破 */
 @media (max-width: 760px) {
   .topbar { gap: 6px; padding: var(--sp-2) 8px; }
-  .dest-control-label { display: none; }
-  .dest-select { max-width: 108px; padding: 0 8px; }
+  /* 窄屏标题与类型选择器重复，让位给「发布到」，否则下拉框看不出是选发布目标 */
+  .topbar .title { display: none; }
+  .dest-control { flex: 1; min-width: 0; }
+  .dest-select { flex: 1; min-width: 0; max-width: 160px; padding: 0 8px; }
   .compose-switch { flex-wrap: wrap; }
   .dest-hint { margin-left: 0; }
 }

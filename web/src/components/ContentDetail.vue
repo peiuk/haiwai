@@ -250,10 +250,10 @@ watch(detail, async (value) => {
     <div v-if="contentId && !standalone" class="cd-overlay" @click.self="emit('close')">
       <section class="content-detail cd-dialog" role="dialog" aria-modal="true" aria-labelledby="cd-dialog-title">
         <header class="cd-head">
-          <h3 id="cd-dialog-title">回复帖子</h3>
+          <h3 id="cd-dialog-title">帖子详情</h3>
           <div class="cd-head-tools">
             <ReportButton v-if="detail" kind="content" :id="detail.content_id" compact />
-            <button class="cd-close" type="button" aria-label="关闭回复窗口" @click="emit('close')"><BaseIcon name="i-close" :size="20" /></button>
+            <button class="cd-close" type="button" aria-label="关闭帖子详情" @click="emit('close')"><BaseIcon name="i-close" :size="20" /></button>
           </div>
         </header>
         <div class="cd-scroll">
@@ -281,15 +281,40 @@ watch(detail, async (value) => {
                   :canonical-url="detail.canonical_url"
                   :label="`${detail.title} 的来源与许可`"
                 />
-                <p class="cd-replying">回复给 <span data-ugc>{{ detail.author_name || detail.author_handle || detail.channel_name || "作者" }}</span></p>
               </div>
             </article>
 
+            <div class="cd-replies-head"><h4>回复</h4><span>{{ comments.length }}</span></div>
+            <p v-if="comments.length === 0" class="cd-no-replies">还没有回复，来写下第一条。</p>
+            <ul v-else class="cd-list cd-list--dialog">
+              <li v-for="comment in comments" :key="comment.id" class="cd-item">
+                <Avatar :name="comment.author_name || comment.author_handle || '用户'" :size="40" />
+                <div class="cd-item-main">
+                  <div class="cd-item-meta">
+                    <span class="cd-author" data-ugc>{{ comment.author_name || comment.author_handle || "匿名" }}</span>
+                    <time class="cd-time" :datetime="comment.created_at">· {{ fmtRelativeTime(comment.created_at) }}</time>
+                  </div>
+                  <p class="cd-text" data-ugc>{{ comment.body }}</p>
+                  <img v-if="comment.image_key" class="cd-comment-img" :src="`/api/v1/uploads/${comment.image_key}`" alt="回复图片" loading="lazy" />
+                  <button
+                    class="cd-reply-like"
+                    type="button"
+                    :aria-pressed="comment.liked"
+                    :class="{ 'cd-on': comment.liked }"
+                    @click="toggleCommentLike(comment)"
+                  >
+                    <BaseIcon name="i-heart" :size="16" /> {{ comment.like_count || "" }}
+                  </button>
+                </div>
+              </li>
+            </ul>
+
+            <!-- 回复框固定在弹窗底部：先看正文和回复，再决定要不要回 -->
             <form class="cd-compose" @submit.prevent="postComment">
               <Avatar name="我" :size="42" />
               <div class="cd-compose-main">
                 <label class="sr-only" for="cd-comment">写回复</label>
-                <textarea id="cd-comment" ref="replyInput" v-model="draft" rows="3" maxlength="1000" placeholder="发布你的回复"></textarea>
+                <textarea id="cd-comment" ref="replyInput" v-model="draft" rows="2" maxlength="1000" :placeholder="`回复 ${detail.author_name || detail.author_handle || detail.channel_name || '作者'}`"></textarea>
                 <div v-if="imageKey" class="cd-image-preview">
                   <img :src="`/api/v1/uploads/${imageKey}`" alt="回复图片预览" />
                   <button class="cd-image-remove" type="button" aria-label="移除图片" @click="removeImage">移除</button>
@@ -330,31 +355,6 @@ watch(detail, async (value) => {
                 </div>
               </div>
             </form>
-
-            <div class="cd-replies-head"><h4>回复</h4><span>{{ comments.length }}</span></div>
-            <p v-if="comments.length === 0" class="cd-no-replies">还没有回复，来写下第一条。</p>
-            <ul v-else class="cd-list cd-list--dialog">
-              <li v-for="comment in comments" :key="comment.id" class="cd-item">
-                <Avatar :name="comment.author_name || comment.author_handle || '用户'" :size="40" />
-                <div class="cd-item-main">
-                  <div class="cd-item-meta">
-                    <span class="cd-author" data-ugc>{{ comment.author_name || comment.author_handle || "匿名" }}</span>
-                    <time class="cd-time" :datetime="comment.created_at">· {{ fmtRelativeTime(comment.created_at) }}</time>
-                  </div>
-                  <p class="cd-text" data-ugc>{{ comment.body }}</p>
-                  <img v-if="comment.image_key" class="cd-comment-img" :src="`/api/v1/uploads/${comment.image_key}`" alt="回复图片" loading="lazy" />
-                  <button
-                    class="cd-reply-like"
-                    type="button"
-                    :aria-pressed="comment.liked"
-                    :class="{ 'cd-on': comment.liked }"
-                    @click="toggleCommentLike(comment)"
-                  >
-                    <BaseIcon name="i-heart" :size="16" /> {{ comment.like_count || "" }}
-                  </button>
-                </div>
-              </li>
-            </ul>
           </template>
         </div>
       </section>
@@ -518,17 +518,6 @@ watch(detail, async (value) => {
   gap: 12px;
   padding: 20px 22px 4px;
 }
-.cd-timeline { position: relative; }
-.cd-timeline::after {
-  content: "";
-  position: absolute;
-  top: 52px;
-  bottom: -12px;
-  left: 20px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--border);
-}
 .cd-original-main { min-width: 0; }
 .cd-original-author { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .cd-original-author strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-15); }
@@ -541,20 +530,21 @@ watch(detail, async (value) => {
 .cd-original-main .cd-keywords span { color: var(--accent-ink); font-size: var(--fs-13); }
 .cd-original-main .cd-repost { margin: 0 0 8px; }
 .cd-original-main :deep(.source-block) { margin-top: 10px; }
-.cd-replying { margin: 18px 0 12px; color: var(--muted); font-size: var(--fs-13); }
-.cd-replying span { color: var(--accent-ink); }
 .cd-compose {
+  position: sticky;
+  bottom: 0;
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
   gap: 12px;
-  padding: 8px 22px 18px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 22px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
 }
 .cd-compose-main { min-width: 0; }
 .cd-compose textarea {
   display: block;
   width: 100%;
-  min-height: 106px;
+  min-height: 52px;
   padding: 5px 0;
   border: 0;
   outline: none;
@@ -659,7 +649,7 @@ watch(detail, async (value) => {
   .cd-dialog .cd-head { min-height: 56px; padding: 0 14px; }
   .cd-scroll { max-height: calc(100dvh - 56px); }
   .cd-original { padding: 16px 14px 2px; gap: 10px; }
-  .cd-compose { padding: 8px 14px 16px; gap: 10px; }
+  .cd-compose { padding: 8px 14px calc(10px + env(safe-area-inset-bottom)); gap: 10px; }
   .cd-replies-head { padding: 16px 14px 6px; }
   .cd-no-replies { padding: 14px 14px 28px; }
   .cd-list--dialog .cd-item { padding: 14px; }
@@ -682,7 +672,9 @@ watch(detail, async (value) => {
   gap: 0;
 }
 .cd-dialog .cd-head { flex: none; }
-.cd-dialog .cd-scroll { min-height: 0; }
+/* 滚动区占满剩余高度，回复少时回复框也贴在底部 */
+.cd-dialog .cd-scroll { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.cd-dialog .cd-compose { margin-top: auto; }
 .cd-head {
   display: flex;
   align-items: center;
