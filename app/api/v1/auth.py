@@ -1,5 +1,7 @@
 import re
 import secrets
+import time
+from collections import deque
 from datetime import timezone
 
 from fastapi import APIRouter, Depends
@@ -18,6 +20,7 @@ from app.core.security import (
     create_access_token,
     hash_password,
     hash_refresh_token,
+    needs_rehash,
     new_refresh_session_id,
     new_refresh_token,
     read_access_token,
@@ -27,6 +30,23 @@ from app.core.security import (
 from app.models import Channel, ChannelSubscription, ConsentRecord, RefreshSession, User, utcnow
 
 DEV_PHONE_CODE = "246810"
+
+# shortcut: 计数放在每个进程的内存里，2 个 worker 各算各的、重启后清零；
+# 需要严格限流或按 IP 限制注册时，换成 Redis 等共享存储，并让反向代理传真实客户端 IP。
+_attempts: dict[str, deque[float]] = {}
+
+
+def throttle(key: str, limit: int, window_seconds: int) -> None:
+    now = time.monotonic()
+    if len(_attempts) > 50_000:  # 键只增不减会吃内存：超过上限时清掉一小时内没动静的
+        for stale in [name for name, hits in _attempts.items() if not hits or now - hits[-1] > 3600]:
+            del _attempts[stale]
+    hits = _attempts.setdefault(key, deque())
+    while hits and now - hits[0] > window_seconds:
+        hits.popleft()
+    if len(hits) >= limit:
+        raise APIError(429, "RATE_LIMITED", "尝试太频繁，请稍后再试")
+    hits.append(now)
 
 
 def _aware_datetime(value) -> object:
@@ -254,6 +274,7 @@ def verify_phone(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, bool]:
+    throttle(f"phone:{user.id}", limit=5, window_seconds=15 * 60)
     if get_settings().app_env != "dev" or not secrets.compare_digest(body.code, DEV_PHONE_CODE):
         raise APIError(400, "INVALID_CODE", "验证码不正确")
     taken = session.scalar(select(User.id).where(User.phone == body.phone, User.id != user.id))
@@ -267,9 +288,12 @@ def verify_phone(
 
 @router.post("/login")
 def login(body: LoginBody, session: Session = Depends(get_db)) -> dict[str, str]:
+    throttle(f"login:{body.email}", limit=10, window_seconds=15 * 60)
     user = session.scalar(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     if user is None or not verify_password(body.password, user.password_hash):
         raise APIError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")
+    if needs_rehash(user.password_hash):
+        user.password_hash = hash_password(body.password)
     tokens = issue_tokens(session, user.id)
     session.commit()
     return tokens

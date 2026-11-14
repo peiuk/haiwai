@@ -1,8 +1,8 @@
-import os
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from app.core.config import get_settings
 from app.core.errors import APIError
 
 POLICY_VERSION = "2026-11-13"
@@ -46,7 +46,7 @@ def framing_blocked(headers: dict[str, str]) -> bool:
 
 
 def inspect_source(url: str) -> dict[str, object]:
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    if get_settings().testing:
         return {"framing_blocked": False, "source_title": None, "status_code": None}
     title = None
     blocked = False

@@ -1,5 +1,3 @@
-import os
-
 import sqlalchemy as sa
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -50,9 +48,8 @@ def database_is_ready() -> bool:
 
 
 def prepare_database() -> None:
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        return
-    if get_settings().app_env != "dev":
+    settings = get_settings()
+    if settings.testing or settings.app_env != "dev":
         return
     engine = get_engine()
     if engine is None:

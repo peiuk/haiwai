@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_days: int = 7
     llm_api_key: str = ""
     upload_dir: str = "data/uploads"
+    # 跑单元测试时为 True（tests/conftest.py 设置）：跳过外网检查和开发库自动初始化。
+    testing: bool = False
 
 
 @lru_cache

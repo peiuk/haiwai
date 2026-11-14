@@ -8,21 +8,39 @@ from app.core.config import get_settings
 from app.models import new_id
 
 
+# OWASP 2023 对 PBKDF2-SHA256 的建议轮数。轮数写进哈希字符串，以后再调高也不会让旧密码失效。
+PBKDF2_ITERATIONS = 600_000
+_LEGACY_ITERATIONS = 120_000  # 旧格式 pbkdf2_sha256$salt$digest 没记录轮数，固定是这个值
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 120_000)
-    return f"pbkdf2_sha256${salt}${digest.hex()}"
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), PBKDF2_ITERATIONS)
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt}${digest.hex()}"
+
+
+def _parse_hash(stored: str) -> tuple[int, str, str] | None:
+    parts = stored.split("$")
+    if len(parts) == 3 and parts[0] == "pbkdf2_sha256":
+        return _LEGACY_ITERATIONS, parts[1], parts[2]
+    if len(parts) == 4 and parts[0] == "pbkdf2_sha256" and parts[1].isdigit():
+        return int(parts[1]), parts[2], parts[3]
+    return None
 
 
 def verify_password(password: str, stored: str) -> bool:
-    try:
-        algorithm, salt, digest = stored.split("$", 2)
-    except ValueError:
+    parsed = _parse_hash(stored)
+    if parsed is None:
         return False
-    if algorithm != "pbkdf2_sha256":
-        return False
-    check = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 120_000).hex()
+    rounds, salt, digest = parsed
+    check = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), rounds).hex()
     return secrets.compare_digest(check, digest)
+
+
+def needs_rehash(stored: str) -> bool:
+    """登录成功后用：旧格式或轮数偏低时，顺手用当前设置重新哈希。"""
+    parsed = _parse_hash(stored)
+    return parsed is None or parsed[0] < PBKDF2_ITERATIONS
 
 
 def create_access_token(user_id: str) -> str:

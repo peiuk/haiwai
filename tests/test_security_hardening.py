@@ -108,6 +108,51 @@ def test_oversized_upload_is_rejected_by_header_before_reading(client):
     assert client.put(f"/api/v1/uploads/{key}", headers=headers(token), content=b"\xff\xd8\xff\xe0ok").status_code == 200
 
 
+def test_login_attempts_per_email_are_throttled(client):
+    register(client, "brute-h@example.com")
+    codes = [
+        client.post("/api/v1/auth/login", json={"email": "brute-h@example.com", "password": "wrong-pass"}).status_code
+        for _ in range(11)
+    ]
+    assert codes[:10] == [401] * 10
+    assert codes[10] == 429
+    # 换一个邮箱不受影响
+    assert client.post("/api/v1/auth/login", json={"email": "other-h@example.com", "password": "x" * 8}).status_code == 401
+
+
+def test_phone_verification_is_throttled(client):
+    token = register(client, "phone-h@example.com")
+    codes = [
+        client.post("/api/v1/auth/verify-phone", headers=headers(token), json={"phone": "+447700900312", "code": "000000"}).status_code
+        for _ in range(6)
+    ]
+    assert codes[:5] == [400] * 5 and codes[5] == 429
+
+
+def test_legacy_password_hash_still_logs_in_and_is_upgraded(client, monkeypatch):
+    import hashlib
+
+    from app.core import security
+
+    register(client, "legacy-h@example.com")
+    salt = "a" * 32
+    legacy = f"pbkdf2_sha256${salt}${hashlib.pbkdf2_hmac('sha256', b'old-password', salt.encode(), 120_000).hex()}"
+    session = client.session_factory()
+    session.scalar(select(User).where(User.email == "legacy-h@example.com")).password_hash = legacy
+    session.commit()
+    session.close()
+
+    monkeypatch.setattr(security, "PBKDF2_ITERATIONS", 200_000)
+    logged_in = client.post("/api/v1/auth/login", json={"email": "legacy-h@example.com", "password": "old-password"})
+    assert logged_in.status_code == 200, logged_in.text
+    session = client.session_factory()
+    upgraded = session.scalar(select(User).where(User.email == "legacy-h@example.com")).password_hash
+    session.close()
+    assert upgraded.startswith("pbkdf2_sha256$200000$")
+    assert client.post("/api/v1/auth/login", json={"email": "legacy-h@example.com", "password": "old-password"}).status_code == 200
+    assert security.verify_password("old-password", "") is False  # 已注销账号的空哈希永远不通过
+
+
 def test_upload_slots_per_user_are_capped(client):
     token = register(client, "slots-h@example.com")
     results = [client.post("/api/v1/uploads/sign", headers=headers(token), json={"content_type": "image/png"}).status_code for _ in range(40)]
