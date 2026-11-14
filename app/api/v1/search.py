@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
+from app.api.v1.auth import optional_user
 from app.core.db import get_db
+from app.feed import image_keys_of, reaction_flags
 from app.keywords import load_keywords
 from app.privacy import can_view_content
 from app.models import Channel, ChannelItem, Content, User, utcnow
@@ -45,11 +47,16 @@ def trending_keywords(limit: int = 5, session: Session = Depends(get_db)) -> dic
 
 
 @router.get("/search")
-def search(q: str = "", session: Session = Depends(get_db)) -> dict[str, list[dict[str, object]]]:
+def search(
+    q: str = "",
+    session: Session = Depends(get_db),
+    viewer: User | None = Depends(optional_user),
+) -> dict[str, list[dict[str, object]]]:
     raw = q.strip()
     if not raw:
         return {"channels": [], "contents": [], "users": []}
     people = raw.startswith("@")
+    topic = raw.startswith("#")
     needle = raw[1:].strip() if raw[0] in "#@" else raw
     if not needle:
         return {"channels": [], "contents": [], "users": []}
@@ -96,9 +103,12 @@ def search(q: str = "", session: Session = Depends(get_db)) -> dict[str, list[di
         .limit(20)
     ).all()
     results: list[dict[str, object]] = []
+    # 结果页直接用信息流卡片展示，带上当前用户的点赞 / 收藏状态
+    flags = reaction_flags(session, viewer.id if viewer else None, [row.id for row in contents])
     for row in contents:
         if not can_view_content(session, row, None):
             continue
+        liked, favorited = flags.get(row.id, (False, False))
         placed = session.scalar(
             select(ChannelItem).where(ChannelItem.content_id == row.id, ChannelItem.origin_room_id.is_(None))
         )
@@ -117,16 +127,28 @@ def search(q: str = "", session: Session = Depends(get_db)) -> dict[str, list[di
                 "author_handle": author.handle or "" if author else "",
                 "channel_id": channel.id if channel else None,
                 "channel_name": channel.name_hans if channel else "",
+                "keywords": load_keywords(row.keywords_json),
+                "image_keys": image_keys_of(row),
+                "video_key": row.video_key,
+                "published_at": row.published_at.isoformat() if row.published_at else None,
+                "liked": liked,
+                "favorited": favorited,
             }
         )
     users: list[dict[str, object]] = []
-    if people:
+    # 「#话题」只搜内容；「@」只按用户名；普通词同时匹配用户名和昵称
+    if not topic:
+        name_match = (
+            User.handle.like(handle_pattern, escape="\\")
+            if people
+            else or_(User.handle.like(handle_pattern, escape="\\"), User.display_name.like(pattern, escape="\\"))
+        )
         matches = session.scalars(
             select(User)
             .where(
                 User.deleted_at.is_(None),
                 User.status == "active",
-                User.handle.like(handle_pattern, escape="\\"),
+                name_match,
             )
             .order_by(User.handle)
             .limit(20)

@@ -55,8 +55,8 @@ async function loadToday(): Promise<void> {
 }
 
 function searchKeyword(keyword: string): void {
-  // 点击热门关键词：跳到发现页并携带关键词，顶栏搜索框读取 ?q 自动检索（对齐后端 /search）。
-  router.push({ name: "discover", query: { q: keyword.slice(1) } });
+  // 点击热门关键词：按话题进搜索结果页（keyword 已带 #）。
+  router.push({ name: "search", query: { q: keyword } });
 }
 
 function openChannel(id: string): void {

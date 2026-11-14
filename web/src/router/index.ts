@@ -13,6 +13,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: "", name: "home", component: () => import("../views/HomeView.vue") },
       { path: "discover", name: "discover", meta: { title: "发现" }, component: () => import("../views/DiscoverView.vue") },
+      { path: "search", name: "search", meta: { title: "搜索" }, component: () => import("../views/SearchView.vue") },
       { path: "messages", name: "messages", meta: { title: "消息" }, component: () => import("../views/MessagesView.vue") },
       { path: "profile", name: "profile", meta: { title: "我的" }, component: () => import("../views/ProfileView.vue") },
       { path: "room/:id", name: "room", meta: { title: "房间" }, component: () => import("../views/RoomView.vue") },

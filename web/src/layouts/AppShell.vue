@@ -62,13 +62,14 @@ function langLabel(): string {
 }
 
 // 全站搜索框仅在首页 / 发现页显示（对齐原型 ['home','discover']）
-const showSearch = computed(() => route.name === "home" || route.name === "discover");
+const showSearch = computed(() => ["home", "discover", "search"].includes(String(route.name ?? "")));
 const showFab = computed(() => ["home", "discover", "channel"].includes(String(route.name ?? "")));
 
 // 吸顶栏标题：首页显示「首页」、发现显示「发现」，其余页面不显示标题（由页面自身渲染）
 const PAGE_TITLES: Record<string, string> = {
   home: "首页",
   discover: "发现",
+  search: "搜索",
 };
 const pageTitle = computed(() => PAGE_TITLES[String(route.name ?? "")] ?? "");
 
@@ -443,6 +444,12 @@ watch(
   padding-top: var(--sp-2);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(12px);
+}
+/* 手机搜索全屏时：backdrop-filter / transform 会让 fixed 定位相对顶栏而不是整屏，先关掉 */
+.top-head:has(.gsearch--active) {
+  z-index: var(--z-modal); /* 顶栏自成层叠上下文，不抬高的话吸顶 Tab 和底栏会盖在全屏搜索上面 */
+  backdrop-filter: none;
+  transform: none !important;
 }
 .top-head-title {
   margin: 0;

@@ -729,6 +729,13 @@ export type SearchContent = {
   author_handle: string;
   channel_id: string | null;
   channel_name: string;
+  keywords: string[];
+  image_keys: string[];
+  video_key: string | null;
+  published_at: string | null;
+  liked: boolean;
+  favorited: boolean;
+  reposted?: boolean;
 };
 
 export type SearchUser = {

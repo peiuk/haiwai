@@ -262,6 +262,13 @@ def test_publish_keywords_are_capped_and_searchable(client):
     assert people["users"][0]["handle"] == "tags"
     assert people["users"][0]["display_name"] == "作者"
     assert content_id in [item["content_id"] for item in people["contents"]]
+    # 普通词也能按昵称搜到用户；内容结果带卡片字段和当前用户的点赞状态
+    plain = client.get("/api/v1/search", params={"q": "作者"}).json()
+    assert "tags" in [item["handle"] for item in plain["users"]]
+    assert isinstance(hit["keywords"], list) and isinstance(hit["image_keys"], list)
+    assert hit["published_at"] and hit["liked"] is False
+    mine_hit = next(item for item in client.get("/api/v1/search", params={"q": "租房"}, headers=headers(owner)).json()["contents"] if item["content_id"] == content_id)
+    assert mine_hit["liked"] is True and mine_hit["favorited"] is True
     auto = client.post(
         "/api/v1/contents",
         headers=headers(owner),
