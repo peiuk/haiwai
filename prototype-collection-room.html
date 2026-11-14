@@ -1,0 +1,2642 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>海外圈 · 房间原型 v6（多房间小圈子 · 想建就建 · 更新通知）</title>
+<style>
+/* Design System v1.0 · 与 design-system/tokens.css 同步 */
+:root{
+  --bg:#ffffff; --surface:#f7f9f9; --surface2:#eff3f4; --text:#0f1419;
+  --muted:#536471; --border:#e6ecf0; --line:#707c87; --accent:#1d9bf0;
+  --accent-soft:rgba(29,155,240,.12); --hover:rgba(15,20,25,.04);
+  --accent-ink:#0a6ba8; --accent-strong:#0a72b4; --on-accent:#ffffff; --focus:#0a6ba8;
+  --chip:#eff3f4; --shadow:0 2px 12px rgba(0,0,0,.08);
+  --good:#00875a; --good-solid:#00875a; --on-good:#ffffff;
+  --danger:#d02b32; --warn:#a86800;
+  --tap:44px; --r-sm:6px; --r-md:10px; --r-lg:14px; --r-pill:999px;
+  --media-ph-a:#12303f; --media-ph-b:#2b3a4a; --media-ph-c:#4a3520;
+  --z-sticky:20; --z-bottom-bar:30; --z-toast:50; --z-modal:60;
+  --on-media:#ffffff; --scrim-base:#000000; --player-bg:#0b0f12; --player-text:#e7e9ea; --player-muted:#9aa6b1; --cover-ink:#d5e9f5;
+}
+[data-theme="dark"]{
+  --bg:#000000; --surface:#16181c; --surface2:#202327; --text:#e7e9ea;
+  --muted:#9aa6b1; --border:#2f3336; --line:#6d7781; --accent:#1d9bf0;
+  --accent-soft:rgba(29,155,240,.18); --hover:rgba(231,233,234,.07);
+  --accent-ink:#1d9bf0; --accent-strong:#1d9bf0; --on-accent:#0f1419; --focus:#1d9bf0;
+  --chip:#202327; --shadow:0 2px 12px rgba(0,0,0,.5);
+  --good:#3ccf91; --good-solid:#3ccf91; --on-good:#0f1419;
+  --danger:#f07579; --warn:#e0a838;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button,input,select,textarea{font-family:inherit}
+button{cursor:pointer;border:none;background:none;color:inherit}
+a{color:var(--accent-ink);text-decoration:none;cursor:pointer}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:6px}
+.hidden{display:none !important}
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+.ico{width:20px;height:20px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ico.sm{width:16px;height:16px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+.app{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:240px minmax(0,1fr) 320px;min-height:100vh}
+.left{border-right:1px solid var(--border);padding:12px 16px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px}
+.right{border-left:1px solid var(--border);padding:12px 18px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.main{border-right:1px solid var(--border);min-width:0}
+.brand{display:flex;align-items:center;gap:10px;padding:10px 8px 18px;font-size:19px;font-weight:700}
+.brand .mark{width:36px;height:36px;border-radius:9px;background:var(--accent-strong);color:var(--on-accent);display:grid;place-items:center;font-size:17px;font-weight:700}
+.nav-item{display:flex;align-items:center;gap:14px;padding:10px 14px;border-radius:999px;font-size:16px;width:100%;text-align:left;min-height:44px}
+.nav-item:hover{background:var(--hover)}
+.nav-item.active{font-weight:700}
+.post-btn{background:var(--accent-strong);color:var(--on-accent);border-radius:999px;padding:12px;font-size:15px;font-weight:700;margin-top:14px;width:100%;min-height:44px}
+.post-btn:hover{opacity:.9}
+.me{display:flex;align-items:center;gap:10px;margin-top:auto;padding:10px;border-radius:999px}
+.avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--on-media);font-weight:700;font-size:14px;flex-shrink:0}
+.me .name{font-weight:700;font-size:14px}
+.me .handle{color:var(--muted);font-size:13px}
+
+.top{position:sticky;top:0;z-index:var(--z-sticky);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+.top-head{display:flex;align-items:center;gap:10px;padding:8px 16px}
+.top-head h1{margin:0;font-size:17px;font-weight:800;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top-tools{display:flex;gap:4px;align-items:center}
+.publish-top{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;border-radius:999px;background:var(--accent-strong);color:var(--on-accent);font-size:13px;font-weight:700;white-space:nowrap}
+.publish-top:hover{opacity:.9}
+.icon-btn{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
+.icon-btn:hover{background:var(--accent-soft);color:var(--accent-ink)}
+.back{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--text)}
+.back:hover{background:var(--hover)}
+.room-switch{display:flex;gap:8px;padding:0 16px 8px;align-items:center;flex-wrap:wrap}
+.room-switch .lbl{font-size:12px;color:var(--muted);margin-right:2px}
+.room-tab{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 16px;border-radius:999px;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface2);border:1px solid transparent}
+.room-tab:hover{background:var(--hover);color:var(--text)}
+.room-tab.active{background:var(--text);color:var(--bg)}
+.subtabs{display:flex;gap:8px;padding:0 16px 10px;border-bottom:1px solid var(--border)}
+.subtab{min-height:44px;padding:0 18px;border-radius:999px;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface2)}
+.subtab:hover{background:var(--hover);color:var(--text)}
+.subtab.active{background:var(--accent-soft);color:var(--accent-ink)}
+.notice{padding:10px 16px;background:var(--accent-soft);color:var(--text);font-size:13px;line-height:1.65;display:flex;gap:9px;align-items:flex-start}
+.notice .ico{color:var(--accent-ink);margin-top:2px}
+.notice b{color:var(--accent-ink)}
+.notice.warn{background:color-mix(in srgb,var(--warn) 12%,transparent)}
+.notice.warn .ico,.notice.warn b{color:var(--warn)}
+
+.hero{padding:16px;border-bottom:1px solid var(--border)}
+.cover{height:120px;border-radius:14px;background:var(--media-ph-a);display:flex;align-items:flex-end;padding:14px;position:relative;overflow:hidden;isolation:isolate}
+.cover:before{content:"";position:absolute;inset:0;z-index:0;background:radial-gradient(ellipse at 82% 16%,color-mix(in srgb,var(--accent) 32%,transparent),transparent 42%),linear-gradient(112deg,color-mix(in srgb,var(--scrim-base) 28%,transparent),transparent 72%);pointer-events:none}
+.cover .big{position:relative;font-family:"Noto Serif TC","Songti SC",serif;font-size:30px;font-weight:700;color:var(--on-media);letter-spacing:4px;text-shadow:0 2px 10px color-mix(in srgb,var(--scrim-base) 48%,transparent)}
+.cover .sm{position:absolute;z-index:1;right:14px;top:12px;color:var(--cover-ink);font-size:12px;letter-spacing:2px;text-shadow:0 1px 5px color-mix(in srgb,var(--scrim-base) 38%,transparent)}
+.hero-row{display:flex;gap:12px;align-items:flex-start;margin-top:14px}
+.hero-info{flex:1;min-width:0}
+.hero-info h2{margin:0 0 5px;font-size:21px;font-weight:800}
+.hero-meta{color:var(--muted);font-size:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.pulse{display:inline-flex;align-items:center;gap:5px;color:var(--good);font-weight:600}
+.pulse i{width:7px;height:7px;border-radius:50%;background:var(--good);display:block}
+.join{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:1px solid var(--text);color:var(--text);border-radius:999px;padding:0 18px;font-size:13px;font-weight:700;white-space:nowrap;background:transparent}
+.join:hover{background:var(--hover)}
+.join.joined{background:var(--text);color:var(--bg)}
+.hero-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-shrink:0}
+.notify-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:0 14px;font-size:12px;font-weight:700;white-space:nowrap;background:transparent}
+.notify-toggle:hover{background:var(--hover)}
+.notify-toggle.on{border-color:var(--accent-ink);color:var(--accent-ink);background:var(--accent-soft)}
+.hero-desc{font-size:14px;color:var(--text);margin:12px 0 10px;line-height:1.7}
+.progress-wrap{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.progress{flex:1;height:6px;border-radius:999px;background:var(--surface2);overflow:hidden}
+.progress i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .25s ease}
+
+.seasons{display:flex;border-bottom:1px solid var(--border);padding:0 16px;overflow-x:auto}
+.season{min-height:44px;padding:0 4px;margin-right:22px;font-size:14px;color:var(--muted);position:relative;white-space:nowrap}
+.season:hover{color:var(--text)}
+.season.active{color:var(--text);font-weight:700}
+.season.active::after{content:"";position:absolute;bottom:0;left:0;right:0;height:3px;border-radius:999px;background:var(--accent)}
+.toolbar{padding:8px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)}
+.toolbar .ops{display:flex;gap:8px;flex-wrap:wrap}
+.mini-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:600;color:var(--text)}
+.mini-btn:hover{background:var(--hover)}
+.mini-btn.primary{background:var(--accent-strong);border-color:var(--accent-strong);color:var(--on-accent)}
+.mini-btn.primary:hover{opacity:.9}
+select.sort{min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:999px;font-size:12px;background:var(--bg);color:var(--text);cursor:pointer}
+
+.ep{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);align-items:flex-start}
+.ep:hover{background:var(--hover)}
+.ep-no{width:46px;height:46px;border-radius:10px;background:var(--surface2);display:grid;place-items:center;font-size:13px;font-weight:700;flex-shrink:0;color:var(--muted)}
+.ep.seen .ep-no{background:var(--accent-soft);color:var(--accent-ink)}
+.ep-body{flex:1;min-width:0}
+.ep-title{font-weight:700;font-size:14px}
+.ep-note{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.6}
+.ep-foot{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.watch{display:inline-flex;align-items:center;gap:4px;min-height:44px;font-size:12px;color:var(--accent-ink);background:var(--accent-soft);border-radius:8px;padding:0 10px;font-weight:600}
+.watch:hover{background:color-mix(in srgb,var(--accent) 22%,transparent);text-decoration:none}
+.disc{position:relative;display:inline-flex;align-items:center;gap:4px;min-height:34px;font-size:12px;color:var(--muted)}
+.disc::after{content:"";position:absolute;inset:-5px 0}
+.ep-ops{display:flex;gap:8px;align-items:center}
+.op{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;color:var(--muted);border:1px solid var(--border)}
+.op:hover{background:var(--accent-soft);color:var(--accent-ink)}
+.mark{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.mark:hover{background:var(--hover)}
+.mark.done{background:var(--good-solid);border-color:var(--good-solid);color:var(--on-good)}
+.empty{padding:44px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.8}
+
+.film-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;padding:16px}
+.film-card{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--surface);cursor:pointer;transition:background .2s ease,border-color .2s ease}
+.film-card:hover{background:var(--hover);border-color:var(--line)}
+.film-poster{height:150px;display:flex;align-items:flex-end;padding:12px;color:var(--on-media)}
+.film-poster .pt{font-family:"Noto Serif TC","Songti SC",serif;font-size:19px;font-weight:700;letter-spacing:2px;line-height:1.35}
+.film-poster .yr{position:absolute;margin-top:-128px;font-size:12px;color:color-mix(in srgb,var(--on-media) 80%,transparent)}
+.film-body{padding:11px 12px 12px}
+.film-body .fn{font-weight:700;font-size:14px}
+.film-body .fm{font-size:12px;color:var(--muted);margin-top:3px}
+.film-body .fnote{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.55;min-height:36px}
+.film-foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.state-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;padding:0 12px;border-radius:999px;border:1px solid var(--line);font-size:12px;font-weight:600}
+.state-btn.seen{background:var(--good-solid);border-color:var(--good-solid);color:var(--on-good)}
+.state-btn:hover{background:var(--hover)}
+.state-btn.seen:hover{opacity:.9}
+
+.video-card{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);align-items:flex-start}
+.video-card:hover{background:var(--hover)}
+.thumb{width:118px;height:74px;border-radius:10px;flex-shrink:0;position:relative;display:grid;place-items:center;color:var(--on-media);cursor:pointer}
+.thumb .dur{position:absolute;right:6px;bottom:5px;background:color-mix(in srgb,var(--scrim-base) 65%,transparent);color:var(--on-media);font-size:12px;border-radius:4px;padding:1px 5px}
+.thumb .play{width:34px;height:34px;border-radius:50%;background:color-mix(in srgb,var(--scrim-base) 45%,transparent);display:grid;place-items:center}
+.video-body{flex:1;min-width:0}
+.video-title{font-weight:700;font-size:14px}
+.video-meta{font-size:12px;color:var(--muted);margin-top:3px}
+.video-note{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.55}
+.video-foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.tag{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:0 9px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid var(--line);color:var(--muted)}
+.tag.orig{color:var(--good);border-color:var(--good)}
+.tag.linkc{color:var(--accent-ink);border-color:var(--accent-ink)}
+.tag.pend{color:var(--warn);border-color:var(--warn)}
+.report{display:inline-flex;align-items:center;gap:4px;min-height:44px;padding:0 8px;font-size:12px;color:var(--muted)}
+.report:hover{color:var(--danger)}
+
+/* v3 · 外链内联播放：静态占位 → 用户点击 → 同意记录 → 客户端直连官方 iframe */
+.embed-slot{margin-top:10px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface)}
+.embed-ph{min-height:96px;display:flex;gap:12px;align-items:center;padding:12px;flex-wrap:wrap}
+.embed-ph .ph-mark{width:52px;height:52px;border-radius:10px;background:var(--surface2);display:grid;place-items:center;color:var(--muted);flex-shrink:0}
+.embed-ph .ph-text{flex:1;min-width:0}
+.embed-ph .ph-t{font-size:13px;font-weight:700}
+.embed-ph .ph-s{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.55}
+.embed-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 14px;border-radius:999px;background:var(--accent-strong);color:var(--on-accent);font-size:12px;font-weight:700;white-space:nowrap}
+.embed-btn:hover{opacity:.9}
+.embed-btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.embed-btn.ghost:hover{background:var(--hover);opacity:1}
+.embed-consent{padding:12px;background:color-mix(in srgb,var(--warn) 10%,transparent);border-top:1px solid var(--border)}
+.embed-consent .ct{font-size:12px;line-height:1.7;display:flex;gap:8px;align-items:flex-start}
+.embed-consent .ct .ico{color:var(--warn);margin-top:2px}
+.embed-consent .cops{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.embed-player{position:relative;aspect-ratio:16/9;background:var(--player-bg);display:grid;place-items:center;color:var(--player-text);text-align:center}
+.embed-player .fake{padding:14px}
+.embed-player .fake .fl{font-size:12px;letter-spacing:2px;color:var(--player-muted)}
+.embed-player .fake .fh{font-size:15px;font-weight:700;margin:8px 0 6px}
+.embed-player .fake .fs{font-size:12px;color:var(--player-muted);line-height:1.7;max-width:360px}
+.embed-player .fbar{position:absolute;left:0;right:0;bottom:0;padding:8px 12px;background:linear-gradient(transparent,color-mix(in srgb,var(--scrim-base) 85%,transparent));display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.embed-player .fbar .ico{color:var(--player-text)}
+.provider-badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;border:1px solid var(--accent);color:var(--accent-ink);border-radius:6px;padding:2px 7px}
+.provider-badge.warn{color:var(--warn);border-color:var(--warn)}
+.urlcheck{margin-top:10px;padding:10px 12px;border-radius:9px;background:var(--surface2);font-size:12px;line-height:1.65;color:var(--muted);display:flex;gap:8px;align-items:flex-start}
+.urlcheck.ok{color:var(--good);background:color-mix(in srgb,var(--good) 10%,transparent)}
+.urlcheck.no{color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.urlcheck .ico{margin-top:2px;flex-shrink:0}
+.ep-inline{display:inline-flex;align-items:center;gap:4px;min-height:44px;padding:0 10px;border-radius:8px;font-size:12px;font-weight:600;color:var(--accent-ink);background:var(--accent-soft)}
+.ep-inline:hover{background:color-mix(in srgb,var(--accent) 22%,transparent);text-decoration:none}
+.rule-list{margin:0;padding-left:18px;font-size:12px;color:var(--muted);line-height:1.85}
+.rule-list b{color:var(--text)}
+
+.form{margin:12px 16px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
+.form h4{margin:0 0 4px;font-size:15px}
+.form .tip{font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.65}
+.grid{display:grid;grid-template-columns:100px 1fr;gap:10px}
+.grid label,.field label{font-size:12px;color:var(--muted);display:block;margin-bottom:5px;cursor:pointer}
+.field{margin-top:10px}
+input,select,textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px;font-size:14px;background:var(--bg);color:var(--text);outline:none}
+input:focus-visible,select:focus-visible,textarea:focus-visible{border-color:var(--focus)}
+input[type="file"]{padding:9px;font-size:12px}
+.check{display:flex;gap:9px;align-items:flex-start;margin-top:12px;font-size:13px;line-height:1.6;cursor:pointer}
+.check input{width:20px;height:20px;flex-shrink:0;margin-top:2px;accent-color:var(--accent-ink);cursor:pointer}
+.form-ops{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap}
+.form-ops .hint{font-size:12px;color:var(--muted)}
+
+.listing{padding:14px 16px;border-bottom:1px solid var(--border)}
+.listing:hover{background:var(--hover)}
+.listing .lt{font-weight:700;font-size:14px}
+.listing .lm{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.6}
+.listing .lf{display:flex;gap:8px;margin-top:9px;align-items:center;flex-wrap:wrap}
+.price{font-size:14px;font-weight:800;color:var(--accent-ink)}
+.badge2{display:inline-flex;align-items:center;gap:4px;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:3px 7px;color:var(--muted)}
+.badge2.ok{color:var(--good);border-color:var(--good)}
+.badge2.exp{color:var(--warn);border-color:var(--warn)}
+
+.side-box{border:1px solid var(--border);border-radius:16px;margin-bottom:14px;overflow:hidden;background:var(--surface)}
+.side-box h3{margin:0;padding:11px 14px;font-size:15px;font-weight:800;border-bottom:1px solid var(--border)}
+.side-row{padding:11px 14px;border-bottom:1px solid var(--border);font-size:13px}
+.side-row:last-child{border-bottom:none}
+.side-row .t{font-weight:700}
+.side-row .s{color:var(--muted);font-size:12px;margin-top:3px;line-height:1.6}
+.owner{display:flex;gap:10px;align-items:center;padding:12px 14px}
+.owner .nm{font-weight:700;font-size:13px;display:flex;align-items:center;gap:5px}
+.owner .hd{color:var(--muted);font-size:12px}
+.legal{padding:11px 14px;font-size:12px;color:var(--muted);line-height:1.75}
+.legal b{color:var(--text)}
+.link-row{display:flex;justify-content:space-between;align-items:center;min-height:44px;padding:8px 14px;font-size:12px;border-bottom:1px solid var(--border)}
+.link-row:last-child{border-bottom:none}
+.link-row span{color:var(--muted)}
+.link-row a{display:inline-flex;align-items:center;gap:4px}
+
+.bottom{display:none}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--accent-strong);color:var(--on-accent);padding:11px 20px;border-radius:999px;font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:transform .25s ease,opacity .25s ease;z-index:var(--z-toast);box-shadow:var(--shadow)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.join-modal-backdrop{position:fixed;inset:0;z-index:var(--z-modal);display:grid;place-items:center;padding:20px;background:color-mix(in srgb,var(--scrim-base) 58%,transparent)}
+.join-modal-backdrop.hidden{display:none}
+.join-modal{width:min(100%,400px);padding:22px;border:1px solid var(--border);border-radius:18px;background:var(--surface);box-shadow:var(--shadow)}
+.join-modal h2{margin:0;font-size:20px}
+.join-modal p{margin:8px 0 18px;color:var(--muted);font-size:14px;line-height:1.6}
+.join-modal-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.join-modal-actions button{min-height:44px;padding:0 16px;border:1px solid var(--border);border-radius:999px;font-size:14px;font-weight:700;background:transparent;color:var(--text)}
+.join-modal-actions .primary{background:var(--accent-strong);border-color:var(--accent-strong);color:var(--on-accent)}
+
+@media(max-width:1100px){.app{grid-template-columns:200px minmax(0,1fr)}.right{display:none}.main{border-right:none}}
+@media(max-width:760px){
+ body{font-size:16px}
+ .app{display:block}.left{display:none}.main{border-right:none}
+ .hero,.ep,.video-card,.listing{padding-left:14px;padding-right:14px}
+ .toolbar,.seasons,.room-switch,.subtabs,.notice{padding-left:14px;padding-right:14px}
+ .room-switch{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+ .room-switch::-webkit-scrollbar{display:none}
+ .room-switch .lbl,.room-tab{flex:none}
+ .hero-row{flex-wrap:wrap}
+ .hero-info{flex:1 1 100%}
+ .hero-info h2{font-size:19px;line-height:1.35}
+ .hero-actions{width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ .hero-actions .notify-toggle,.hero-actions .join{width:100%;padding-left:8px;padding-right:8px}
+ .cover{height:128px}
+ .film-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}
+ .bottom{display:flex;position:fixed;bottom:0;left:0;right:0;height:60px;background:color-mix(in srgb,var(--bg) 94%,transparent);backdrop-filter:blur(12px);border-top:1px solid var(--border);z-index:var(--z-bottom-bar);align-items:center;justify-content:space-around}
+ .bottom button{min-width:44px;min-height:44px;display:grid;place-items:center;color:var(--muted)}
+ .bottom button.active{color:var(--accent-ink)}
+ .panel{padding-bottom:76px}
+ .ep-ops{flex-direction:column;gap:8px}
+ .grid{grid-template-columns:1fr}
+ .embed-ph{flex-wrap:wrap}
+ .embed-ph .ph-text{min-width:100%;flex:1 1 100%}
+ .embed-btn{width:100%}
+ .embed-player .fake .fs{max-width:100%}
+}
+body.preview-mobile{background:var(--surface2)}
+body.preview-mobile .app{max-width:420px;display:block;min-height:100vh;background:var(--bg);border-left:1px solid var(--border);border-right:1px solid var(--border);box-shadow:var(--shadow)}
+body.preview-mobile .left,body.preview-mobile .right{display:none}
+body.preview-mobile .main{border:none}
+body.preview-mobile .room-switch{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+body.preview-mobile .room-switch::-webkit-scrollbar{display:none}
+body.preview-mobile .room-switch .lbl,body.preview-mobile .room-switch .room-tab{flex:none}
+body.preview-mobile .hero-row{flex-wrap:wrap}
+body.preview-mobile .hero-info{flex:1 1 100%}
+body.preview-mobile .hero-info h2{font-size:19px;line-height:1.35}
+body.preview-mobile .hero-actions{width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+body.preview-mobile .hero-actions .notify-toggle,body.preview-mobile .hero-actions .join{width:100%;padding-left:8px;padding-right:8px}
+body.preview-mobile .cover{height:128px}
+body.preview-mobile .bottom{display:flex;width:420px;left:50%;right:auto;transform:translateX(-50%)}
+body.preview-mobile .film-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+body.preview-mobile .panel{padding-bottom:76px}
+/* v4 · 多房间小圈子 / 留言评论 / @用户名与#关键词 */
+.my-rooms{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 16px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.my-rooms .lbl{font-size:12px;color:var(--muted);white-space:nowrap}
+.rs-chip{position:relative;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:12px;white-space:nowrap}
+.rs-chip::after{content:"";position:absolute;inset:-5px 0}
+.rs-chip.on{background:var(--text);color:var(--bg);border-color:var(--text)}
+.rs-chip .n{font-size:12px;opacity:.75}
+.rs-new{position:relative;min-height:34px;padding:0 12px;border-radius:999px;border:1px dashed var(--line);color:var(--accent-ink);font-size:12px;white-space:nowrap}
+.rs-new::after{content:"";position:absolute;inset:-5px 0}
+.rs-parent{position:relative;min-height:34px;padding:0 12px;border-radius:999px;border:1px solid var(--accent-soft);background:var(--accent-soft);color:var(--accent-ink);font-size:12px;font-weight:700;white-space:nowrap}
+.rs-parent::after{content:"";position:absolute;inset:-5px 0}
+.rs-quota{font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap}
+.owner-badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--warn);border:1px dashed var(--warn);border-radius:999px;padding:2px 9px;margin-top:8px}
+.tok{color:var(--accent-ink);font-weight:600;text-decoration:none}
+.tok:hover{text-decoration:underline}
+.cmt-compose{margin:12px 16px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
+.cmt-compose label{display:block;font-size:12px;font-weight:700;margin-bottom:6px}
+.cmt-compose textarea{min-height:76px;resize:vertical}
+.cmt-ops{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.cmt-tip{font-size:12px;color:var(--muted);line-height:1.6;margin-top:8px}
+.cmt{display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.cmt:last-child{border-bottom:none}
+.cmt-body{flex:1;min-width:0}
+.cmt-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
+.cmt-head .nm{font-weight:700;font-size:13px}
+.cmt-head .hd,.cmt-head .tm{color:var(--muted)}
+.cmt-text{font-size:13px;line-height:1.7;margin-top:5px;word-break:break-word}
+/* 留言配图缩略图（v2.6 上传成功即时反馈） */
+.cmt-media{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.cmt-media .cmt-img{position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;background:var(--surface2)}
+.cmt-media .cmt-img img{width:100%;height:100%;object-fit:cover;display:block}
+.cmt-media .cmt-img .rm{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;display:grid;place-items:center}
+.cmt-media .cmt-img .rm .ico{width:13px;height:13px}
+.cmt-imgs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.cmt-imgs .cmt-img{position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;background:var(--surface2)}
+.cmt-imgs .cmt-img img{width:100%;height:100%;object-fit:cover;display:block}
+.cmt-ops{margin-top:8px}
+.push-tag{font-size:12px;color:var(--accent-ink);font-weight:600}
+.channel-post{display:grid;grid-template-columns:36px minmax(0,1fr);gap:10px;padding:14px 0;border-bottom:1px solid var(--line)}
+.channel-post-avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--on-media);font-size:15px;font-weight:800;background:var(--accent-strong)}
+.channel-post-main{min-width:0}
+.channel-post-head{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-height:24px}
+.channel-post-author{font-size:13px;font-weight:800}
+.author-link{min-width:44px;color:var(--text);text-decoration:none;min-height:44px;display:inline-flex;align-items:center}
+.author-link:hover{text-decoration:underline}
+.dm-chip{position:relative;display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:0 10px;margin-left:4px;border:1px solid var(--line);border-radius:var(--r-pill);font-size:12px;font-weight:700;color:var(--accent-ink);text-decoration:none}
+.dm-chip::after{content:"";position:absolute;left:-4px;right:-4px;top:50%;height:44px;transform:translateY(-50%)}
+.dm-chip:hover{background:var(--hover)}
+.channel-post-time{font-size:12px;color:var(--muted)}
+.channel-post-title{font-size:15px;line-height:1.4;margin:4px 0 0;font-weight:800}
+.channel-post-copy{font-size:14px;line-height:1.6;margin:4px 0 0;color:var(--text)}
+.channel-post-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.cmt-ops button.push-btn{border-color:var(--accent-ink);color:var(--accent-ink)}
+.cmt-ops button{min-height:34px;padding:0 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);font-size:12px;position:relative}
+.cmt-ops button::after{content:"";position:absolute;inset:-6px 0}
+.cmt-ops button.liked{color:var(--accent-ink);border-color:var(--accent-ink)}
+/* v2.7 楼中楼回复：父评论下折叠显示回复，可展开/收起 */
+.cmt-replies{margin:10px 0 0 0;border-left:2px solid var(--line);padding-left:12px}
+.cmt-reply{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.cmt-reply:last-child{border-bottom:none}
+.cmt-reply .avatar{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:var(--on-media);font-size:12px;font-weight:700;flex:none}
+.cmt-reply .rbody{flex:1;min-width:0}
+.cmt-reply .rhead{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px}
+.cmt-reply .rhead .nm{font-weight:700}
+.cmt-reply .rhead .hd,.cmt-reply .rhead .tm{color:var(--muted)}
+.cmt-reply .rtext{font-size:13px;line-height:1.6;margin-top:3px;word-break:break-word}
+.cmt-reply .rimgs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.cmt-reply .rimgs img{width:56px;height:56px;border-radius:8px;object-fit:cover;display:block}
+.reply-toggle{display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 10px;border-radius:999px;border:1px solid var(--line);color:var(--accent-ink);font-size:12px;font-weight:600;position:relative;margin-top:8px}
+.reply-toggle::after{content:"";position:absolute;inset:-6px 0}
+.reply-toggle:hover{background:var(--hover)}
+.tag-pend{display:inline-block;font-size:12px;color:var(--warn);border:1px solid var(--warn);border-radius:999px;padding:1px 7px}
+@media(max-width:760px){.my-rooms{padding-left:14px;padding-right:14px}.rs-quota{margin-left:0}}
+/* ===== v13 · 优化层（2026-11-11）：与首页统一底部导航 + 发布 FAB；顶部吸附区压缩；房主视图 ===== */
+.my-rooms{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.my-rooms::-webkit-scrollbar{display:none}
+.my-rooms>*{flex:none}
+.room-switch.owner-only .lbl::after{content:" · 仅房主可见"}
+.owner-pill{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 14px;border-radius:var(--r-pill);border:1px solid var(--accent-strong);color:var(--accent-ink);font-size:13px;font-weight:700}
+.owner-tools{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+.room-private-gate{margin:20px 16px;padding:24px 18px;border:1px solid var(--border);border-radius:16px;background:var(--surface2);text-align:center}
+.room-private-gate h2{margin:0 0 8px;font-size:19px}
+.room-private-gate p{margin:0 0 16px;color:var(--muted);font-size:13px;line-height:1.6}
+.room-private-gate .mini-btn{margin:auto}
+body.room-private-locked .panel,body.room-private-locked .subtabs,body.room-private-locked #notice{display:none!important}
+.room-privacy-requests{display:grid;gap:7px;margin-top:8px}
+.room-privacy-request{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;font-size:12px}
+.status-pill{display:inline-flex;align-items:center;padding:1px 8px;border-radius:var(--r-pill);border:1px dashed var(--warn);color:var(--warn);font-size:12px;font-weight:700;white-space:nowrap;margin-left:6px}
+.status-pill.rejected{border-style:solid;border-color:var(--danger);color:var(--danger)}
+.empty-cta{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}
+.legal .link-btn{background:none;border:0;padding:0;color:var(--accent-ink);font:inherit;text-decoration:underline;cursor:pointer;min-height:32px}
+.left .nav-item{position:relative}
+.left .badge,.bottom .badge{position:absolute;background:var(--accent-strong);color:var(--on-accent);font-size:12px;font-weight:700;min-width:18px;height:18px;border-radius:999px;display:grid;place-items:center;padding:0 4px}
+.left .badge{left:28px;top:4px}
+.me{width:100%;text-align:left;min-height:44px}
+.me:hover{background:var(--hover)}
+.fab{display:none}
+@media(max-width:760px){
+  .top-head{padding:6px 12px}
+  .subtabs{padding-bottom:8px}
+  .bottom{justify-content:space-around;padding:0 4px env(safe-area-inset-bottom)}
+  .bottom button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:56px;min-height:52px;padding:4px 6px;font-size:12px;font-weight:600;line-height:1.2;position:relative}
+  .bottom button .ico{width:22px;height:22px}
+  .bottom .badge{right:10px;top:2px}
+  .fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;background:var(--accent-strong);color:var(--on-accent);box-shadow:var(--shadow);z-index:var(--z-bottom-bar)}
+  .fab .ico{width:26px;height:26px;stroke-width:2.2}
+  .toast{bottom:84px}
+  .publish-top{display:none}
+}
+body.preview-mobile .bottom button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:56px;min-height:52px;padding:4px 6px;font-size:12px;font-weight:600;line-height:1.2;position:relative}
+body.preview-mobile .fab{display:grid;place-items:center;position:fixed;right:calc(50% - 194px);bottom:76px;width:56px;height:56px;border-radius:50%;background:var(--accent-strong);color:var(--on-accent);box-shadow:var(--shadow);z-index:var(--z-bottom-bar)}
+/* 房间已有顶部发布入口和内容区操作，移动端不再叠加悬浮按钮。 */
+.fab,body.preview-mobile .fab{display:none!important}
+@media(max-width:760px){
+ .hero{padding:10px 12px}
+ .cover{height:74px;padding:10px}
+ .cover .big{font-size:24px}
+ .cover .sm{top:9px;right:10px;font-size:10px}
+ .hero-row{margin-top:9px;gap:8px}
+ .hero-info h2{font-size:17px;margin-bottom:3px}
+ .hero-meta{gap:4px 6px}
+ .hero-actions{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ .hero-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:7px 0;line-height:1.45;font-size:12px}
+ .notice{padding-top:6px;padding-bottom:6px;font-size:12px;line-height:1.4}
+ .subtabs{padding-bottom:5px;gap:5px}
+ .subtab{padding:0 12px;font-size:12px}
+}
+body.preview-mobile .hero{padding:10px 12px}
+body.preview-mobile .cover{height:74px;padding:10px}
+body.preview-mobile .cover .big{font-size:24px}
+body.preview-mobile .cover .sm{top:9px;right:10px;font-size:10px}
+body.preview-mobile .hero-row{margin-top:9px;gap:8px}
+body.preview-mobile .hero-info h2{font-size:17px;margin-bottom:3px}
+body.preview-mobile .hero-meta{gap:4px 6px}
+body.preview-mobile .hero-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:7px 0;line-height:1.45;font-size:12px}
+body.preview-mobile .notice{padding-top:6px;padding-bottom:6px;font-size:12px;line-height:1.4}
+body.preview-mobile .subtabs{padding-bottom:5px;gap:5px}
+body.preview-mobile .subtab{padding:0 12px;font-size:12px}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none !important;animation:none !important}}
+/* v13 · 房间切换条热区补到 44px（视觉高度不变） */
+.rs-chip,.rs-parent,.rs-new{position:relative}
+.rs-chip::after,.rs-parent::after,.rs-new::after{content:"";position:absolute;left:0;right:0;top:50%;height:44px;transform:translateY(-50%)}
+/* v13 · 用户自建的剧集 / 电影 / 视频房间：先显示房间帖子，再显示类型模块 */
+#viewGeneral.stacked{margin-bottom:16px}
+.country-guard{margin:12px 0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface2);color:var(--text);font-size:14px;line-height:1.55}
+.country-guard b{display:block;margin-bottom:2px}
+body.room-country-hidden .hero ~ *{display:none}
+/* v2.5 · 手机端下滑收起顶栏、上滑恢复（MASTER §22.14） */
+@media(max-width:760px){
+  .top{transition:transform .2s ease}
+  body.hdr-hide .top{transform:translateY(-100%)}
+}
+@media(prefers-reduced-motion:reduce){.top{transition:none!important}}
+/* v2.3 · 移动端帖子正文 15px / 行高 1.5（X 式，Rio 2026-11-11 拍板；MASTER §3.2）。标题、按钮、触控目标、输入框不变 */
+@media(max-width:760px){
+  .channel-post-copy,.cmt-text{font-size:15px;line-height:1.5}
+}
+</style>
+</head>
+<body data-theme="dark">
+
+<svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><path d="M3 6h18v12H3zM3 7l9 6 9-6"/></symbol>
+<symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+<symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z"/></symbol>
+<symbol id="i-mobile" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+<symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14 6-6 6 6"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="m6 10 6 6 6-6"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></symbol>
+<symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+<symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="5" width="14" height="14" rx="2"/><path d="m16 10 6-3v10l-6-3z"/></symbol>
+<symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h12l-2 4 2 4H5"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 4 5.5 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.5-4-9s1.5-6.5 4-9"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+<symbol id="i-hash" viewBox="0 0 24 24"><path d="M5 9h14M4 15h14M10 3 8 21M17 3l-2 18"/></symbol>
+<symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 5 2 9 9 0 1 0-3 5"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7z"/></symbol>
+<symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></symbol>
+</svg>
+
+<h2 class="sr-only">海外圈房间原型，可切换剧集、电影、视频三种房间形态，并查看关联分类信息。</h2>
+
+<div class="app">
+  <aside class="left">
+    <div class="brand"><span class="mark" aria-hidden="true">海</span><span>海外圈</span></div>
+    <button class="nav-item" data-act="nav" data-nav="home" aria-label="首页"><svg class="ico"><use href="#i-home"/></svg>首页</button>
+    <button class="nav-item" data-act="nav" data-nav="add" aria-label="频道"><svg class="ico"><use href="#i-grid"/></svg>频道</button>
+    <button class="nav-item" data-act="nav" data-nav="discover" aria-label="发现"><svg class="ico"><use href="#i-search"/></svg>发现</button>
+    <button class="nav-item" data-act="nav" data-nav="notifications" aria-label="消息"><svg class="ico"><use href="#i-mail"/></svg>消息<span class="badge hidden" id="notifyBadge">0</span></button>
+    <button class="nav-item" data-act="nav" data-nav="favorites" aria-label="收藏"><svg class="ico"><use href="#i-bookmark"/></svg>收藏</button>
+    <button class="nav-item" data-act="nav" data-nav="rooms" aria-label="我的房间"><svg class="ico"><use href="#i-circle"/></svg>我的房间</button>
+    <button class="nav-item" data-act="nav" data-nav="me" aria-label="我的"><svg class="ico"><use href="#i-user"/></svg>我的</button>
+    <button class="post-btn" data-act="publish">发布内容</button>
+    <button class="me" data-act="nav" data-nav="me" aria-label="打开我的页面">
+      <div class="avatar uks-av-a" id="meNavAvatar" aria-hidden="true">裴</div>
+      <div><div class="name" id="meNavName">裴总</div><div class="handle" id="meNavHandle">@pei · 伦敦</div></div>
+    </button>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <div class="top-head">
+        <button class="back" data-act="back" aria-label="返回频道目录"><svg class="ico"><use href="#i-back"/></svg></button>
+        <h1 id="topTitle">房间 · 新闻女王 追更</h1>
+        <div class="top-tools">
+          <button class="publish-top" data-act="publish" aria-label="发布内容"><svg class="ico sm"><use href="#i-send"/></svg><span>发布</span></button>
+          <button class="icon-btn" data-act="theme" aria-label="切换深浅色主题"><svg class="ico"><use href="#i-theme"/></svg></button>
+          <button class="icon-btn" data-act="mobile" aria-label="切换移动视图"><svg class="ico"><use href="#i-mobile"/></svg></button>
+        </div>
+      </div>
+      <div class="my-rooms" id="myRooms" role="group" aria-label="我的房间（用户自建小圈子，可创建多个）"></div>
+      <!-- v2.1：旧的就地建房表单 roomForm 已删除；建房统一走首页「频道」里的新建房表单（rs-new → ?tab=add&seg=create&parent=） -->
+      <div class="room-switch owner-only hidden" id="roomSwitch" role="group" aria-label="房间类型（房主可改）">
+        <span class="lbl">房间类型</span>
+        <button class="room-tab active" data-act="room" data-room="general" aria-pressed="true"><svg class="ico sm"><use href="#i-list"/></svg>通用</button>
+        <button class="room-tab" data-act="room" data-room="series" aria-pressed="false"><svg class="ico sm"><use href="#i-list"/></svg>剧集</button>
+        <button class="room-tab" data-act="room" data-room="film" aria-pressed="false"><svg class="ico sm"><use href="#i-film"/></svg>电影</button>
+        <button class="room-tab" data-act="room" data-room="video" aria-pressed="false"><svg class="ico sm"><use href="#i-video"/></svg>视频</button>
+      </div>
+      <div class="subtabs">
+        <button class="subtab active" data-act="view" data-view="content" aria-pressed="true">内容</button>
+        <button class="subtab" data-act="view" data-view="comments" aria-pressed="false">留言 · 讨论</button>
+        <button class="subtab" data-act="view" data-view="listings" aria-pressed="false">本房间分类信息</button>
+      </div>
+    </div>
+
+    <div class="notice" id="notice"><svg class="ico"><use href="#i-info"/></svg><span id="noticeText">欢迎在房间内发布内容、分享进度与交流。</span></div>
+    <section class="room-private-gate hidden" id="roomPrivateGate" aria-live="polite"></section>
+
+    <div class="panel">
+      <div class="country-guard hidden" id="countryGuard" role="status"></div>
+      <section class="hero">
+        <div class="cover" id="cover" role="img" aria-label="房间封面：新闻女王，纯色占位，非官方海报"><span class="sm" id="coverSub">海外圈 · SERIES ROOM</span><span class="big" id="coverTitle">新聞女王</span></div>
+        <div class="hero-row">
+          <div class="hero-info">
+            <h2 id="roomTitle">新闻女王 追更房间</h2>
+            <div class="hero-meta"><span class="pulse"><i></i><span id="activeStat">今日新增 3 集</span></span><span>·</span><span id="metaText">繁體 / 粵語 · TVB · 2023 · 2 季 28 集</span><span>·</span><span id="subCount">1,284 人加入</span></div>
+            <div class="owner-badge"><svg class="ico sm"><use href="#i-info"/></svg><span id="ownerBadge">用户自建 · 非官方频道 · 与片方无关联</span></div>
+          </div>
+          <div class="hero-actions">
+            <button class="notify-toggle on" id="notifyBtn" data-act="notify" aria-pressed="true"><svg class="ico sm"><use href="#i-bell"/></svg><span id="notifyText">更新通知 · 开</span></button>
+            <button class="join joined" id="joinBtn" data-act="join" aria-pressed="true"><svg class="ico sm" id="joinIcon"><use href="#i-check"/></svg><span id="joinText">已加入</span></button>
+            <span class="owner-pill hidden" id="ownerPill"><svg class="ico sm" aria-hidden="true"><use href="#i-user"/></svg>我是房主</span>
+          </div>
+        </div>
+        <div class="owner-tools hidden" id="ownerTools" role="group" aria-label="房主工具">
+          <button class="mini-btn primary" data-act="publish"><svg class="ico sm"><use href="#i-send"/></svg>发布到本房间</button>
+          <button class="mini-btn" id="privacyToggle" data-act="privacy-toggle" aria-pressed="false">设为私密</button>
+          <button class="mini-btn" data-act="demo-member">模拟其他用户加入（演示）</button>
+        </div>
+        <div class="room-privacy-requests hidden" id="roomPrivacyRequests"></div>
+        <p class="hero-desc" id="heroDesc">房主按语：按播出顺序整理每一集。欢迎在这里打卡、讨论粤语对白、分享观后感，也可以参加每周六伦敦线下观影局。</p>
+        <div class="progress-wrap">
+          <span id="statLabel">我的追更</span>
+          <div class="progress" role="progressbar" aria-label="追更进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="23" id="progressRole"><i id="progressBar" style="width:23%"></i></div>
+          <span id="statText">6 / 26 集</span>
+        </div>
+      </section>
+
+      <div id="viewGeneral" class="hidden">
+        <div class="empty" id="generalRoomIntro" style="margin:16px 0"></div>
+        <div class="toolbar"><span id="generalRoomPostCount">最近讨论</span><span class="ops"><button class="mini-btn primary" data-act="goto-comments"><svg class="ico sm"><use href="#i-chat"/></svg>开始讨论</button></span></div>
+        <div id="generalRoomPosts"></div>
+      </div>
+      <div id="viewSeries">
+        <div class="seasons" id="seasonTabs" role="tablist" aria-label="季度"></div>
+        <div class="toolbar">
+          <span id="epCount">第 1 季 · 共 26 集 · 按集号固定排序</span>
+          <span class="ops">
+            <button class="mini-btn" data-act="sort-eps">按集号重排</button>
+            <button class="mini-btn primary" data-act="toggle-ep"><svg class="ico sm"><use href="#i-plus"/></svg>添加一集</button>
+          </span>
+        </div>
+        <div class="form hidden" id="epForm">
+          <h4>添加一集（房主 / 协作者）</h4>
+          <p class="tip">补充集号、标题与房主按语，和房间成员一起整理追更进度。本表单不提供视频上传。</p>
+          <div class="grid">
+            <div><label for="fNo">集号</label><input id="fNo" type="number" min="1" placeholder="9"></div>
+            <div><label for="fTitle">本集标题</label><input id="fTitle" placeholder="例：直播事故"></div>
+          </div>
+          <div class="field"><label for="fNote">房主按语（原创，选填）</label><input id="fNote" placeholder="例：粵語原聲，簡繁字幕齊"></div>
+          <div class="form-ops">
+            <button class="mini-btn primary" data-act="save-ep">保存并排序</button>
+            <button class="mini-btn" data-act="cancel-ep">取消</button>
+            <span class="hint">发布后写入 audit_log 与溯源台账</span>
+          </div>
+        </div>
+        <div id="epList"></div>
+      </div>
+
+      <div id="viewFilm" class="hidden">
+        <div class="toolbar">
+          <span id="filmCount">王家衛片單 · 6 部 · 自定义顺序</span>
+          <span class="ops">
+            <label class="sr-only" for="filmSort">片单排序方式</label>
+            <select class="sort" id="filmSort">
+              <option value="custom">自定义片单顺序</option><option value="asc">年份（早 → 晚）</option><option value="desc">年份（晚 → 早）</option>
+            </select>
+            <button class="mini-btn primary" data-act="toggle-film"><svg class="ico sm"><use href="#i-plus"/></svg>添加影片</button>
+          </span>
+        </div>
+        <div class="form hidden" id="filmForm">
+          <h4>添加一部电影（房主 / 协作者）</h4>
+          <p class="tip">补充片名、年份和房主按语，按片单顺序与年份整理。海报位使用纯色占位。</p>
+          <div class="grid">
+            <div><label for="mYear">年份</label><input id="mYear" type="number" min="1900" max="2030" placeholder="2000"></div>
+            <div><label for="mTitle">片名</label><input id="mTitle" placeholder="例：花樣年華"></div>
+          </div>
+          <div class="field"><label for="mNote">房主按语（原创，选填）</label><input id="mNote" placeholder="例：片单第 1 部，建议按此顺序看"></div>
+          <div class="form-ops">
+            <button class="mini-btn primary" data-act="save-film">保存到片单</button>
+            <button class="mini-btn" data-act="cancel-film">取消</button>
+            <span class="hint">电影无季/集，按片单顺序排列</span>
+          </div>
+        </div>
+        <div class="film-grid" id="filmGrid"></div>
+      </div>
+
+      <div id="viewVideo" class="hidden">
+        <div class="notice warn"><svg class="ico"><use href="#i-shield"/></svg><span><b>视频房间分三类</b>：用户<b>原创</b>可上传到本平台；<b>官方公开外链</b>可在站内点开播放（客户端直连官方播放器，点击才加载）；<b>付费 / 地区受限 / 盗版</b>内容一律只登记或拒绝。平台不下载、不代理、不缓存视频流。</span></div>
+        <div class="toolbar">
+          <span id="videoCount">伦敦中文生活影像 · 4 条 · 原创 3 / 外链 1</span>
+          <span class="ops">
+            <button class="mini-btn" data-act="toggle-embed"><svg class="ico sm"><use href="#i-link"/></svg>添加外链视频</button>
+            <button class="mini-btn primary" data-act="toggle-video"><svg class="ico sm"><use href="#i-plus"/></svg>上传原创视频</button>
+          </span>
+        </div>
+        <div class="form hidden" id="embedForm">
+          <h4>添加外链视频（站内播放）</h4>
+          <p class="tip">粘贴<b>权利人或官方频道免费公开</b>的视频链接。服务端校验域名白名单、是否允许框架嵌入、<b>英国区是否有授权</b>，通过后才生成卡片。<b>不提供文件上传，不代理、不缓存媒体流</b>。</p>
+          <div class="field"><label for="eUrl">视频原始链接</label><input id="eUrl" type="url" placeholder="例：https://www.youtube.com/watch?v=..."></div>
+          <div class="urlcheck" id="eCheck"><svg class="ico sm"><use href="#i-info"/></svg><span id="eCheckText">输入链接后实时显示白名单与地区授权校验结果（演示）。</span></div>
+          <div class="field"><label for="eProvider">来源平台（服务端白名单）</label>
+            <select id="eProvider">
+              <option>YouTube 官方频道</option><option>Vimeo 官方</option>
+              <option>TVB Anywhere 官方</option><option>其他平台（需人工核验）</option>
+            </select>
+          </div>
+          <div class="field"><label for="eTitle">卡片标题（仅元数据，不复制正文）</label><input id="eTitle" placeholder="例：TVB 官方預告｜新聞女王"></div>
+          <label class="check" for="eConfirm"><input id="eConfirm" type="checkbox"><span>我确认：链接指向权利人或官方频道免费公开的内容，未绕过付费墙、登录、地区限制或防嵌入措施；在英国区可合法观看；同意保留原平台播放器控件、品牌与广告，且不自动播放。</span></label>
+          <div class="form-ops">
+            <button class="mini-btn primary" data-act="save-embed">提交审核</button>
+            <button class="mini-btn" data-act="cancel-embed">取消</button>
+            <span class="hint">审核通过后生成「点击才加载」的外链卡片</span>
+          </div>
+        </div>
+        <div class="form hidden" id="videoForm">
+          <h4>上传原创视频</h4>
+          <p class="tip">这是全平台<b>唯一允许上传视频文件</b>的入口，仅限本人原创。服务端会做哈希去重、时长与大小校验、人工审核，并纳入版权投诉下架流程。</p>
+          <div class="grid">
+            <div><label for="vDur">时长</label><input id="vDur" placeholder="04:12"></div>
+            <div><label for="vTitle">标题</label><input id="vTitle" placeholder="例：倫敦 Ealing 中超開箱"></div>
+          </div>
+          <div class="field"><label for="vFile">视频文件（首版 ≤ 60 秒 / 100 MB）</label><input id="vFile" type="file" accept="video/*"></div>
+          <label class="check" for="vConfirm"><input id="vConfirm" type="checkbox"><span>我确认：视频为本人原创、画面中人物已同意、未使用未授权音乐或影视片段；同意平台按 ToS 与版权投诉政策处置。</span></label>
+          <div class="form-ops">
+            <button class="mini-btn primary" data-act="save-video">提交审核</button>
+            <button class="mini-btn" data-act="cancel-video">取消</button>
+            <span class="hint">未勾选确认无法提交；审核通过前仅自己可见</span>
+          </div>
+        </div>
+        <div id="videoList"></div>
+      </div>
+
+      <div id="viewListings" class="hidden">
+        <div class="toolbar">
+          <span>关联本房间的本地分类信息 · 30 天自动过期</span>
+          <span class="ops"><button class="mini-btn primary" data-act="toggle-listing"><svg class="ico sm"><use href="#i-plus"/></svg>发布分类信息</button></span>
+        </div>
+        <div class="form hidden" id="listingForm">
+          <h4>发布分类信息</h4>
+          <p class="tip">沿用 §8 的 <b>listing_ext</b>：城市、价格、联系方式受控加密、有效期强制填写、手机号验证后方可发布。</p>
+          <div class="grid">
+            <div><label for="lCat">分类</label><select id="lCat"><option>同城活动</option><option>二手转让</option><option>兴趣招募</option><option>问答互助</option></select></div>
+            <div><label for="lTitle">标题</label><input id="lTitle" placeholder="例：周六粤语观影局"></div>
+          </div>
+          <div class="grid" style="margin-top:10px">
+            <div><label for="lPrice">价格 £</label><input id="lPrice" type="number" min="0" placeholder="0"></div>
+            <div><label for="lDays">有效期（天）</label><input id="lDays" type="number" value="30" min="1" max="30"></div>
+          </div>
+          <div class="form-ops">
+            <button class="mini-btn primary" data-act="save-listing">提交审核</button>
+            <button class="mini-btn" data-act="cancel-listing">取消</button>
+            <span class="hint">发布后进入审核队列，非即时可见</span>
+          </div>
+        </div>
+        <div id="listingList"></div>
+      </div>
+
+      <div id="viewComments" class="hidden">
+        <div class="toolbar">
+          <span>房间留言 · 时间倒序 · 其他用户可留言、回复、@ 好友、# 关键词</span>
+          <span class="ops"><span id="commentCount">0 条留言</span></span>
+        </div>
+        <div class="cmt-compose">
+          <label for="cmtBody">写一条留言</label>
+          <textarea id="cmtBody" maxlength="1000" aria-describedby="cmtTip" placeholder="例：@manling 第 7 集那段直播流程太精彩了 #追劇"></textarea>
+          <div class="cmt-media hidden" id="cmtMedia"></div>
+          <div class="cmt-ops">
+            <input class="sr-only" type="file" id="cmtImageInput" accept="image/png,image/jpeg,image/webp" multiple>
+            <button class="mini-btn" data-act="cmt-image" type="button" aria-label="添加图片"><svg class="ico sm"><use href="#i-image"/></svg>图片</button>
+            <button class="mini-btn primary" data-act="add-comment"><svg class="ico sm"><use href="#i-send"/></svg>发布留言</button>
+            <span class="hint">@ 是用户名 · # 是关键词 · 单条最多 5 个关键词</span>
+          </div>
+          <p class="cmt-tip" id="cmtTip">留言与内容共用审核队列、举报入口与 24h 下架 SLA；评论不进「为你推荐」、不推送、不做算法放大。陌生人 @ 默认不产生通知。</p>
+        </div>
+        <div id="commentList"></div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="right">
+    <div class="side-box">
+      <h3>官方频道 vs 用户房间</h3>
+      <div class="side-row"><div class="t">官方频道 · 平台开通</div><div class="s">L1 官方自动 / L2 官方精选随法域启用由平台批量开设，带认证徽章；用户「申请开通」只是需求登记，不是开通动作。</div></div>
+      <div class="side-row"><div class="t">房间 · 用户自建小圈子</div><div class="s">一人可建多个（默认 20 个活跃房间），剧名 / 电影名可作房间名；不带认证徽章、不进官方区域包、与片方无关联。</div></div>
+    </div>
+
+    <div class="side-box">
+      <h3>房间信息</h3>
+      <div class="owner">
+        <div class="avatar uks-av-d" id="ownerAvatar" aria-hidden="true">阿</div>
+        <div><div class="nm" id="ownerName">阿晴</div><div class="hd" id="ownerMeta">房主 · 伦敦 · 已实名</div></div>
+      </div>
+      <div class="side-row"><div class="t">房间形态</div><div class="s" id="sideShape">有序合集 collection · 季 → 集，固定顺序不重排</div></div>
+      <div class="side-row"><div class="t">内容来源</div><div class="s">100% 用户录入与投稿，平台不采集、不自动入库</div></div>
+      <div class="side-row"><div class="t">权限</div><div class="s">房主 / 2 名协作者可排序；其他人可投稿、打卡、讨论</div></div>
+    </div>
+
+    <div class="side-box hidden" id="videoPolicyBox">
+      <h3>站内播放规则</h3>
+      <ul class="rule-list">
+        <li>只嵌入<b>官方 iframe / 平台 SDK</b>，客户端直连源站</li>
+        <li><b>禁止服务端代理、转存、缓存</b>媒体流</li>
+        <li>静态占位，<b>点击才加载</b>第三方播放器</li>
+        <li>加载前告知第三方会收到 IP / 设备信息，并记录同意</li>
+        <li>保留原平台控件、品牌、广告与署名回链</li>
+        <li>校验<b>英国区授权</b>；不可嵌入则降级为跳转卡片</li>
+        <li>不去广告、不自动播放、不下载、不隐藏来源</li>
+        <li>嵌入卡片<b>不进「为你推荐」</b>、不置顶、不推送</li>
+      </ul>
+    </div>
+
+    <div class="side-box">
+      <h3>同好房间</h3>
+      <div class="side-row"><div class="t">港剧黄金年代</div><div class="s">剧集 · 3 部 · 92 集 · 612 人</div></div>
+      <div class="side-row"><div class="t">王家衛片單</div><div class="s">电影 · 8 部 · 340 人</div></div>
+      <div class="side-row"><div class="t">伦敦中文生活影像</div><div class="s">视频 · 原创为主 · 908 人</div></div>
+    </div>
+
+    <div class="side-box">
+      <h3>版权与举报</h3>
+      <div class="legal">
+        依据 <b>CDPA 1988</b> 与 <b>E-Commerce Regulations 2002</b> 托管抗辩：影视正片与搬运视频不上传、不转存；<b>用户原创视频</b>可托管，须版权确认、哈希去重与审核。收到权利人通知后迅速下架并留存处置记录。<br><br>
+        OSA 2023 的 illegal content 定义<b>不含知识产权侵权</b>，但用户举报、儿童保护与风险评估义务照常适用。<br><br>
+        <button class="link-btn" data-act="report" data-label="本房间内容（侵权）">举报侵权内容</button> · <button class="link-btn" data-act="policy" data-label="重复侵权者政策">重复侵权者政策</button> · <button class="link-btn" data-act="report" data-label="版权投诉">版权投诉通道</button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<nav class="bottom" aria-label="主导航">
+  <button data-act="nav" data-nav="home" aria-label="首页"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span>首页</span></button>
+  <button data-act="nav" data-nav="add" aria-label="频道"><svg class="ico" aria-hidden="true"><use href="#i-grid"/></svg><span>频道</span></button>
+  <button data-act="nav" data-nav="discover" aria-label="发现"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><span>发现</span></button>
+  <button data-act="nav" data-nav="notifications" aria-label="消息"><svg class="ico" aria-hidden="true"><use href="#i-mail"/></svg><span>消息</span><span class="badge hidden" id="botUnread">0</span></button>
+  <button data-act="nav" data-nav="me" aria-label="我的"><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg><span>我的</span></button>
+</nav>
+<button class="fab" data-act="publish" aria-label="发布内容"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg></button>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* UKCN-SHARED:BEGIN
+ * 海外圈演示共享层 v1 · 源文件 shared/ukcn-shared.js
+ * 三个原型页（首页 / 房间 / 发布）内联同一份副本：运行 node design-system/sync-shared.js 同步，勿直接改内联副本。
+ * 职责：一份 localStorage 演示数据（账号 / 订阅 / 房间 / 帖子 / 通知 / 举报）+ 轻注册弹窗 + 举报面板 + 通用对话框。
+ * 无后端：所有「审核」「其他用户加入」都由演示按钮模拟。 */
+var UKCN = (function(){
+  'use strict';
+  var KEY = 'ukcn.demo.v1', VERSION = 1;
+  var LEGACY_KEYS = ['cnchannels.savedChannels', 'ukcn-publish-posts'];
+  var memory = null;
+  var DEMO_CODE = '246810';
+  var TONES = ['a', 'b', 'c', 'd', 'e', 'f'];
+  var OTHER_USERS = ['@lily_ldn', '@chen_uk', '@amy.l', '@ukmax', '@xiaoyu', '@harbourkid'];
+
+  function hasDoc(){ return typeof document !== 'undefined' && document && typeof document.querySelector === 'function'; }
+  function storage(){
+    try { var w = (typeof window !== 'undefined') ? window : null; return w && w.localStorage ? w.localStorage : null; }
+    catch (e) { return null; }
+  }
+  function now(){ return Date.now(); }
+  function uid(p){ return (p || 'id') + '-' + now().toString(36) + Math.floor(Math.random() * 1e4).toString(36); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  function seed(){
+    var t = now();
+    return {
+      v: VERSION, createdAt: t, signedIn: true,
+      user: { id: 'u-pei', handle: '@pei', name: '裴总', avatar: '裴', tone: 'a', contact: '+44 7700 900123',
+        contactType: 'phone', lang: 'zh-Hans', city: '伦敦', joinedAt: t - 30 * 864e5 },
+      subs: ['visa', 'arrival', 'housing', 'jobs', 'market'],
+      roomsJoined: ['新闻女王 追更房间'],
+      saved: [], mutedRooms: [],
+      rooms: [], posts: [], reports: [], consents: [], contactViews: [],
+      listingsClosed: {}, contactDaily: { date: '', count: 0 }, browseCountry: '',
+      notifications: [
+        { id: 'n1', kind: 'room', title: '房间新增 3 条内容', body: '新闻女王 · 追更房间', ts: t - 12 * 6e4, unread: true, room: '新闻女王 追更房间' },
+        { id: 'n2', kind: 'reply', title: '房间收到新留言', body: '伦敦新手问答 · 关于 GP 注册的讨论有新回复', ts: t - 36e5, unread: true, room: '伦敦新手问答' },
+        { id: 'n3', kind: 'system', title: '欢迎来到海外圈', body: '关注频道后，可在「正在关注」按时间查看最新内容。', ts: t - 864e5, unread: true }
+      ],
+      /* v1.9 三层模型：country = 当前国家（单选，由定位或手动切换决定，不叠加）。
+       * 国际频道（region=GLOBAL）各国共享；国家频道与房间只在同一国家内可见。'' = 未定位 / 未开通，只看国际频道 */
+      country: 'UK',
+      /* v2.1：界面简繁偏好（游客）与「正在关注」上次看到的时间 */
+      prefLang: 'zh-Hans', lastSeen: { following: t - 150 * 6e4 },
+      /* v2.3：房间帖子默认不进频道动态；房主对单条帖子「推到频道」后才出现在所属频道详情（key = 帖子 id）。示例：英国租房看房互助房的房主推过 1 条 */
+      pushes: { 'rp-r6-1': { key: 'rp-r6-1', roomId: 'r6', roomName: '英国租房看房互助房', parentCode: 'housing', by: '@londonhome', ts: t - 30 * 6e4, source: 'seed' } },
+      /* v2.6 站内信（PRD §36.16）：只存在本机演示数据里，真实投递需要后端。
+       * status：active = 正常会话；request = 陌生人第一次发来、待我接受（接受前不能回复，对方看不到我是否已读）。
+       * v1 只支持文字与图片，不做已读回执、不做语音 */
+      dms: [
+        { id: 'dm-manling', peer: { handle: '@manling', name: '曼玲', tone: 'c' }, status: 'active', unread: 1, ts: t - 25 * 6e4,
+          messages: [
+            { id: 'm1', from: 'me', kind: 'text', text: '曼玲你好，新闻女王第二季什么时候开始追更？', ts: t - 3 * 36e5 },
+            { id: 'm2', from: 'peer', kind: 'text', text: '这周六晚上开始～房间里我置顶了时间表，到时候一起讨论。', ts: t - 25 * 6e4 }
+          ] },
+        { id: 'dm-londonhome', peer: { handle: '@londonhome', name: '伦敦看房互助', tone: 'b' }, status: 'active', unread: 0, ts: t - 26 * 36e5,
+          messages: [
+            { id: 'm3', from: 'peer', kind: 'text', text: '你问的 Zone 2 那套，我上周看过，客厅采光不错。', ts: t - 27 * 36e5 },
+            { id: 'm4', from: 'peer', kind: 'image', src: '', alt: '客厅照片（演示占位）', ts: t - 27 * 36e5 + 6e4 },
+            { id: 'm5', from: 'me', kind: 'text', text: '谢谢！押金是几周的？', ts: t - 26 * 36e5 }
+          ] },
+        { id: 'dm-req-lily', peer: { handle: '@lily_newcomer', name: '莉莉', tone: 'e' }, status: 'request', unread: 1, ts: t - 40 * 6e4,
+          messages: [ { id: 'm6', from: 'peer', kind: 'text', text: '你好！看到你在英国租房频道的帖子，想问下押金一般是几周房租？', ts: t - 40 * 6e4 } ] },
+        { id: 'dm-req-sofa', peer: { handle: '@sofa_deals', name: '二手家具小铺', tone: 'f' }, status: 'request', unread: 1, ts: t - 5 * 36e5,
+          messages: [ { id: 'm7', from: 'peer', kind: 'text', text: '你好，我们有全新沙发清仓，私信领优惠码～', ts: t - 5 * 36e5 } ] }
+      ],
+      follows: ['@manling', '@londonhome'], blocked: [], dmPrefs: { allowStrangers: true },
+      demo: { failNext: false },
+      /* v2.7 帖子详情评论（X 式模态下的快速回复）：title -> [{id,by,handle,time,color,text}]，本机持久化 */
+      postComments: {}
+    };
+  }
+  function load(){
+    if (memory) return memory;
+    var ls = storage(), parsed = null;
+    if (ls) { try { parsed = JSON.parse(ls.getItem(KEY) || 'null'); } catch (e) { parsed = null; } }
+    memory = (parsed && parsed.v === VERSION) ? parsed : seed();
+    var base = seed();
+    Object.keys(base).forEach(function(k){ if (memory[k] === undefined) memory[k] = base[k]; });
+    if (!parsed) save();
+    return memory;
+  }
+  function save(){
+    var ls = storage(); if (!ls || !memory) return;
+    try { ls.setItem(KEY, JSON.stringify(memory)); }
+    catch (e) {
+      /* 配额不足：丢掉帖子里的大图，保留文字 */
+      try { memory.posts.forEach(function(p){ if (p.images && p.images.length) { p.imageCount = p.images.length; p.images = []; } }); ls.setItem(KEY, JSON.stringify(memory)); } catch (e2) {}
+    }
+  }
+  function reset(){
+    memory = seed();
+    var ls = storage();
+    if (ls) { try { LEGACY_KEYS.forEach(function(k){ ls.removeItem(k); }); } catch (e) {} }
+    save();
+    return memory;
+  }
+  function state(){ return load(); }
+  function me(){ var s = load(); return s.signedIn && s.user ? s.user : null; }
+  function isGuest(){ return !me(); }
+  /* ---------- 国家（v1.9）：国家频道数据彼此隔离，国际频道共享 ---------- */
+  var LAUNCHED = ['UK'];                       /* 已开通国家（法域），与首页 launchedJurisdictions 一致 */
+  var COUNTRY_NAMES = { UK: '英国', JP: '日本', CA: '加拿大', GLOBAL: '国际' };
+  function country(){ var c = load().country; return typeof c === 'string' ? c : 'UK'; }
+  function setCountry(code){ var s = load(); s.country = (code && code !== 'GLOBAL') ? String(code) : ''; save(); return s.country; }
+  function countryLaunched(code){ return LAUNCHED.indexOf(code === undefined ? country() : code) >= 0; }
+  function countryName(code){ return COUNTRY_NAMES[code] || code || '国际'; }
+  /* 房间可见：挂在国际频道下（或旧数据没记 region）各国都可见；挂在国家频道下只在该国家（且已开通）可见 */
+  function regionVisible(region){ return !region || region === 'GLOBAL' || (region === country() && countryLaunched(region)); }
+  /* 频道 → 法域映射由主页写入，房间页 / 发布页据此判断房间属于国际还是某国（v1.9） */
+  function setChannelRegions(map){ var s = load(); s.channelRegions = map || {}; save(); }
+  function channelRegion(code){ var m = load().channelRegions || {}; return m[code] || ''; }
+  function roomRegion(r){ return (r && (r.region || channelRegion(r.parentCode || r.parent))) || 'GLOBAL'; }
+  /* 频道 → 名称 / 官方分类，同样由主页写入（v2.0：分类跟随所属频道，用户不单独选择） */
+  function setChannelInfo(map){ var s = load(); s.channelInfo = map || {}; save(); }
+  function channelInfo(code){ var m = load().channelInfo || {}; return m[code] || null; }
+  function channelCategory(code){ var i = channelInfo(code); return (i && i.category) || ''; }
+  function roomCategory(r){ return (r && (r.category || channelCategory(r.parentCode || r.parent))) || ''; }
+  function ago(ts){
+    var d = Math.max(0, now() - Number(ts || 0)), m = Math.floor(d / 6e4);
+    if (m < 1) return '刚刚';
+    if (m < 60) return m + ' 分钟前';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + ' 小时前';
+    if (h < 48) return '昨天';
+    return Math.floor(h / 24) + ' 天前';
+  }
+  function notify(n){
+    var s = load();
+    s.notifications.unshift(Object.assign({ id: uid('n'), ts: now(), unread: true, kind: 'system' }, n));
+    if (s.notifications.length > 60) s.notifications.length = 60;
+    save();
+  }
+  function unread(){ return isGuest() ? 0 : load().notifications.filter(function(n){ return n.unread; }).length; }
+  function consumeFail(){ var s = load(); if (s.demo && s.demo.failNext) { s.demo.failNext = false; save(); return true; } return false; }
+  function setFailNext(on){ load().demo.failNext = !!on; save(); }
+
+  /* ---------- 房间 / 帖子 / 审核 ---------- */
+  function findRoom(idOrName){ var s = load(); return s.rooms.filter(function(r){ return r.id === idOrName || r.name === idOrName; })[0] || null; }
+  function roomIsPrivate(room){
+    if (!room) return false;
+    var map = load().roomPrivacy || {};
+    return Object.prototype.hasOwnProperty.call(map, room.id) ? !!map[room.id] : !!(room.private || (findRoom(room.id) || {}).private);
+  }
+  function canViewRoom(room){
+    if (!roomIsPrivate(room)) return true;
+    var u = me(), s = load();
+    return !!(u && (u.handle === room.owner || u.handle === (s.roomOwners || {})[room.id] || (s.roomMembers && (s.roomMembers[room.id] || []).indexOf(u.handle) >= 0)));
+  }
+  function setRoomPrivate(room, on){
+    var u = me(); if (!u || !room || u.handle !== room.owner) return false;
+    var s = load(); if (!s.roomPrivacy) s.roomPrivacy = {};
+    s.roomPrivacy[room.id] = !!on;
+    if (!s.roomOwners) s.roomOwners = {};
+    s.roomOwners[room.id] = room.owner;
+    var stored = findRoom(room.id); if (stored) stored.private = !!on;
+    save(); return true;
+  }
+  function roomJoinRequested(room){ var u = me(), s = load(); return !!(u && room && (s.roomJoinRequests || []).some(function(r){ return r.roomId === room.id && r.handle === u.handle; })); }
+  function requestRoomJoin(room){
+    var u = me(), s = load(); if (!u || !room || !roomIsPrivate(room) || canViewRoom(room)) return false;
+    if (!s.roomJoinRequests) s.roomJoinRequests = [];
+    if (!roomJoinRequested(room)) s.roomJoinRequests.push({ roomId: room.id, handle: u.handle, name: u.name, ts: now() });
+    save(); return true;
+  }
+  function roomRequests(room){ var u = me(); return u && room && u.handle === room.owner ? (load().roomJoinRequests || []).filter(function(r){ return r.roomId === room.id; }) : []; }
+  function approveRoomJoin(room, handle){
+    var u = me(), s = load(); if (!u || !room || u.handle !== room.owner) return false;
+    var i = (s.roomJoinRequests || []).findIndex(function(r){ return r.roomId === room.id && r.handle === handle; });
+    if (i < 0) return false;
+    s.roomJoinRequests.splice(i, 1);
+    if (!s.roomMembers) s.roomMembers = {};
+    if (!s.roomMembers[room.id]) s.roomMembers[room.id] = [];
+    if (s.roomMembers[room.id].indexOf(handle) < 0) s.roomMembers[room.id].push(handle);
+    save(); return true;
+  }
+  function ownedRooms(){ var u = me(); return u ? load().rooms.filter(function(r){ return r.owner === u.handle; }) : []; }
+  function createRoom(r){
+    var s = load(), u = me(); if (!u) return null;
+    var room = Object.assign({ id: uid('room'), owner: u.handle, ownerName: u.name, members: 1, publishedCount: 0, private: false,
+      badge: '用户自建 · 非官方', recent: '刚刚创建', createdAt: now(), updatedOrder: now() }, r);
+    s.rooms.unshift(room);
+    if (s.roomsJoined.indexOf(room.name) < 0) s.roomsJoined.push(room.name);
+    save();
+    return room;
+  }
+  function addPost(p){
+    var s = load(), u = me(); if (!u) return null;
+    if (p && p.dest === 'room' && roomIsPrivate({ id: p.roomId }) && !canViewRoom(findRoom(p.roomId) || { id: p.roomId })) return null;
+    var post = Object.assign({ id: uid('p'), author: u.handle, authorName: u.name, authorTone: u.tone || 'a', ts: now(),
+      status: 'pending', dest: 'profile', tags: [], images: [], title: '', text: '' }, p);
+    s.posts.unshift(post);
+    save();
+    return post;
+  }
+  function postsFor(filter){ return load().posts.filter(filter || function(){ return true; }); }
+  function visiblePost(p){ var u = me(); return p.status === 'published' || (u && p.author === u.handle); }
+  function approve(id){
+    var s = load(), list = s.posts.filter(function(p){ return p.status === 'pending' && (!id || p.id === id); });
+    list.forEach(function(p){
+      p.status = 'published'; p.publishedAt = now();
+      var room = p.roomId ? findRoom(p.roomId) : null;
+      if (room) { room.publishedCount = (room.publishedCount || 0) + 1; room.recent = '刚刚更新'; room.updatedOrder = now(); }
+      notify({ kind: 'review', title: '帖子已通过审核', body: '「' + String(p.title || p.text).slice(0, 24) + '」已在' + (room ? '房间「' + room.name + '」' : '我的动态') + '公开', room: room ? room.name : '' });
+    });
+    save();
+    return list.length;
+  }
+  function reject(id){
+    var s = load(), list = s.posts.filter(function(p){ return p.status === 'pending' && (!id || p.id === id); });
+    list.forEach(function(p){
+      p.status = 'rejected'; p.rejectReason = '疑似包含联系方式或站外引流（演示原因）';
+      if (s.pushes && s.pushes[p.id]) delete s.pushes[p.id];
+      notify({ kind: 'review', title: '帖子未通过审核', body: '「' + String(p.title || p.text).slice(0, 24) + '」' + p.rejectReason + ' · 可修改后重新发布或申诉' });
+    });
+    save();
+    return list.length;
+  }
+  function deletePost(postId){
+    var s = load(), u = me(); if (!u || !postId) return false;
+    var idx = -1;
+    s.posts.forEach(function(p, i){ if (p.id === postId && p.author === u.handle) idx = i; });
+    if (idx < 0) return false;
+    s.posts.splice(idx, 1);
+    if (s.pushes && s.pushes[postId]) delete s.pushes[postId];
+    save();
+    return true;
+  }
+  function roomPostsForFollowing(){
+    var s = load(), u = me();
+    if (!u) return [];
+    var joined = s.roomsJoined || [];
+    return s.posts.filter(function(p){
+      return p.status === 'published' && p.roomId && joined.indexOf(p.roomName || '') >= 0;
+    });
+  }
+  function closeListing(postId, reason){
+    var s = load(), u = me(); if (!u || !postId) return false;
+    if (!s.listingsClosed) s.listingsClosed = {};
+    s.listingsClosed[String(postId)] = { reason: reason || 'closed', ts: now(), by: u.handle };
+    save();
+    return true;
+  }
+  function renewListing(postId){
+    var s = load(), u = me(); if (!u || !postId) return false;
+    var p = s.posts.filter(function(x){ return x.id === postId; })[0];
+    if (p) { p.ts = now(); p.publishedAt = now(); }
+    if (s.listingsClosed && s.listingsClosed[String(postId)]) delete s.listingsClosed[String(postId)];
+    save();
+    return true;
+  }
+  function isListingClosed(postId){
+    var s = load(); return !!(s.listingsClosed && s.listingsClosed[String(postId)]);
+  }
+  function listingCloseInfo(postId){
+    var s = load(); return (s.listingsClosed && s.listingsClosed[String(postId)]) || null;
+  }
+  function simulateJoin(roomIdOrName){
+    var rooms = ownedRooms(); if (!rooms.length) return null;
+    var room = (roomIdOrName && findRoom(roomIdOrName)) || rooms[0];
+    var who = OTHER_USERS[Math.floor(Math.random() * OTHER_USERS.length)];
+    room.members = (room.members || 1) + 1;
+    notify({ kind: 'member', title: who + ' 加入了你的房间', body: '「' + room.name + '」现在有 ' + room.members + ' 人', room: room.name });
+    save();
+    return { room: room, who: who };
+  }
+  function logout(){ var s = load(); s.signedIn = false; save(); }
+  function deleteAccount(){
+    var s = load(), u = s.user;
+    if (u) {
+      s.posts = s.posts.filter(function(p){ return p.author !== u.handle; });
+      s.rooms = s.rooms.filter(function(r){ return r.owner !== u.handle; });
+    }
+    s.user = null; s.signedIn = false; s.subs = []; s.roomsJoined = []; s.saved = []; s.mutedRooms = [];
+    s.notifications = []; s.contactViews = [];
+    s.dms = []; s.follows = []; s.blocked = []; s.dmPrefs = { allowStrangers: true };
+    save();
+  }
+  function exportData(){
+    var s = load(), u = s.user;
+    return JSON.stringify({ exportedAt: new Date().toISOString(), note: '演示导出：真实环境 30 天内通过邮件提供下载链接（UK GDPR Art 15 / 20）',
+      account: u, consents: s.consents, subs: s.subs, roomsJoined: s.roomsJoined,
+      rooms: s.rooms.filter(function(r){ return u && r.owner === u.handle; }),
+      posts: s.posts.filter(function(p){ return u && p.author === u.handle; }).map(function(p){ var c = Object.assign({}, p); c.images = (p.images || []).length + ' 张图片（已省略）'; return c; }),
+      reports: s.reports, contactViews: s.contactViews,
+      dms: (s.dms || []).map(function(d){ return { peer: d.peer.handle, status: d.status, messages: d.messages.map(function(m){ return { from: m.from, kind: m.kind, text: m.text || '', ts: m.ts }; }) }; }),
+      follows: s.follows, blocked: s.blocked, dmPrefs: s.dmPrefs }, null, 2);
+  }
+
+  /* ---------- 样式（只用 tokens，首次打开弹层时注入） ---------- */
+  var CSS = ''
+    + '.uks-backdrop{position:fixed;inset:0;z-index:var(--z-modal);background:color-mix(in srgb,var(--text) 38%,transparent);display:flex;align-items:flex-end;justify-content:center;padding:0}'
+    + '@media(min-width:761px){.uks-backdrop{align-items:center;padding:24px}}'
+    + '.uks-sheet{width:100%;max-width:440px;max-height:92vh;overflow:auto;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-lg) var(--r-lg) 0 0;box-shadow:var(--shadow);padding:16px 18px 20px;font-size:14px;line-height:1.6}'
+    + '@media(min-width:761px){.uks-sheet{border-radius:var(--r-lg)}}'
+    + '.uks-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}'
+    + '.uks-step{font-size:12px;color:var(--muted);font-weight:600}'
+    + '.uks-dots{display:flex;gap:4px;margin-left:4px}.uks-dots i{width:18px;height:4px;border-radius:var(--r-pill);background:var(--border)}.uks-dots i.on{background:var(--accent-strong)}'
+    + '.uks-x{margin-left:auto;width:var(--tap);height:var(--tap);border-radius:50%;display:grid;place-items:center;color:var(--muted);background:transparent;border:0;cursor:pointer}'
+    + '.uks-x:hover{background:var(--hover);color:var(--text)}'
+    + '.uks-x svg,.uks-ico{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}'
+    + '.uks-sheet h2{margin:2px 0 4px;font-size:19px;line-height:1.35}'
+    + '.uks-sub{margin:0 0 14px;color:var(--muted);font-size:13px}'
+    + '.uks-seg{display:flex;gap:6px;margin-bottom:12px}'
+    + '.uks-seg button{flex:1;min-height:var(--tap);border-radius:var(--r-pill);border:1px solid var(--line);background:transparent;color:var(--muted);font:inherit;font-weight:700;cursor:pointer}'
+    + '.uks-seg button[aria-selected="true"]{background:var(--text);color:var(--bg);border-color:var(--text)}'
+    + '.uks-field{margin-bottom:12px}.uks-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600}'
+    + '.uks-row{display:flex;gap:8px}'
+    + '.uks-lbl{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600}.uks-sheet .hidden{display:none}'
+    + '.uks-input{width:100%;min-height:var(--tap);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);color:var(--text);font:inherit;font-size:16px;padding:0 12px}'
+    + 'textarea.uks-input{min-height:88px;padding:10px 12px;resize:vertical}'
+    + '.uks-input:focus{outline:2px solid var(--focus);outline-offset:1px}'
+    + '.uks-btn{min-height:var(--tap);padding:0 16px;border-radius:var(--r-pill);border:1px solid var(--line);background:transparent;color:var(--text);font:inherit;font-weight:700;white-space:nowrap;cursor:pointer}'
+    + '.uks-btn:hover{background:var(--hover)}'
+    + '.uks-btn.primary{background:var(--accent-strong);border-color:var(--accent-strong);color:var(--on-accent)}'
+    + '.uks-btn.primary:hover{opacity:.92}'
+    + '.uks-btn.danger{color:var(--danger);border-color:var(--danger)}'
+    + '.uks-btn[disabled]{opacity:.45;cursor:not-allowed}'
+    + '.uks-btn[aria-busy="true"]{opacity:.7;cursor:progress}'
+    + '.uks-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}'
+    + '.uks-actions .uks-btn.primary{flex:1}'
+    + '.uks-hint{font-size:12px;color:var(--muted);margin:6px 0 0}'
+    + '.uks-hint b{color:var(--text)}'
+    + '.uks-err{font-size:13px;color:var(--danger);margin:6px 0 0;min-height:0}'
+    + '.uks-err:empty{display:none}'
+    + '.uks-check{display:flex;gap:10px;align-items:flex-start;min-height:var(--tap);padding:6px 0;font-size:14px;cursor:pointer}'
+    + '.uks-check input{width:20px;height:20px;margin:2px 0 0;flex:none;accent-color:var(--accent-strong)}'
+    + '.uks-check small{display:block;color:var(--muted);font-size:12px}'
+    + '.uks-link{background:none;border:0;padding:0;color:var(--accent-ink);font:inherit;text-decoration:underline;cursor:pointer}'
+    + '.uks-tones{display:flex;gap:8px;flex-wrap:wrap}'
+    + '.uks-tone{width:var(--tap);height:var(--tap);border-radius:50%;border:2px solid transparent;display:grid;place-items:center;color:var(--on-accent);font-weight:800;cursor:pointer}'
+    + '.uks-tone[aria-checked="true"]{border-color:var(--text);box-shadow:0 0 0 2px var(--bg) inset}'
+    + '.uks-av-a{background:var(--accent-strong);color:var(--on-accent)}.uks-av-b{background:var(--good-solid);color:var(--on-good)}.uks-av-c{background:var(--warn);color:var(--bg)}'
+    + '.uks-av-d{background:var(--danger);color:var(--bg)}.uks-av-e{background:var(--media-ph-b);color:var(--on-media)}.uks-av-f{background:var(--media-ph-c);color:var(--on-media)}'
+    + '.uks-radio{display:flex;gap:10px;align-items:center;min-height:var(--tap);padding:0 12px;border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;cursor:pointer;font-size:14px}'
+    + '.uks-radio:has(input:checked){border-color:var(--accent-strong);background:var(--accent-soft)}'
+    + '.uks-radio input{width:18px;height:18px;margin:0;accent-color:var(--accent-strong)}'
+    + '.uks-done{text-align:center;padding:10px 0 2px}'
+    + '.uks-done .uks-badge{width:56px;height:56px;border-radius:50%;margin:0 auto 10px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-ink)}'
+    + '.uks-done .uks-badge svg{width:28px;height:28px}'
+    + '.uks-reason{margin:0 0 4px}'
+    + '.uks-ticket{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:var(--r-pill);border:1px solid var(--line);font-size:12px;color:var(--muted)}'
+    + '.uks-spin{display:inline-block;width:14px;height:14px;margin-right:6px;vertical-align:-2px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:uksSpin .8s linear infinite}'
+    + '@keyframes uksSpin{to{transform:rotate(360deg)}}'
+    + '@media(prefers-reduced-motion:reduce){.uks-spin{animation:none}}';
+
+  var CHECK_SVG = '<svg class="uks-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>';
+  var CLOSE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  var FLAG_SVG = '<svg class="uks-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4h11l-1.5 4L16 12H5"/></svg>';
+
+  function ensureStyle(){
+    if (!hasDoc() || typeof document.createElement !== 'function' || !document.head) return;
+    if (document.getElementById && document.getElementById('uksStyle')) return;
+    var st = document.createElement('style'); st.id = 'uksStyle'; st.textContent = CSS; document.head.appendChild(st);
+  }
+
+  /* ---------- 通用弹层 ---------- */
+  var layer = null, lastFocus = null, onCloseCb = null;
+  function closeLayer(){
+    if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
+    layer = null;
+    if (typeof document !== 'undefined' && document.removeEventListener) document.removeEventListener('keydown', trapKeys, true);
+    if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) {} }
+    var cb = onCloseCb; onCloseCb = null; if (cb) cb();
+  }
+  function trapKeys(e){
+    if (!layer) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeLayer(); return; }
+    if (e.key !== 'Tab') return;
+    var f = Array.prototype.filter.call(layer.querySelectorAll('button,input,select,textarea,a[href]'), function(el){ return !el.disabled && el.offsetParent !== null; });
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+  function openLayer(html, onClose){
+    if (!hasDoc() || !document.body || typeof document.createElement !== 'function') return null;
+    ensureStyle();
+    if (layer) { onCloseCb = null; closeLayer(); }
+    lastFocus = document.activeElement;
+    layer = document.createElement('div');
+    layer.className = 'uks-backdrop';
+    layer.innerHTML = html;
+    layer.addEventListener('click', function(e){ if (e.target === layer) closeLayer(); });
+    document.body.appendChild(layer);
+    document.addEventListener('keydown', trapKeys, true);
+    onCloseCb = onClose || null;
+    focusFirst();
+    return layer;
+  }
+  function focusFirst(){
+    if (!layer) return;
+    var el = layer.querySelector('[data-uks-autofocus]') || layer.querySelector('input,button.primary,button');
+    if (el && el.focus) { try { el.focus(); } catch (e) {} }
+  }
+  function sheet(title, sub, body, stepInfo){
+    return '<div class="uks-sheet" role="dialog" aria-modal="true" aria-labelledby="uksTitle">'
+      + '<div class="uks-head">' + (stepInfo || '') + '<button type="button" class="uks-x" data-uks-close aria-label="关闭">' + CLOSE_SVG + '</button></div>'
+      + '<h2 id="uksTitle">' + esc(title) + '</h2>' + (sub ? '<p class="uks-sub">' + esc(sub) + '</p>' : '')
+      + '<div class="uks-body">' + body + '</div></div>';
+  }
+  function setSheet(title, sub, body, stepInfo){
+    if (!layer) return;
+    layer.innerHTML = sheet(title, sub, body, stepInfo);
+    bindClose();
+    focusFirst();
+  }
+  function bindClose(){
+    if (!layer) return;
+    Array.prototype.forEach.call(layer.querySelectorAll('[data-uks-close]'), function(b){ b.addEventListener('click', function(){ closeLayer(); }); });
+  }
+  function q(sel){ return layer ? layer.querySelector(sel) : null; }
+  function busy(btn, on, label){
+    if (!btn) return;
+    if (on) { btn._label = btn.innerHTML; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.innerHTML = '<span class="uks-spin" aria-hidden="true"></span>' + esc(label || '处理中…'); }
+    else { btn.disabled = false; btn.removeAttribute('aria-busy'); if (btn._label) btn.innerHTML = btn._label; }
+  }
+  function toast(msg){
+    if (!hasDoc()) return;
+    var t = document.querySelector('#toast'); if (!t) return;
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(t._uksTimer); t._uksTimer = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  /* ---------- 轻注册 / 登录（3 屏） ---------- */
+  function dots(n){ return '<span class="uks-step">第 ' + n + ' / 3 步</span><span class="uks-dots" aria-hidden="true"><i class="' + (n >= 1 ? 'on' : '') + '"></i><i class="' + (n >= 2 ? 'on' : '') + '"></i><i class="' + (n >= 3 ? 'on' : '') + '"></i></span>'; }
+  function requireAuth(reason, cb){
+    if (me()) { if (cb) cb(); return true; }
+    openAuth(reason, cb);
+    return false;
+  }
+  function openAuth(reason, cb){
+    var flow = { reason: reason || '继续操作', cb: cb, mode: 'phone', contact: '', sent: false, consent: null };
+    if (!openLayer('')) return;
+    step1(flow);
+  }
+  function step1(flow){
+    var phone = flow.mode === 'phone';
+    setSheet('登录或注册海外圈', '为了' + flow.reason + '，先花 30 秒验证身份。完成后会自动回到这一步。',
+      '<div class="uks-seg" role="tablist" aria-label="验证方式">'
+      + '<button type="button" role="tab" data-uks-mode="phone" aria-selected="' + phone + '">手机号</button>'
+      + '<button type="button" role="tab" data-uks-mode="email" aria-selected="' + (!phone) + '">邮箱</button></div>'
+      + '<div class="uks-field"><label for="uksContact">' + (phone ? '英国手机号' : '邮箱地址') + '</label>'
+      + '<div class="uks-row"><input class="uks-input" id="uksContact" data-uks-autofocus type="' + (phone ? 'tel' : 'email') + '" autocomplete="' + (phone ? 'tel' : 'email') + '" inputmode="' + (phone ? 'tel' : 'email') + '" placeholder="' + (phone ? '07700 900123' : 'name@example.com') + '" value="' + esc(flow.contact) + '">'
+      + '<button type="button" class="uks-btn" data-uks-send>' + (flow.sent ? '重新发送' : '获取验证码') + '</button></div>'
+      + '<p class="uks-err" id="uksContactErr" role="alert"></p></div>'
+      + '<div class="uks-field' + (flow.sent ? '' : ' hidden') + '" id="uksCodeBox"><label for="uksCode">6 位验证码</label>'
+      + '<input class="uks-input" id="uksCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">'
+      + '<p class="uks-hint">演示验证码 <b>' + DEMO_CODE + '</b>（真实环境通过短信或邮件发送，5 分钟内有效）</p>'
+      + '<p class="uks-err" id="uksCodeErr" role="alert"></p></div>'
+      + '<div class="uks-actions"><button type="button" class="uks-btn" data-uks-close>稍后再说</button><button type="button" class="uks-btn primary" data-uks-next ' + (flow.sent ? '' : 'disabled') + '>下一步</button></div>',
+      dots(1));
+    Array.prototype.forEach.call(layer.querySelectorAll('[data-uks-mode]'), function(b){
+      b.addEventListener('click', function(){ flow.mode = b.getAttribute('data-uks-mode'); flow.sent = false; flow.contact = ''; step1(flow); });
+    });
+    var contact = q('#uksContact'), code = q('#uksCode'), next = q('[data-uks-next]');
+    function validContact(v){ v = String(v || '').trim(); return flow.mode === 'phone' ? /^(\+44\s?7\d{3}|07\d{3})\s?\d{3}\s?\d{3}$/.test(v) : /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); }
+    q('[data-uks-send]').addEventListener('click', function(){
+      var btn = this, v = contact.value.trim();
+      q('#uksContactErr').textContent = '';
+      if (!validContact(v)) { q('#uksContactErr').textContent = flow.mode === 'phone' ? '请输入英国手机号，例如 07700 900123' : '邮箱格式不正确'; contact.focus(); return; }
+      busy(btn, true, '发送中…');
+      setTimeout(function(){
+        busy(btn, false);
+        if (consumeFail()) { q('#uksContactErr').textContent = '网络不稳定，验证码没有发出，请重试。'; return; }
+        flow.contact = v; flow.sent = true;
+        q('#uksCodeBox').classList.remove('hidden'); btn.innerHTML = '重新发送';
+        next.disabled = false; code.focus();
+        toast('验证码已发送（演示：' + DEMO_CODE + '）');
+      }, 600);
+    });
+    contact.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); q('[data-uks-send]').click(); } });
+    code.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); next.click(); } });
+    next.addEventListener('click', function(){
+      if (code.value.trim() !== DEMO_CODE) { q('#uksCodeErr').textContent = '验证码不正确，请输入 ' + DEMO_CODE + '（演示）'; code.focus(); return; }
+      var s = load(), norm = function(x){ return String(x || '').replace(/\s/g, '').replace(/^\+44/, '0'); };
+      if (s.user && norm(s.user.contact) === norm(flow.contact)) {
+        s.signedIn = true; save();
+        finish(flow, '欢迎回来，' + s.user.name);
+        return;
+      }
+      step2(flow);
+    });
+  }
+  function step2(flow){
+    setSheet('确认年龄与条款', '首次注册需要你确认以下事项。我们会记录确认时间与条款版本。',
+      '<label class="uks-check"><input type="checkbox" id="uksAge" data-uks-req data-uks-autofocus><span>我已年满 18 岁<small>本服务面向 18 岁及以上用户；未满 18 岁暂不支持注册。</small></span></label>'
+      + '<label class="uks-check"><input type="checkbox" id="uksTerms" data-uks-req><span>我已阅读并同意 <button type="button" class="uks-link" data-uks-doc="服务条款">服务条款</button> 与 <button type="button" class="uks-link" data-uks-doc="社区规范">社区规范</button></span></label>'
+      + '<label class="uks-check"><input type="checkbox" id="uksPrivacy" data-uks-req><span>我已阅读 <button type="button" class="uks-link" data-uks-doc="隐私说明">隐私说明</button><small>手机号 / 邮箱只用于登录与安全验证，不公开、不用于画像。</small></span></label>'
+      + '<label class="uks-check"><input type="checkbox" id="uksMkt"><span>接收活动与产品更新（可选）<small>默认不勾选，可随时在「我的 · 设置」关闭。</small></span></label>'
+      + '<p class="uks-err" id="uksConsentErr" role="alert"></p>'
+      + '<div class="uks-actions"><button type="button" class="uks-btn" data-uks-back>上一步</button><button type="button" class="uks-btn primary" data-uks-next disabled>同意并继续</button></div>',
+      dots(2));
+    var req = layer.querySelectorAll('[data-uks-req]'), next = q('[data-uks-next]');
+    function sync(){ next.disabled = !Array.prototype.every.call(req, function(c){ return c.checked; }); }
+    Array.prototype.forEach.call(req, function(c){ c.addEventListener('change', sync); });
+    Array.prototype.forEach.call(layer.querySelectorAll('[data-uks-doc]'), function(b){ b.addEventListener('click', function(e){ e.preventDefault(); toast('演示：《' + b.getAttribute('data-uks-doc') + '》全文待法务定稿'); }); });
+    q('[data-uks-back]').addEventListener('click', function(){ step1(flow); });
+    next.addEventListener('click', function(){
+      flow.consent = { ts: now(), version: '2026-11', age18: true, terms: true, privacy: true, marketing: !!q('#uksMkt').checked };
+      step3(flow);
+    });
+  }
+  function step3(flow){
+    var lang = (typeof navigator !== 'undefined' && /TW|HK|MO|Hant/i.test(navigator.language || '')) ? 'zh-Hant' : 'zh-Hans';
+    flow.tone = flow.tone || 'a';
+    setSheet('设置你的资料', '昵称和头像会公开显示在你的帖子和房间里，之后可以修改。',
+      '<div class="uks-field"><label for="uksName">昵称（2–20 字）</label><input class="uks-input" id="uksName" data-uks-autofocus maxlength="20" placeholder="例如：伦敦小陈"><p class="uks-err" id="uksNameErr" role="alert"></p></div>'
+      + '<div class="uks-field"><span class="uks-lbl" id="uksToneLbl">头像颜色</span><div class="uks-tones" role="radiogroup" aria-labelledby="uksToneLbl">'
+      + TONES.map(function(t, i){ return '<button type="button" class="uks-tone uks-av-' + t + '" role="radio" aria-checked="' + (t === flow.tone) + '" data-uks-tone="' + t + '" aria-label="头像颜色 ' + (i + 1) + '">' + esc(flow.initial || '我') + '</button>'; }).join('')
+      + '</div></div>'
+      + '<div class="uks-field" role="radiogroup" aria-label="简繁偏好"><span class="uks-lbl">简繁偏好</span>'
+      + '<label class="uks-radio"><input type="radio" name="uksLang" value="zh-Hans" ' + (lang === 'zh-Hans' ? 'checked' : '') + '>简体中文</label>'
+      + '<label class="uks-radio"><input type="radio" name="uksLang" value="zh-Hant" ' + (lang === 'zh-Hant' ? 'checked' : '') + '>繁體中文</label></div>'
+      + '<div class="uks-actions"><button type="button" class="uks-btn" data-uks-back>上一步</button><button type="button" class="uks-btn primary" data-uks-next>完成注册</button></div>',
+      dots(3));
+    var name = q('#uksName');
+    name.addEventListener('input', function(){
+      flow.initial = name.value.trim().charAt(0) || '我';
+      Array.prototype.forEach.call(layer.querySelectorAll('[data-uks-tone]'), function(b){ b.textContent = flow.initial; });
+    });
+    Array.prototype.forEach.call(layer.querySelectorAll('[data-uks-tone]'), function(b){
+      b.addEventListener('click', function(){
+        flow.tone = b.getAttribute('data-uks-tone');
+        Array.prototype.forEach.call(layer.querySelectorAll('[data-uks-tone]'), function(x){ x.setAttribute('aria-checked', String(x === b)); });
+      });
+    });
+    q('[data-uks-back]').addEventListener('click', function(){ step2(flow); });
+    q('[data-uks-next]').addEventListener('click', function(){
+      var nm = name.value.trim();
+      if (nm.length < 2) { q('#uksNameErr').textContent = '昵称至少 2 个字'; name.focus(); return; }
+      var langSel = layer.querySelector('input[name="uksLang"]:checked');
+      var s = load(), t = now();
+      s.user = { id: uid('u'), handle: '@user' + String(t).slice(-4), name: nm, avatar: nm.charAt(0), tone: flow.tone, contact: flow.contact,
+        contactType: flow.mode, lang: langSel ? langSel.value : 'zh-Hans', city: '', joinedAt: t };
+      s.signedIn = true; s.subs = []; s.roomsJoined = []; s.saved = []; s.mutedRooms = [];
+      s.notifications = [{ id: uid('n'), kind: 'system', title: '注册成功，欢迎你 ' + nm, body: '关注几个频道，「正在关注」就会按时间显示它们的更新。', ts: t, unread: true }];
+      s.consents.push(Object.assign({ user: s.user.handle }, flow.consent));
+      s.prefLang = s.user.lang; s.lastSeen = { following: t };
+      save(); applyLang();
+      finish(flow, '注册完成，欢迎你 ' + nm);
+    });
+  }
+  function finish(flow, msg){
+    var cb = flow.cb;
+    onCloseCb = null; closeLayer();
+    toast(msg);
+    if (cb) cb();
+  }
+
+  /* ---------- 举报（选原因 → 提交 → 反馈） ---------- */
+  var REASONS = [
+    ['scam', '诈骗、虚假信息或可疑交易'], ['harass', '骚扰、仇恨或人身攻击'], ['sexual', '色情内容或未成年人风险'],
+    ['ip', '侵犯版权或盗用内容'], ['privacy', '泄露他人隐私（住址、证件、电话）'], ['other', '其他问题']
+  ];
+  function openReport(target, cb){
+    target = target || {};
+    if (!openLayer('')) return;
+    var label = target.label || '这条内容';
+    setSheet('举报' + (target.kindLabel || '内容'), '「' + String(label).slice(0, 40) + '」· 举报不会通知对方。',
+      '<div role="radiogroup" aria-label="举报原因">'
+      + REASONS.map(function(r, i){ return '<label class="uks-radio"><input type="radio" name="uksReason" value="' + r[0] + '"' + (i === 0 ? ' data-uks-autofocus' : '') + '>' + esc(r[1]) + '</label>'; }).join('')
+      + '</div><div class="uks-field hidden" id="uksDetailBox"><label for="uksDetail">补充说明（必填）</label><textarea class="uks-input" id="uksDetail" maxlength="300" placeholder="说明问题所在，方便审核员判断"></textarea></div>'
+      + '<p class="uks-err" id="uksReportErr" role="alert"></p>'
+      + '<p class="uks-hint">' + (me() ? '可在「我的 · 我的举报」查看处理进度。' : '未登录也可以举报；登录后可查看处理进度。') + ' 违法内容 24 小时内处理（OSA 2023）。</p>'
+      + '<div class="uks-actions"><button type="button" class="uks-btn" data-uks-close>取消</button><button type="button" class="uks-btn primary" data-uks-next disabled>提交举报</button></div>',
+      '<span class="uks-step">' + FLAG_SVG + '</span>');
+    var next = q('[data-uks-next]');
+    Array.prototype.forEach.call(layer.querySelectorAll('input[name="uksReason"]'), function(r){
+      r.addEventListener('change', function(){ next.disabled = false; q('#uksDetailBox').classList.toggle('hidden', r.value !== 'other'); });
+    });
+    next.addEventListener('click', function(){
+      var picked = layer.querySelector('input[name="uksReason"]:checked'); if (!picked) return;
+      var detail = (q('#uksDetail') && q('#uksDetail').value.trim()) || '';
+      if (picked.value === 'other' && detail.length < 4) { q('#uksReportErr').textContent = '请补充至少 4 个字的说明'; q('#uksDetail').focus(); return; }
+      busy(next, true, '提交中…');
+      setTimeout(function(){
+        if (consumeFail()) { busy(next, false); q('#uksReportErr').textContent = '提交失败：网络异常。你的选择已保留，请重试。'; return; }
+        var ticket = 'R-' + String(now()).slice(-6);
+        var reasonText = REASONS.filter(function(r){ return r[0] === picked.value; })[0][1];
+        var s = load();
+        s.reports.unshift({ id: uid('r'), ticket: ticket, target: label, kind: target.kind || 'post', reason: reasonText, detail: detail, ts: now(), status: '已受理 · 待审核', by: me() ? me().handle : 'guest' });
+        save();
+        setSheet('已收到你的举报', '',
+          '<div class="uks-done"><div class="uks-badge">' + CHECK_SVG + '</div>'
+          + '<p class="uks-reason">原因：' + esc(reasonText) + '</p>'
+          + '<p class="uks-hint">审核员会尽快处理；违法内容 24 小时内处理，结果会通过通知告诉你。在处理前，你可以屏蔽这条内容。</p>'
+          + '<span class="uks-ticket">工单号 ' + esc(ticket) + '</span></div>'
+          + '<div class="uks-actions"><button type="button" class="uks-btn primary" data-uks-close data-uks-autofocus>完成</button></div>');
+        if (cb) cb(ticket);
+      }, 500);
+    });
+  }
+
+  /* ---------- 通用确认框 ---------- */
+  function confirmDialog(opts, onOk){
+    if (!openLayer('')) { if (onOk) onOk(); return; }
+    setSheet(opts.title || '确认', opts.body || '',
+      '<div class="uks-actions"><button type="button" class="uks-btn" data-uks-close data-uks-autofocus>取消</button><button type="button" class="uks-btn ' + (opts.danger ? 'danger' : 'primary') + '" data-uks-ok>' + esc(opts.ok || '确定') + '</button></div>');
+    q('[data-uks-ok]').addEventListener('click', function(){ onCloseCb = null; closeLayer(); if (onOk) onOk(); });
+  }
+
+  /* ---------- v2.1 简繁：界面文案显示层转换（PRD US-11：UGC 只在显示层转换，原文不改写；本原型对用户内容不转换） ----------
+   * 偏好来源：已登录 = 账号 lang（注册第 3 屏 / 「我的 · 设置」）；游客 = prefLang。三页共用，全站生效。
+   * 转换表由 design-system/gen-hant.py 从页面文案生成（OpenCC s2tw 字表 + 少量词组），勿手改。
+   * 跳过：[data-ugc]（帖子标题正文、话题、留言、用户名、房间名等用户内容）、输入框、textarea、script / style。 */
+  /* HANT-TABLE:BEGIN */
+  var HANT_C = "与與专專业業东東丢丟两兩严嚴个個临臨为為举舉么麼义義乐樂习習书書买買于於云雲亚亞产產亲親仅僅从從仓倉们們价價优優会會传傳伦倫伪偽体體侧側储儲儿兒关關兴興内內册冊写寫决決况況准準减減凑湊几幾凭憑击擊划劃则則刚剛创創删刪别別剧劇办辦务務动動势勢区區医醫华華协協单單卖賣占佔卧臥卫衛却卻厅廳历歷压壓厨廚参參双雙发發变變叠疊号號后後吗嗎启啟员員咨諮响響团團围圍国國图圖圆圓场場块塊垫墊墙牆声聲处處备備复復头頭娱娛学學实實审審宫宮对對导導将將尘塵尽盡层層届屆属屬岁歲岗崗币幣师師帜幟带帶帮幫并並广廣庆慶库庫应應开開异異弃棄张張弹彈强強归歸当當录錄彻徹径徑忆憶态態总總恒恆户戶托託执執扩擴扰擾抛拋护護报報拟擬拦攔择擇挂掛挡擋换換据據摊攤敛斂数數断斷无無旧舊时時昵暱显顯暂暫机機权權条條来來杰傑极極构構柜櫃标標栈棧栏欄树樹样樣档檔检檢楼樓槛檻横橫欢歡气氣汇匯沟溝没沒泄洩浅淺测測浏瀏涨漲温溫游遊滚滾满滿炉爐点點炼煉烧燒热熱爱愛状狀独獨环環现現电電画畫盖蓋盗盜盘盤着著码碼确確礼禮离離种種积積称稱稳穩竖豎笔筆筛篩签籤简簡类類粤粵紧緊红紅约約级級纪紀纬緯纯純纳納线線组組细細终終经經绑綁结結绕繞绘繪给給络絡绝絕统統继繼续續绳繩缓緩编編缘緣缩縮网網职職联聯胀脹胆膽脚腳脸臉节節范範荐薦获獲萝蘿营營虚虛补補装裝见見观觀规規视視览覽觉覺触觸计計订訂认認讨討让讓训訓议議讯訊记記讲講许許论論设設访訪证證评評识識诈詐诉訴诊診词詞试試话話询詢该該详詳语語误誤说說请請读讀调調谢謝谱譜责責败敗账賬货貨质質购購贴貼费費赁賃资資赛賽赞贊趋趨跃躍车車转轉轮輪软軟轻輕载載辑輯输輸辩辯边邊达達过過运運还還这這进進远遠违違连連适適选選递遞邮郵邻鄰采採里裡钟鍾钮鈕铁鐵铺鋪链鏈销銷锁鎖锅鍋错錯键鍵镑鎊镜鏡长長门門闭閉问問闲閒间間闻聞阅閱队隊际際陈陳险險随隨隐隱雇僱静靜页頁顶頂项項顺順须須预預领領频頻题題颜顏额額风風饭飯饮飲馆館馈饋驳駁验驗骗騙骚騷鲜鮮鸭鴨麦麥黄黃齐齊齿齒龄齡龙龍", HANT_P = "一只一隻|一周一週|上周上週|举报檢舉|交并交併|信息資訊|公布公佈|关系關係|分钟分鐘|前台前臺|发布發佈|台不臺不|台会臺會|台共臺共|台创臺創|台可臺可|台后臺後|台品臺品|台官臺官|台开臺開|台批臺批|台按臺按|台控臺控|台播臺播|台操臺操|台管臺管|台编臺編|台自臺自|台说臺說|台账臺賬|台面檯面|合并合併|后台後臺|周五週五|周六週六|周日週日|周末週末|回复回覆|复上覆上|复制複製|复印複印|复用複用|多只多隻|审核審核|尽快儘快|布局佈局|平台平臺|并发併發|房台房臺|手表手錶|批准批准|折叠摺疊|日志日誌|本周本週|每周每週|汇总彙總|注册註冊|注明註明|源台源臺|签约簽約|签证簽證|绘制繪製|网络網絡|联系聯繫|聞台聞臺|视频影片|账号帳號|轻松輕鬆|里拉里拉|重复重複|阿杰阿杰|面团麵糰|面粉麵粉|须发鬚髮|默认預設";
+  /* HANT-TABLE:END */
+  var hantChar = null, hantPhrase = null;
+  function hantTables(){
+    if (hantChar) return;
+    hantChar = {}; hantPhrase = {};
+    var cs = Array.from ? Array.from(HANT_C) : HANT_C.split('');
+    for (var i = 0; i + 1 < cs.length; i += 2) hantChar[cs[i]] = cs[i + 1];
+    HANT_P.split('|').forEach(function(p){ if (p.length === 4) hantPhrase[p.slice(0, 2)] = p.slice(2); });
+  }
+  function toHant(str){
+    hantTables();
+    var s = String(str == null ? '' : str), out = '';
+    for (var i = 0; i < s.length; i++) {
+      var two = s.substr(i, 2);
+      if (two.length === 2 && hantPhrase[two]) { out += hantPhrase[two]; i++; continue; }
+      var c = s.charAt(i); out += hantChar[c] || c;
+    }
+    return out;
+  }
+  function lang(){ var s = load(), u = me(); return (u && (u.lang === 'zh-Hant' || u.lang === 'zh-Hans')) ? u.lang : (s.prefLang || 'zh-Hans'); }
+  function setLang(l){
+    l = l === 'zh-Hant' ? 'zh-Hant' : 'zh-Hans';
+    var s = load(), u = me(); if (u) u.lang = l; s.prefLang = l; save(); applyLang();
+    return l;
+  }
+  var langOrig = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  var LANG_ATTRS = ['aria-label', 'placeholder', 'title'];
+  function skipNode(el){
+    for (var n = el; n && n.nodeType === 1; n = n.parentNode) {
+      var tg = n.tagName;
+      if (tg === 'SCRIPT' || tg === 'STYLE' || tg === 'TEXTAREA' || tg === 'NOSCRIPT') return true;
+      if (n.hasAttribute && (n.hasAttribute('data-ugc') || n.hasAttribute('data-no-hant'))) return true;
+    }
+    return false;
+  }
+  function convertText(node, hant){
+    var rec = langOrig.get(node), v = node.nodeValue;
+    if (hant) {
+      if (!rec || (v !== rec.hant && v !== rec.hans)) rec = { hans: v, hant: toHant(v) };
+      else if (v === rec.hans) rec.hant = toHant(v);
+      langOrig.set(node, rec);
+      if (v !== rec.hant) node.nodeValue = rec.hant;
+    } else if (rec && v === rec.hant && rec.hans !== v) node.nodeValue = rec.hans;
+  }
+  function convertAttrs(el, hant){
+    var recs = langOrig.get(el) || {};
+    LANG_ATTRS.forEach(function(a){
+      if (!el.hasAttribute(a)) return;
+      var v = el.getAttribute(a), r = recs[a];
+      if (hant) {
+        if (!r || (v !== r.hant && v !== r.hans)) r = { hans: v, hant: toHant(v) };
+        recs[a] = r; if (v !== r.hant) el.setAttribute(a, r.hant);
+      } else if (r && v === r.hant && r.hans !== v) el.setAttribute(a, r.hans);
+    });
+    langOrig.set(el, recs);
+  }
+  function applyLangTo(root, hant){
+    if (!root || !langOrig) return;
+    if (root.nodeType === 3) { if (!skipNode(root.parentNode)) convertText(root, hant); return; }
+    if (root.nodeType !== 1 || skipNode(root)) return;
+    convertAttrs(root, hant);
+    var walker = document.createTreeWalker(root, 5, { acceptNode: function(n){
+      if (n.nodeType === 1) return skipNode(n) ? 2 : 1;            // REJECT 子树 / ACCEPT
+      return /[\u4e00-\u9fff]/.test(n.nodeValue) ? 1 : 3;         // 只处理含中文的文本
+    } });
+    var n, list = [];
+    while ((n = walker.nextNode())) list.push(n);
+    list.forEach(function(x){ if (x.nodeType === 3) convertText(x, hant); else convertAttrs(x, hant); });
+  }
+  var langObserver = null;
+  function applyLang(){
+    if (!hasDoc() || typeof document.createTreeWalker !== 'function') return;
+    var hant = lang() === 'zh-Hant';
+    document.documentElement.setAttribute('lang', hant ? 'zh-Hant' : 'zh-Hans');
+    if (document.title) { var tt = document.title; if (hant) { if (!document.__hansTitle || toHant(document.__hansTitle) !== tt) document.__hansTitle = tt; document.title = toHant(document.__hansTitle); } else if (document.__hansTitle) document.title = document.__hansTitle; }
+    applyLangTo(document.body, hant);
+    if (!langObserver && typeof MutationObserver !== 'undefined') {
+      langObserver = new MutationObserver(function(muts){
+        if (lang() !== 'zh-Hant') return;
+        muts.forEach(function(m){
+          if (m.type === 'characterData') applyLangTo(m.target, true);
+          else if (m.type === 'attributes') { if (!skipNode(m.target)) convertAttrs(m.target, true); }
+          else Array.prototype.forEach.call(m.addedNodes, function(x){ applyLangTo(x, true); });
+        });
+      });
+      langObserver.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: LANG_ATTRS });
+    }
+  }
+
+  /* ---------- v2.3 房间帖子「推到频道」（PRD §36.11）----------
+   * 默认不进频道动态。只有房主能推、能撤回（平台管理员在正式版后台操作，原型无此角色）；只能推已公开的帖子；
+   * 推送记录只存 key 与房间 / 所属频道，内容仍以原帖为准（原帖删除或下架即不再显示）。显示仍受国家隔离与 norec 约束。 */
+  function pushMap(){ var s = load(); if (!s.pushes) s.pushes = {}; return s.pushes; }
+  function canPush(room){ var u = me(); return !!(u && room && !roomIsPrivate(room) && room.owner === u.handle && room.parentCode); }
+  function pushRoomPost(room, key, source){
+    if (!canPush(room) || !key) return null;
+    var rec = { key: String(key), roomId: room.id, roomName: room.name, parentCode: room.parentCode, by: me().handle, ts: now(), source: source || 'store' };
+    pushMap()[rec.key] = rec; save();
+    return rec;
+  }
+  function unpushRoomPost(room, key){
+    var m = pushMap(), rec = m[key];
+    if (!rec || !canPush(room) || rec.roomId !== room.id) return false;
+    delete m[key]; save();
+    return true;
+  }
+  function pushedPost(key){ return pushMap()[key] || null; }
+  function pushedFor(code){
+    var m = pushMap(), s = load();
+    var postMap = {}; s.posts.forEach(function(p){ postMap[p.id] = p; });
+    return Object.keys(m).map(function(k){ return m[k]; }).filter(function(r){
+      if (code && r.parentCode !== code) return false;
+      var p = postMap[r.key];
+      if (p && p.status !== 'published') return false;
+      return true;
+    }).sort(function(a, b){ return b.ts - a.ts; });
+  }
+
+  /* ---------- v2.6 站内信（私信 / 消息请求 / 拉黑 / 陌生人私信开关）----------
+   * 演示：消息只存在本机 localStorage，真实投递、推送与风控需要后端（PRD §36.16）。v1 只有文字和图片，没有已读回执、没有语音 */
+  var DM_MAX = 1000;
+  function dmList(){ var s = load(); if (!s.dms) s.dms = []; return s.dms; }
+  function blockedList(){ var s = load(); if (!s.blocked) s.blocked = []; return s.blocked; }
+  function isBlocked(h){ return blockedList().indexOf(h) >= 0; }
+  function followsUser(h){ var s = load(); return (s.follows || []).indexOf(h) >= 0; }
+  function followUser(h, on){
+    if (!me() || !h || h === me().handle) return null;
+    var s = load(); if (!s.follows) s.follows = [];
+    var i = s.follows.indexOf(h), want = on === undefined ? i < 0 : !!on;
+    if (want && i < 0) s.follows.push(h); if (!want && i >= 0) s.follows.splice(i, 1);
+    save(); return want;
+  }
+  function dmAllowStrangers(){ var p = load().dmPrefs; return !p || p.allowStrangers !== false; }
+  function setDmAllowStrangers(on){ var s = load(); s.dmPrefs = s.dmPrefs || {}; s.dmPrefs.allowStrangers = !!on; save(); return s.dmPrefs.allowStrangers; }
+  function dmVisible(d){ return !isBlocked(d.peer.handle); }
+  function dmThreads(){ return me() ? dmList().filter(function(d){ return d.status === 'active' && dmVisible(d); }).sort(function(a, b){ return b.ts - a.ts; }) : []; }
+  function dmRequests(){ return me() ? dmList().filter(function(d){ return d.status === 'request' && dmVisible(d); }).sort(function(a, b){ return b.ts - a.ts; }) : []; }
+  function dmThread(id){ for (var i = 0, l = dmList(); i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
+  function dmFind(h){ for (var i = 0, l = dmList(); i < l.length; i++) if (l[i].peer.handle === h) return l[i]; return null; }
+  function dmUnread(){ return me() ? dmList().filter(dmVisible).reduce(function(n, d){ return n + (d.unread || 0); }, 0) : 0; }
+  function unreadAll(){ return unread() + dmUnread(); }
+  /* 我主动发起：没有会话就新建一个 active 会话（对方那边会进「消息请求」或被对方的开关挡住，需要后端） */
+  function dmOpen(peer){
+    if (!me() || !peer || !peer.handle || peer.handle === me().handle) return null;
+    var d = dmFind(peer.handle);
+    if (!d) { d = { id: uid('dm'), peer: { handle: peer.handle, name: peer.name || peer.handle, tone: peer.tone || 'a' }, status: 'active', unread: 0, ts: now(), messages: [] }; dmList().push(d); save(); }
+    return d;
+  }
+  function dmOpenForListing(peer, listingRef){
+    if (!me() || !peer || !peer.handle || peer.handle === me().handle) return null;
+    if (isBlocked(peer.handle)) return null;
+    var d = dmFind(peer.handle);
+    if (!d) {
+      d = { id: uid('dm'), peer: { handle: peer.handle, name: peer.name || peer.handle, tone: peer.tone || 'a' },
+        status: 'active', unread: 0, ts: now(), messages: [],
+        listingInquiry: true, listingRef: listingRef || null };
+      dmList().push(d);
+    } else {
+      d.status = 'active';
+      if (listingRef) d.listingRef = listingRef;
+    }
+    save();
+    return d;
+  }
+  function dmSend(id, msg){
+    var d = dmThread(id); msg = msg || {};
+    if (!me() || !d) return { ok: false, reason: 'auth' };
+    if (isBlocked(d.peer.handle)) return { ok: false, reason: 'blocked' };
+    if (d.status === 'request') return { ok: false, reason: 'request' };
+    var m = { id: uid('m'), from: 'me', ts: now() };
+    if (msg.kind === 'image') { m.kind = 'image'; m.src = msg.src && msg.src.length < 150000 ? msg.src : ''; m.alt = msg.alt || '图片'; }
+    else { var tx = String(msg.text || '').trim(); if (!tx) return { ok: false, reason: 'empty' }; if (tx.length > DM_MAX) return { ok: false, reason: 'long' }; m.kind = 'text'; m.text = tx; }
+    if (msg.listingRef) m.listingRef = msg.listingRef;
+    d.messages.push(m); d.ts = m.ts; save();
+    return { ok: true, message: m };
+  }
+  /* 对方发来（演示工具用）：拉黑 → 丢弃；已有会话 → 追加；我关注的人 → 正常会话；陌生人 → 消息请求，若我关了陌生人私信 → 不送达 */
+  function dmReceive(peer, text, opts){
+    if (!me() || !peer || !peer.handle) return 'auth';
+    if (isBlocked(peer.handle)) return 'blocked';
+    opts = opts || {};
+    var d = dmFind(peer.handle);
+    if (!d) {
+      var stranger = !followsUser(peer.handle);
+      if (stranger && !dmAllowStrangers() && !opts.listingInquiry) return 'filtered';
+      var status = (stranger && !opts.listingInquiry) ? 'request' : 'active';
+      d = { id: uid('dm'), peer: { handle: peer.handle, name: peer.name || peer.handle, tone: peer.tone || 'd' },
+        status: status, unread: 0, ts: now(), messages: [],
+        listingInquiry: !!opts.listingInquiry, listingRef: opts.listingRef || null };
+      dmList().push(d);
+    }
+    var msgObj = { id: uid('m'), from: 'peer', kind: 'text', text: String(text || '你好'), ts: now() };
+    if (opts.listingRef) msgObj.listingRef = opts.listingRef;
+    d.messages.push(msgObj);
+    d.unread = (d.unread || 0) + 1; d.ts = now(); save();
+    return d.status;
+  }
+  var CONTACT_DAILY_LIMIT = 5;
+  function contactViewsRemaining(){
+    var s = load(), today = new Date().toISOString().slice(0, 10);
+    if (!s.contactDaily || s.contactDaily.date !== today) return CONTACT_DAILY_LIMIT;
+    return Math.max(0, CONTACT_DAILY_LIMIT - (s.contactDaily.count || 0));
+  }
+  function recordContactView(title){
+    var s = load(), u = me(), today = new Date().toISOString().slice(0, 10);
+    if (!s.contactDaily || s.contactDaily.date !== today) s.contactDaily = { date: today, count: 0 };
+    if (s.contactDaily.count >= CONTACT_DAILY_LIMIT) return -1;
+    s.contactDaily.count++;
+    s.contactViews.push({ title: title || '', ts: now(), by: u ? u.handle : 'guest' });
+    save();
+    return Math.max(0, CONTACT_DAILY_LIMIT - s.contactDaily.count);
+  }
+  function browseCountry(){ return load().browseCountry || ''; }
+  function setBrowseCountry(code){ var s = load(); s.browseCountry = (code && code !== 'GLOBAL') ? String(code) : ''; save(); return s.browseCountry; }
+  function effectiveCountry(){
+    var c = country();
+    if (c && countryLaunched(c)) return c;
+    var b = browseCountry();
+    if (b && countryLaunched(b)) return b;
+    return c;
+  }
+  function dmMarkRead(id){ var d = dmThread(id); if (d && d.unread) { d.unread = 0; save(); } return d; }
+  function dmAccept(id){ var d = dmThread(id); if (!me() || !d || d.status !== 'request') return false; d.status = 'active'; save(); return true; }
+  function dmDelete(id){ var l = dmList(), n = l.length; load().dms = l.filter(function(d){ return d.id !== id; }); save(); return load().dms.length < n; }
+  function blockUser(h){ if (!me() || !h) return false; var b = blockedList(); if (b.indexOf(h) < 0) b.push(h); save(); return true; }
+  function unblockUser(h){ var b = blockedList(), i = b.indexOf(h); if (i >= 0) { b.splice(i, 1); save(); return true; } return false; }
+
+  /* ---------- v2.5 喜欢（按账号存；游客不能点，先轻注册） ---------- */
+  function likeMap(){ var s = load(); if (!s.likes) s.likes = {}; return s.likes; }
+  function liked(key){ return !!(me() && key && likeMap()[String(key)]); }
+  function toggleLike(key){
+    if (!me() || !key) return null;
+    var m = likeMap(), k = String(key);
+    if (m[k]) delete m[k]; else m[k] = now();
+    save();
+    return !!m[k];
+  }
+
+  /* ---------- v2.5 发布草稿自动保存（一份；发布成功或手动清空后删除） ---------- */
+  function draft(){ var d = load().draft; return d && (String(d.text || '').trim() || String(d.title || '').trim()) ? d : null; }
+  function saveDraft(d){
+    var s = load();
+    if (!d || !(String(d.text || '').trim() || String(d.title || '').trim())) { if (s.draft) { delete s.draft; save(); } return null; }
+    s.draft = { text: String(d.text || ''), title: String(d.title || ''), type: d.type || 'text', topics: (d.topics || []).slice(0, 10), dest: d.dest || '', ts: now() };
+    save();
+    return s.draft;
+  }
+  function clearDraft(){ var s = load(); if (s.draft) { delete s.draft; save(); } }
+
+  /* ---------- v2.5 分享：系统分享面板 → 复制链接 → 提示链接（不发任何外部请求） ---------- */
+  function shareLink(opts){
+    opts = opts || {};
+    var url = opts.url || (typeof location !== 'undefined' ? String(location.href).split('#')[0] : '');
+    var title = opts.title || '海外圈';
+    var nav = typeof navigator !== 'undefined' ? navigator : null;
+    var done = function(msg){ toast(msg); return msg; };
+    if (nav && typeof nav.share === 'function' && opts.native !== false) {
+      return nav.share({ title: title, url: url }).then(function(){ return done('已打开系统分享'); }, function(){ return 'cancel'; });
+    }
+    if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
+      return nav.clipboard.writeText(url).then(function(){ return done('链接已复制，可以粘贴发给朋友'); }, function(){ return done('复制失败，请长按地址栏复制链接'); });
+    }
+    return Promise.resolve(done('复制失败，请长按地址栏复制链接'));
+  }
+
+  /* ---------- v2.1 「正在关注」上次看到的时间（US-03 未读分隔线） ---------- */
+  function lastSeen(key){ var s = load(); s.lastSeen = s.lastSeen || {}; return Number(s.lastSeen[key] || 0); }
+  function markSeen(key, ts){ var s = load(); s.lastSeen = s.lastSeen || {}; s.lastSeen[key] = ts || now(); save(); return s.lastSeen[key]; }
+
+  /* ---------- v2.1 官方 AI 自动关键词（演示版，PRD §30.6）----------
+   * 只在用户一个关键词都没填时触发；最多 5 个，每个 ≤12 字；只读标题 + 正文 + 分类，不读位置、订阅与行为；
+   * 本地受控词表匹配代替模型，低置信（正文太短）返回空数组，绝不阻塞发布。 */
+  var AI_MAX = 5;
+  var AI_LEXICON = [
+    ['租房', /租房|房租|租金|整租|出租|求租|租屋/], ['合租', /合租|室友|单间/], ['押金保护', /押金|deposit|DPS|TDS|mydeposits/i],
+    ['包bills', /bills|水电|包网/i], ['看房', /看房|房源|采光|户型/], ['二手', /二手|转让|闲置|九成新|出售/], ['家具', /家具|书桌|椅子|沙发|衣柜|床垫|IKEA/i],
+    ['电器', /电器|电饭煲|微波炉|冰箱|洗衣机|吸尘器/], ['自取', /自取|自提|当面交收|上门取/], ['兼职', /兼职|part.?time|时薪|小时工/i], ['求职', /求职|招聘|岗位|面试|简历|实习/],
+    ['工作签证', /工作签|工签|right to work|sponsor/i], ['签证', /签证|visa|BRP|eVisa/i], ['GP注册', /GP|NHS|看病|诊所/], ['落地', /落地|新生|刚到|开学/],
+    ['交通', /地铁|TfL|Elizabeth line|巴士|火车|Oyster/i], ['美食', /美食|餐厅|火锅|奶茶|烘焙|菠萝包|中超/], ['活动', /活动|聚会|线下|观影局|报名/],
+    ['追剧', /追剧|追更|第\s*\d+\s*集|港剧|剧集/], ['影视', /电影|影视|片单/], ['英超', /英超|足球|球赛|球迷/], ['留学', /留学|大学|学生/], ['council tax', /council tax/i]
+  ];
+  var AI_PLACES = /伦敦|曼彻斯特|伯明翰|爱丁堡|利物浦|Stratford|Ealing|Camden|Lewisham|Canary Wharf|Chinatown|Zone\s?\d/gi;
+  function aiKeywords(text, category){
+    var s = String(text || '');
+    if (s.replace(/\s/g, '').length < 6) return [];
+    var hits = [];
+    AI_LEXICON.forEach(function(e){ var m = s.search(e[1]); if (m >= 0) hits.push({ k: e[0], at: m }); });
+    var pm; AI_PLACES.lastIndex = 0;
+    while ((pm = AI_PLACES.exec(s))) { var k = pm[0].replace(/^zone\s?/i, 'Zone '); if (!hits.some(function(h){ return h.k.toLowerCase() === k.toLowerCase(); })) hits.push({ k: k, at: pm.index }); }
+    hits.sort(function(a, b){ return a.at - b.at; });
+    var out = [];
+    if (category && /^(房产|招聘|市场|生活|交流|活动|其他)$/.test(category) && category !== '其他') out.push(category);
+    hits.forEach(function(h){ if (out.length < AI_MAX && out.indexOf(h.k) < 0 && h.k.length <= 12) out.push(h.k); });
+    return out.slice(0, AI_MAX);
+  }
+
+  ensureStyle();
+  if (hasDoc() && typeof document.createTreeWalker === 'function') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', applyLang); else setTimeout(applyLang, 0);
+  }
+  return {
+    KEY: KEY, state: state, save: save, reset: reset, me: me, isGuest: isGuest, ago: ago, uid: uid, esc: esc,
+    notify: notify, unread: unread, consumeFail: consumeFail, setFailNext: setFailNext,
+    country: country, setCountry: setCountry, countryLaunched: countryLaunched, countryName: countryName, regionVisible: regionVisible,
+    setChannelRegions: setChannelRegions, channelRegion: channelRegion, roomRegion: roomRegion,
+    setChannelInfo: setChannelInfo, channelInfo: channelInfo, channelCategory: channelCategory, roomCategory: roomCategory,
+    findRoom: findRoom, ownedRooms: ownedRooms, createRoom: createRoom, roomIsPrivate: roomIsPrivate, canViewRoom: canViewRoom, setRoomPrivate: setRoomPrivate,
+    roomJoinRequested: roomJoinRequested, requestRoomJoin: requestRoomJoin, roomRequests: roomRequests, approveRoomJoin: approveRoomJoin,
+    addPost: addPost, postsFor: postsFor, visiblePost: visiblePost,
+    approve: approve, reject: reject, deletePost: deletePost, roomPostsForFollowing: roomPostsForFollowing,
+    closeListing: closeListing, renewListing: renewListing, isListingClosed: isListingClosed, listingCloseInfo: listingCloseInfo,
+    contactViewsRemaining: contactViewsRemaining, recordContactView: recordContactView, CONTACT_DAILY_LIMIT: CONTACT_DAILY_LIMIT,
+    browseCountry: browseCountry, setBrowseCountry: setBrowseCountry, effectiveCountry: effectiveCountry,
+    simulateJoin: simulateJoin, logout: logout, deleteAccount: deleteAccount, exportData: exportData,
+    requireAuth: requireAuth, openAuth: openAuth, openReport: openReport, confirm: confirmDialog, closeLayer: closeLayer, toast: toast,
+    dmThreads: dmThreads, dmRequests: dmRequests, dmThread: dmThread, dmFind: dmFind, dmOpen: dmOpen, dmOpenForListing: dmOpenForListing, dmSend: dmSend, dmReceive: dmReceive,
+    dmMarkRead: dmMarkRead, dmAccept: dmAccept, dmDelete: dmDelete, dmUnread: dmUnread, unreadAll: unreadAll, DM_MAX: DM_MAX,
+    blockUser: blockUser, unblockUser: unblockUser, isBlocked: isBlocked, blockedList: function(){ return blockedList().slice(); },
+    followUser: followUser, followsUser: followsUser, dmAllowStrangers: dmAllowStrangers, setDmAllowStrangers: setDmAllowStrangers,
+    liked: liked, toggleLike: toggleLike, draft: draft, saveDraft: saveDraft, clearDraft: clearDraft, shareLink: shareLink,
+    canPush: canPush, pushRoomPost: pushRoomPost, unpushRoomPost: unpushRoomPost, pushedPost: pushedPost, pushedFor: pushedFor,
+    lang: lang, setLang: setLang, toHant: toHant, applyLang: applyLang, lastSeen: lastSeen, markSeen: markSeen, aiKeywords: aiKeywords, AI_MAX: AI_MAX,
+    isOpen: function(){ return !!layer; }
+  };
+})();
+/* UKCN-SHARED:END */
+</script>
+<script>
+const I = (id, cls) => '<svg class="ico ' + (cls || 'sm') + '" aria-hidden="true"><use href="#' + id + '"/></svg>';
+
+const rooms = {
+  general: {
+    top:'房间 · 通用小圈子', title:'通用小圈子', coverTitle:'一起聊', coverSub:'海外圈 · GENERAL ROOM', coverBg:'#2b3a4a',
+    meta:'用户自建 · 通用讨论', active:'欢迎参与讨论', subs:1,
+    desc:'不限定主题，分享经验、提问和交流。请保持友善，并遵守社区规则。',
+    statLabel:'本周参与', sideShape:'通用小圈子 · 讨论与交流',
+    notice:'这是用户自建房间，平台不代表房间成员背书；请勿发布违法内容或未经授权的媒体。'
+  },
+  series: {
+    top:'房间 · 新闻女王 追更', title:'新闻女王 追更房间', coverTitle:'新聞女王', coverSub:'海外圈 · SERIES ROOM', coverBg:'#12303f',
+    meta:'繁體 / 粵語 · TVB · 2023 · 2 季 28 集', active:'今日新增 3 集', subs:1284,
+    desc:'房主按语：按播出顺序整理每一集。欢迎在这里打卡、讨论粤语对白、分享观后感，也可以参加每周六伦敦线下观影局。',
+    statLabel:'我的追更', sideShape:'有序合集 collection · 季 → 集，固定顺序不重排',
+    notice:'欢迎在房间内发布追更记录、分享观后感和参与讨论。'
+  },
+  film: {
+    top:'房间 · 王家衛片單', title:'王家衛片單', coverTitle:'花樣年華', coverSub:'海外圈 · FILM ROOM', coverBg:'#4a2135',
+    meta:'繁體 / 粵語 · 6 部片 · 1990–2013', active:'今日新增 1 部', subs:642,
+    desc:'房主按语：按我自己的观影顺序排，不按评分。看完标一下、分享观后感，方便同好接龙；想加片请投稿。',
+    statLabel:'已看进度', sideShape:'片单 collection · 无季集，按自定义顺序 / 年份排序',
+    notice:'欢迎整理片单、记录观影进度和分享观后感。'
+  },
+  video: {
+    top:'房间 · 倫敦中文生活影像', title:'倫敦中文生活影像', coverTitle:'倫敦日常', coverSub:'海外圈 · VIDEO ROOM', coverBg:'#1d3b2a',
+    meta:'原創為主 · 短片 / 探店 / 活動 · 4 條', active:'今日新增 2 條', subs:908,
+    desc:'房主按语：只收本人原创的当地生活短片，和官方频道的公开内容卡片。搬运影视片段、去水印、录屏一律不收；上传时请勾选版权确认。',
+    statLabel:'本週活躍', sideShape:'视频 collection · 原创可托管 / 他人内容仅官方外链',
+    notice:'<b>原创视频可上传</b>（版权确认 + 哈希去重 + 人工审核）；<b>官方公开外链可站内播放</b>（点击才加载、客户端直连、不代理不缓存）；付费 / 地区受限 / 盗版内容一律拒绝。'
+  }
+};
+
+const seasons = {
+  s1: { label:'第 1 季', total:26, eps:[
+    {no:1,title:'開場：SNK 新聞台',note:'房主：這集交代三派人物關係，建議別跳。',disc:42,seen:true},
+    {no:2,title:'黃金時段之爭',note:'房主：黃金時段的幾個決定值得留意。',disc:28,seen:true},
+    {no:3,title:'直播事故',note:'投稿者 @manling：這集的直播流程值得逐幀看。',disc:35,seen:true},
+    {no:4,title:'誰是接班人',note:'房主：本集起主線轉折，前 3 集沒看建議回補。',disc:19,seen:true},
+    {no:5,title:'收視率陷阱',note:'房主：這集的收視率變化值得留意。',disc:16,seen:true},
+    {no:6,title:'舊人回歸',note:'投稿者 @ukchi：這集揭開了幾段重要往事。',disc:23,seen:true},
+    {no:7,title:'獨家專訪',note:'房主：本集有爭議情節，討論區請勿劇透下一集。',disc:51,seen:false},
+    {no:8,title:'風暴前夜',note:'房主：第 1 季中段，節奏明顯加快。',disc:14,seen:false}
+  ]},
+  s2: { label:'第 2 季', total:0, eps:[] },
+  sp: { label:'特別篇', total:2, eps:[
+    {no:1,title:'幕後訪談（上）',note:'房主：聊聊這一季的角色與幕後故事。',disc:9,seen:false},
+    {no:2,title:'幕後訪談（下）',note:'房主：歡迎分享對角色結局的看法。',disc:7,seen:false}
+  ]}
+};
+
+let films = [
+  {title:'阿飛正傳',year:1990,len:'94 分鐘',note:'房主：片單第 1 部，建議按此順序看。',state:'seen',hue:'#4a3520'},
+  {title:'重慶森林',year:1994,len:'102 分鐘',note:'房主：粵語原聲，歡迎分享觀後感。',state:'seen',hue:'#1d3b4a'},
+  {title:'春光乍洩',year:1997,len:'96 分鐘',note:'房主：很適合看完後聊聊角色關係。',state:'want',hue:'#3a2d4f'},
+  {title:'花樣年華',year:2000,len:'98 分鐘',note:'房主：片單中段，留意畫面裡的細節。',state:'seen',hue:'#4a2135'},
+  {title:'2046',year:2004,len:'129 分鐘',note:'房主：接《花樣年華》看。',state:'want',hue:'#3b2340'},
+  {title:'一代宗師',year:2013,len:'130 分鐘',note:'房主：先標想看，之後補上觀後感。',state:'want',hue:'#2e4030'}
+];
+
+let videos = [
+  {id:'v1',title:'倫敦 Ealing 中超開箱｜粵語',dur:'04:12',origin:'original',by:'@ukchi',note:'原創拍攝 · 已確認人物同意 · 無商用配樂 · 審核通過',status:'published',disc:12,hue:'#1d3b2a'},
+  {id:'v2',title:'SOHO 中文書店探店',dur:'02:38',origin:'original',by:'@manling',note:'原創 · 手機驗證通過 · 哈希已登記',status:'published',disc:8,hue:'#2b3a4a'},
+  {id:'v3',title:'TVB 官方預告｜新聞女王',dur:'01:30',origin:'external',by:'官方頻道',note:'官方免費公開 · 英區可看 · 允許框架嵌入 · 點擊後才載入播放器',status:'published',disc:3,hue:'#12303f',embed:'youtube',embedStatus:'embeddable',provider:'YouTube 官方頻道',ukRights:true},
+  {id:'v4',title:'唐人街新年舞獅（觀眾投稿）',dur:'00:58',origin:'original',by:'@newarrival',note:'待審核 · 版權確認已勾選 · 僅自己可見',status:'pending',disc:0,hue:'#4a3520'},
+  {id:'v5',title:'某劇花絮（官方網站）',dur:'03:20',origin:'external',by:'官方頻道',note:'源站設定 X-Frame-Options 禁止嵌入 → 自動降級為「去原站看」卡片',status:'published',disc:2,hue:'#3a2d4f',embed:'other',embedStatus:'fallback',provider:'官方網站',ukRights:true},
+  {id:'v6',title:'大陸限定綜藝片段（用戶貼連結）',dur:'08:00',origin:'external',by:'@newarrival',note:'駁回：僅中國大陸授權、英區不可用 → 僅登記，不生成播放器',status:'rejected',disc:0,hue:'#4a2135',embed:'blocked',embedStatus:'rejected',provider:'未納入白名單',ukRights:false}
+];
+
+let listings = [
+  {cat:'同城活动',title:'周六《新聞女王》線下觀影局（Ealing）',price:8,days:12,verified:true,note:'11 月 22 日 19:00 · 粵語場 · 剩 3 位'},
+  {cat:'二手转让',title:'轉讓《新聞女王》官方藍光碟（全套）',price:12,days:26,verified:true,note:'倫敦 Ealing 自取 · 附繁體字幕'},
+  {cat:'兴趣招募',title:'粵語對白聽寫小組招募',price:0,days:29,verified:false,note:'線上 · 每週三 · 免費 · 需手機驗證'}
+];
+
+/* §30 · 一人多个「房间 · 小圈子」；房间是用户自建 channel，不是官方频道 */
+let myRooms = [
+  {id:'r1', short:'新聞女王 追更', tag:'26 集', name:'新闻女王 追更房间', type:'series', parentCode:'movie', parentName:'影视与娱乐', region:'GLOBAL',
+   top:'房间 · 新闻女王 追更', coverTitle:'新聞女王', coverSub:'海外圈 · SERIES ROOM', coverBg:'#12303f',
+   meta:'繁體 / 粵語 · TVB · 2023 · 2 季 28 集', active:'今日新增 3 集', subs:1284, owner:'@manling',
+   desc:'房主按语：按播出顺序整理每一集。欢迎在这里打卡、讨论粤语对白、分享观后感，也可以参加每周六伦敦线下观影局。'},
+  {id:'r2', short:'繁花 追更（20 集）', tag:'20 集', name:'繁花 追更房间（20 集）', type:'series', parentCode:'movie', parentName:'影视与娱乐', region:'GLOBAL',
+   top:'房间 · 繁花 追更（20 集）', coverTitle:'繁花', coverSub:'海外圈 · SERIES ROOM', coverBg:'#3b2340',
+   meta:'國語 / 簡繁字幕 · 2023 · 1 季 20 集 · S01E001–S01E020', active:'今日新增 1 集', subs:736, owner:'@pei',
+   desc:'房主按语：一部剧一个房间，全 20 集按 S01E001–S01E020 固定排序、不重排。@manling 帮忙补了 #追劇 考据，欢迎在留言区接龙。'},
+  {id:'r3', short:'花樣年華 片單', tag:'6 部', name:'花样年华 片单', type:'film', parentCode:'movie', parentName:'影视与娱乐', region:'GLOBAL',
+   top:'房间 · 王家衛片單', coverTitle:'花樣年華', coverSub:'海外圈 · FILM ROOM', coverBg:'#4a2135',
+   meta:'繁體 / 粵語 · 6 部片 · 1990–2013', active:'今日新增 1 部', subs:642, owner:'@pei',
+   desc:'房主按语：按我自己的观影顺序排，不按评分。看完标一下、分享观后感，方便同好接龙；想加片请投稿。'},
+  {id:'r4', short:'倫敦中文生活影像', tag:'4 條', name:'伦敦中文生活影像', type:'video', parentCode:'global-community', parentName:'国际华人交流', region:'GLOBAL',
+   top:'房间 · 倫敦中文生活影像', coverTitle:'倫敦日常', coverSub:'海外圈 · VIDEO ROOM', coverBg:'#1d3b2a',
+   meta:'原創為主 · 短片 / 探店 / 活動 · 4 條', active:'今日新增 2 條', subs:908, owner:'@ukchi',
+   desc:'房主按语：只收本人原创的当地生活短片，和官方频道的公开内容卡片。搬运影视片段、去水印、录屏一律不收。'},
+  {id:'r5', short:'伦敦烘焙同好会', tag:'12 条', name:'伦敦烘焙同好会', type:'general', parentCode:'global-community', parentName:'国际华人交流', region:'GLOBAL',
+   top:'房间 · 伦敦烘焙同好会', coverTitle:'一起烘焙', coverSub:'海外圈 · GENERAL ROOM', coverBg:'#654331',
+   meta:'配方交流 · 试做记录 · 伦敦材料互助', active:'3 小时前更新', subs:137, owner:'@baobao',
+   desc:'房主按语：记录每次试做的调整，也欢迎交流本地材料购买经验。请注明配方来源，不要转载未经许可的图文。'},
+  {id:'r6', short:'英国租房看房互助房', tag:'8 条', name:'英国租房看房互助房', type:'general', parentCode:'housing', parentName:'英国租房', region:'UK',
+   top:'房间 · 英国租房看房互助房', coverTitle:'看房互助', coverSub:'海外圈 · HOUSING ROOM', coverBg:'#325264',
+   meta:'英国看房经验 · 合租信息 · 租房避坑', active:'42 分钟前更新', subs:284, owner:'@londonhome',
+   desc:'房主按语：这里分享看房检查清单、租房经验和用户实地记录。房源信息请自行核实，切勿在公开帖子中发布个人证件或完整住址。'}
+];
+function makeSeries(n){
+  const eps=[];
+  for(let i=1;i<=n;i++) eps.push({
+    no:i, title:'第 '+i+' 集',
+    note:'房主：第 '+i+' 集按播出順序固定排序；#追劇 考據歡迎在留言區補充。',
+    disc:i%4, seen:i<=3
+  });
+  return {s1:{label:'第 1 季',total:n,eps:eps}, s2:{label:'第 2 季',total:0,eps:[]}};
+}
+const roomSeries = {r2: makeSeries(20)};
+const S = () => roomSeries[curRoomId] || seasons;
+
+const commentsByRoom = {
+  r1:[
+    {id:'c1',by:'曼玲',handle:'@manling',time:'2 小時前',color:'#e0245e',likes:18,liked:false,status:'published',
+     text:'@pei 第 7 集那段直播流程值得逐幀看，#追劇 考據我補在留言裡了，討論區記得別被劇透。',
+     replies:[
+       {id:'c1r1',by:'阿晴',handle:'@ukchi',time:'1 小時前',color:'#1d9bf0',text:'考據我也想看，先不劇透，看完再來補細節。'},
+       {id:'c1r2',by:'新落地',handle:'@newarrival',time:'30 分鐘前',color:'#7856ff',text:'方便貼一下直播流程那段的集數時間點嗎？ #追劇'}
+     ]},
+    {id:'c2',by:'阿晴',handle:'@ukchi',time:'5 小時前',color:'#1d9bf0',likes:9,liked:false,status:'published',
+     text:'週六 Ealing 觀影局還剩 3 位，#同城 的朋友可以看「本房間分類信息」，看完再一起聊劇情。',
+     replies:[
+       {id:'c2r1',by:'曼玲',handle:'@manling',time:'4 小時前',color:'#e0245e',text:'我報名一個位子，具體地址到時貼在分類信息裡。'}
+     ]},
+    {id:'c3',by:'新落地',handle:'@newarrival',time:'剛剛',color:'#7856ff',likes:0,liked:false,status:'pending',
+     text:'剛加入，想問 @manling 繁體字幕的樣式如何？ #字幕 （審核中 · 僅自己可見）'}
+  ],
+  r2:[
+    {id:'c4',by:'曼玲',handle:'@manling',time:'1 小時前',color:'#e0245e',likes:12,liked:false,status:'published',
+     text:'20 集排序已按 S01E001–S01E020 補齊，#繁花 #追劇 的同好可以在這裡接龍。'},
+    {id:'c5',by:'阿晴',handle:'@ukchi',time:'3 小時前',color:'#1d9bf0',likes:6,liked:false,status:'published',
+     text:'@pei 第 5 集的角色轉折很精彩，房主按語說得好清楚。'}
+  ],
+  r3:[], r4:[],
+  r5:[
+    {id:'c11',by:'阿晴',handle:'@ukchi',time:'1 小时前',color:'#1d9bf0',likes:8,liked:false,status:'published',text:'我在Ealing找到一家亚洲超市有低筋面粉和奶粉，周末可以把地址和包装照片发上来。 #烘焙材料'},
+    {id:'c12',by:'小麦',handle:'@wheatday',time:'昨天',color:'#d69a60',likes:5,liked:false,status:'published',text:'第一次做菠萝包外皮有点软，可能是黄油回温太久。下次试试面团冷藏后再整形，欢迎有经验的朋友指点。 #试做记录'}
+  ],
+  r6:[
+    {id:'c13',by:'租房小助手',handle:'@londonhome',time:'42 分钟前',color:'#325264',likes:6,liked:false,status:'published',text:'看房时建议先测试窗户、热水和供暖，再检查合同中的 bills、押金与入住日期。具体责任请以合同和官方信息为准。 #看房清单'},
+    {id:'c14',by:'阿敏',handle:'@aminmoves',time:'20 分钟前',color:'#8b6f52',likes:3,liked:false,status:'published',text:'补充一点：最好在签约前把已有的墙面、家具和电器情况拍照留档，入住清单双方确认后再保存。 #租房经验'}
+  ]
+};
+const generalRoomPostsByRoom={
+  r5:[
+    {id:'rp-r5-1',author:'@baobao',time:'3 小时前',title:'周末试做：港式菠萝包交流',text:'分享本周试做的配方和失败经验。酥皮冷藏时间多 20 分钟后，成品更容易开酥。',tags:['烘焙','伦敦生活'],color:'#d69a60'},
+    {id:'rp-r5-2',author:'@sugarcloud',time:'昨天',title:'求推荐：伦敦哪里能买到菠萝包酥皮材料？',text:'整理了几家可能买得到的亚洲超市，欢迎补充亲测过的店和替代材料。',tags:['烘焙材料','互助'],color:'#9a765c'}
+  ],
+  r6:[
+    {id:'rp-r6-1',author:'@londonhome',time:'1 小时前',title:'看房清单：先检查窗户、热水和供暖',text:'按现场顺序整理了一份检查清单，欢迎补充不同房型容易忽略的细节。',tags:['看房清单','租房经验'],color:'#325264'},
+    {id:'rp-r6-2',author:'@aminmoves',time:'20 分钟前',title:'入住交接如何留存照片和记录？',text:'建议在交接时把已有墙面、家具和电器情况留档，并让双方确认清单。具体流程以合同和官方信息为准。',tags:['入住交接','租房经验'],color:'#8b6f52'}
+  ]
+};
+let cSeq = 10;
+let cmtImages = [];   // 留言待上传图片（dataURL），v2.6 上传成功即时反馈
+
+const routeParams = new URLSearchParams(location.search);
+const routeName = routeParams.get('name');
+/* 账号、加入状态、用户创建的房间与帖子都来自共享演示数据 UKCN（与首页 / 发布页同一份） */
+const meHandle = () => { const u = UKCN.me(); return u ? u.handle : ''; };
+const isJoinedRoom = name => !UKCN.isGuest() && UKCN.state().roomsJoined.indexOf(name) >= 0;
+const isOwner = r => !!(r && meHandle() && r.owner === meHandle());
+(function mergeStoreRooms(){
+  UKCN.state().rooms.forEach(sr=>{
+    if(myRooms.some(r=>r.id===sr.id)) return;
+    const tp=['general','series','film','video'].indexOf(sr.typeCode)>=0?sr.typeCode:'general';
+    myRooms.push({id:sr.id, short:sr.name.length>10?sr.name.slice(0,10)+'…':sr.name, tag:(sr.type||'通用').split(' · ')[0], name:sr.name, type:tp,
+      parentCode:sr.parentCode||'', parentName:sr.parentName||'', top:'房间 · '+sr.name, coverTitle:sr.name.slice(0,6),
+      coverSub:'海外圈 · USER ROOM', coverBg:'var(--media-ph-b)', meta:'用户自建 · '+(sr.category||'交流'), active:sr.recent||'刚刚创建',
+      subs:sr.members||1, owner:sr.owner, ownerName:sr.ownerName, store:true, private:!!sr.private,
+      desc:sr.private?'房主按语：这是私密房间，内容仅获准成员可见。':'房主按语：新房间，还没有公开内容。发布第一条内容并通过审核后，房间会出现在所属频道详情页。'});
+    if(tp==='series' && !roomSeries[sr.id]) roomSeries[sr.id]=makeSeries(0);
+    commentsByRoom[sr.id]=commentsByRoom[sr.id]||[];
+  });
+})();
+let routeRoom = routeName && myRooms.find(r=>r.id===routeParams.get('roomId')||r.name===routeName);
+if(routeName && !routeRoom){
+  const id=routeParams.get('roomId')||'route-room';
+  routeRoom={id,short:routeName.slice(0,10),tag:'通用',name:routeName,type:routeParams.get('type')||'general',parentCode:routeParams.get('parent')||'',parentName:routeParams.get('parentName')||'',top:'房间 · '+routeName,
+    coverTitle:routeName.slice(0,6),coverSub:'海外圈 · GENERAL ROOM',coverBg:'var(--media-ph-b)',meta:'用户自建 · 通用小圈子',
+    active:'欢迎参与讨论',subs:1,owner:'@community',ownerName:'社区成员',desc:'不限定主题，分享经验、提问和交流。请保持友善，并遵守社区规则。'};
+  myRooms.push(routeRoom); roomSeries[id]=makeSeries(0); commentsByRoom[id]=[];
+}
+let curRoomId = routeRoom?routeRoom.id:'r1', curRoom = routeRoom?routeRoom.type:'series', curSeason = 's1', curView = 'content', joined = isJoinedRoom(routeRoom?routeRoom.name:'新闻女王 追更房间'), subCount = routeRoom?routeRoom.subs:1284, filmSort = 'custom';
+if(!routeRoom && !routeName){ /* 直接打开房间页时默认展示 r1 */ }
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),2100); }
+const activeRoom = () => myRooms.find(r=>r.id===curRoomId) || myRooms[0];
+function heroData(){
+  const b = rooms[curRoom], a = activeRoom();
+  return Object.assign({}, b, {
+    top:a.top, title:a.name, coverTitle:a.coverTitle, coverSub:a.coverSub, coverBg:a.coverBg,
+    meta:a.meta, active:a.active, desc:a.desc
+  });
+}
+/* §30.5 · 先转义再替换：@ 是用户名，# 是关键词 */
+function linkify(s){
+  let out = esc(s);
+  out = out.replace(/(^|[^A-Za-z0-9_.@])@([A-Za-z0-9_]{2,20})/g,
+    (m,p,h)=>p+'<a class="tok" href="#" data-act="tok-search" data-q="@'+h+'" aria-label="查看用户 @'+h+'">@'+h+'</a>');
+  out = out.replace(/#([\u4e00-\u9fa5A-Za-z0-9_]{1,12})/g,
+    (m,k)=>'<a class="tok" href="#" data-act="tok-search" data-q="#'+k+'" aria-label="搜索关键词 #'+k+'">#'+k+'</a>');
+  return out;
+}
+function renderRoomSwitcher(){
+  const mine = myRooms.filter(r => r.id===curRoomId || isOwner(r) || isJoinedRoom(r.name));
+  const owned = myRooms.filter(isOwner).length;
+  $('#myRooms').innerHTML = '<span class="lbl">我加入 / 创建的房间</span>' + mine.map(r =>
+    '<button class="rs-chip '+(r.id===curRoomId?'on':'')+'" data-act="switch-room" data-room-id="'+r.id+'" aria-pressed="'+(r.id===curRoomId)+'">'
+      + esc(r.short) + '<span class="n">'+esc(r.tag)+'</span></button>'
+  ).join('') + (activeRoom().parentCode?'<button class="rs-parent" data-act="parent-channel">所属频道 · '+esc(activeRoom().parentName||'返回频道')+' →</button>':'') + '<button class="rs-new" data-act="create-room">'+I('i-plus','sm')+'新建房间</button>'
+    + '<span class="rs-quota">已创建 '+owned+' / 20 个 · 用户自建 · 非官方频道</span>';
+}
+/* v2.6 站内信入口（PRD §36.16）：作者名 → 首页原型的个人主页；作者旁小「私信」（不放进主操作行）；自己的帖子不显示 */
+function postAuthorHTML(p){
+  const h=p.author, nm=p.authorName||p.author;
+  if(!h||!/^@[\w.-]{1,32}$/.test(h))return '<span class="channel-post-author" data-ugc>'+esc(nm)+'</span>';
+  const mine=(UKCN.me()||{}).handle===h;
+  return '<a class="channel-post-author author-link" href="prototype-x-style.html?user='+encodeURIComponent(h)+'" aria-label="打开 '+esc(nm)+' 的主页" data-ugc>'+esc(nm)+'</a>'
+    +(mine?'':'<a class="dm-chip" data-dm-chip href="prototype-x-style.html?page=notifications&amp;dm='+encodeURIComponent(h)+'&amp;name='+encodeURIComponent(p.authorName||'')+'" aria-label="私信 '+esc(nm)+'"><svg class="ico sm" aria-hidden="true"><use href="#i-mail"/></svg>私信</a>');
+}
+function renderCmtMedia(){
+  const box=$('#cmtMedia');
+  if(!cmtImages.length){ box.classList.add('hidden'); box.innerHTML=''; return; }
+  box.classList.remove('hidden');
+  box.innerHTML=cmtImages.map((im,i)=>'<div class="cmt-img"><img src="'+esc(im)+'" alt="待上传图片"><button type="button" class="rm" data-act="cmt-rm-image" data-i="'+i+'" aria-label="移除图片"><svg class="ico"><use href="#i-close"/></svg></button></div>').join('');
+}
+function renderComments(){
+  const list = commentsByRoom[curRoomId] || (commentsByRoom[curRoomId]=[]);
+  const total = list.reduce((n,c)=>n+1+((c.replies||[]).length),0);
+  $('#commentCount').textContent = total + ' 条留言（含回复）';
+  $('#commentList').innerHTML = list.length ? list.map(c => {
+    const rs = c.replies || [];
+    return '<div class="cmt" data-cid="'+c.id+'">'+
+      '<div class="avatar" style="background:'+c.color+'">'+esc(c.by.charAt(0))+'</div>'+
+      '<div class="cmt-body">'+
+        '<div class="cmt-head"><span class="nm" data-ugc>'+esc(c.by)+'</span><span class="hd">'+esc(c.handle)+'</span>'+
+          '<span class="tm">· '+esc(c.time)+'</span>'+
+          (c.status==='pending'?'<span class="status-pill">审核中 · 仅自己可见</span>':'')+
+        '</div>'+
+        '<div class="cmt-text" data-ugc>'+linkify(c.text)+'</div>'+
+        (c.images&&c.images.length?'<div class="cmt-imgs">'+c.images.map(im=>'<div class="cmt-img"><img src="'+esc(im)+'" alt="留言图片"></div>').join('')+'</div>':'')+
+        '<div class="cmt-ops">'+
+          '<button class="'+(c.liked?'liked':'')+'" data-act="comment-like" data-cid="'+c.id+'" aria-label="点赞这条留言">赞 '+c.likes+'</button>'+
+          '<button data-act="comment-reply" data-cid="'+c.id+'" aria-label="回复 '+esc(c.handle)+'">回复</button>'+
+          '<button data-act="comment-report" data-cid="'+c.id+'" aria-label="举报这条留言">举报</button>'+
+        '</div>'+
+        (rs.length
+          ? '<button class="reply-toggle" data-act="toggle-replies" data-cid="'+c.id+'" aria-expanded="false" aria-label="展开这条留言的回复">'
+              +'<svg class="ico sm"><use href="#i-chat"/></svg>查看 '+rs.length+' 条回复</button>'
+              +'<div class="cmt-replies hidden">'+rs.map(r=>
+                  '<div class="cmt-reply">'+
+                    '<div class="avatar" style="background:'+r.color+'">'+esc(r.by.charAt(0))+'</div>'+
+                    '<div class="rbody">'+
+                      '<div class="rhead"><span class="nm" data-ugc>'+esc(r.by)+'</span><span class="hd">'+esc(r.handle)+'</span><span class="tm">· '+esc(r.time)+'</span></div>'+
+                      '<div class="rtext" data-ugc>'+linkify(r.text)+'</div>'+
+                      (r.images&&r.images.length?'<div class="rimgs">'+r.images.map(im=>'<img src="'+esc(im)+'" alt="回复图片">').join('')+'</div>':'')+
+                    '</div>'+
+                  '</div>'
+                ).join('')+'</div>'
+          : '')+
+      '</div>'+
+    '</div>';
+  }).join('') : '<div class="empty">还没有留言 · 来写第一条，@ 好友一起聊 #追劇</div>';
+}
+function storePostsForRoom(id){
+  return UKCN.postsFor(p=>p.dest==='room'&&p.roomId===id&&UKCN.visiblePost(p)).map(p=>({id:p.id,src:'store',author:p.author,authorName:p.authorName,tone:p.authorTone||'a',time:UKCN.ago(p.ts),title:p.title||String(p.text).slice(0,24),text:p.text,tags:p.tags||[],status:p.status,rejectReason:p.rejectReason}));
+}
+/* v2.3 · PRD §36.11：房间帖子默认不进频道动态。房主可把单条已公开的帖子「推到频道」，也可「撤回推送」；其他人只看到「已推到频道」标记 */
+const parentLabel=room=>room.parentName||(UKCN.channelInfo(room.parentCode)||{}).name||'所属频道';
+/* v2.5 · 房间帖子快捷操作：喜欢（与频道里的同一条帖子状态一致）、分享（系统分享或复制链接） */
+function postQuickOpsHTML(p){
+  const key=p.id||p.title, on=UKCN.liked(key);
+  const cnt=((commentsByRoom[curRoomId]||[]).length);
+  return '<button data-act="like-post" data-key="'+esc(key)+'" class="'+(on?'liked':'')+'" aria-pressed="'+on+'" aria-label="'+(on?'已喜欢':'喜欢')+'这条帖子">'+(on?'已喜欢':'喜欢')+'</button>'
+    +'<button data-act="goto-comments" aria-label="查看本房间留言讨论"><svg class="ico sm"><use href="#i-chat"/></svg>留言 '+cnt+'</button>'
+    +'<button data-act="share-post" data-label="'+esc(p.title||'')+'" aria-label="分享这条帖子">分享</button>';
+}
+function pushOpsHTML(room,p){
+  if(!p.id||!room||!room.parentCode)return '';
+  if(UKCN.roomIsPrivate(room))return '';
+  const pushed=UKCN.pushedPost(p.id), ch=esc(parentLabel(room));
+  const published=!p.status||p.status==='published';
+  if(UKCN.canPush(room)&&published)return pushed
+    ?'<span class="push-tag" data-pushed="'+esc(p.id)+'">已推到频道「'+ch+'」</span><button data-act="unpush-post" data-key="'+esc(p.id)+'" aria-label="撤回推送：这条帖子不再显示在频道动态">撤回推送</button>'
+    :'<button class="push-btn" data-act="push-post" data-key="'+esc(p.id)+'" data-src="'+esc(p.src||'seed')+'" aria-label="把这条帖子推到所属频道「'+ch+'」的动态">推到频道</button>';
+  return pushed?'<span class="push-tag" data-pushed="'+esc(p.id)+'">已推到频道「'+ch+'」</span>':'';
+}
+function renderGeneralRoom(){
+  const room=activeRoom(), posts=storePostsForRoom(curRoomId).concat(generalRoomPostsByRoom[curRoomId]||[]);
+  $('#generalRoomIntro').textContent=room.desc;
+  $('#generalRoomPostCount').textContent='最近讨论 · '+posts.length+' 条房间帖子';
+  $('#generalRoomPosts').innerHTML=posts.length?posts.map(p=>'<article class="channel-post"><div class="channel-post-avatar '+(p.color?'':'uks-av-'+esc(p.tone||'a'))+'"'+(p.color?' style="background:'+p.color+'"':'')+'>'+esc(p.authorName?p.authorName.charAt(0):(p.author.charAt(1)||'房'))+'</div><div class="channel-post-main"><div class="channel-post-head">'+postAuthorHTML(p)+'<span class="channel-post-time">· '+esc(p.time)+'</span>'+(p.status==='pending'?'<span class="status-pill">审核中 · 仅自己可见</span>':p.status==='rejected'?'<span class="status-pill rejected">未通过审核</span>':'')+'</div><h3 class="channel-post-title" data-ugc>'+esc(p.title)+'</h3><p class="channel-post-copy" data-ugc>'+linkify(p.text)+'</p><div class="channel-post-tags" data-ugc>'+p.tags.map(t=>'<span class="tag tok">#'+esc(t)+'</span>').join('')+'</div><div class="cmt-ops">'+postQuickOpsHTML(p)+pushOpsHTML(room,p)+'<button data-act="report" data-label="'+esc(p.title)+'" aria-label="举报这条帖子">举报</button></div></div></article>').join('')
+    :(isOwner(room)
+      ?'<div class="empty"><b>房间还没有内容</b><br>发布第一条并通过审核后，房间才会出现在所属频道详情页，被更多人看到。<div class="empty-cta"><button class="mini-btn primary" data-act="publish">发布第一条内容</button></div></div>'
+      :'<div class="empty">这个房间还没有公开帖子，欢迎开始讨论。</div>');
+}
+
+/* v1.9：国家频道下的房间只在该国可见；切到其他国家或未定位时拦下内容与互动，数据保留 */
+function roomHiddenHere(r){ return !UKCN.regionVisible(UKCN.roomRegion(r||activeRoom())); }
+function renderCountryGuard(){
+  const g=$('#countryGuard'), r=activeRoom(), reg=UKCN.roomRegion(r), hide=roomHiddenHere(r);
+  g.classList.toggle('hidden',!hide);
+  g.innerHTML=hide?'<b>这个房间属于'+UKCN.countryName(reg)+'频道</b>当前国家为「'+UKCN.countryName(UKCN.country()||'GLOBAL')+'」，不显示其他国家的分类数据。房间与你的加入记录都保留，切回'+UKCN.countryName(reg)+'后恢复。':'';
+  document.body.classList.toggle('room-country-hidden',hide);
+}
+function renderHero(){
+  renderCountryGuard();
+  const r = heroData();
+  $('#topTitle').textContent = r.top;
+  $('#roomTitle').textContent = r.title;
+  $('#coverTitle').textContent = r.coverTitle;
+  $('#coverSub').textContent = r.coverSub;
+  $('#cover').style.background = r.coverBg;
+  $('#cover').setAttribute('aria-label','房间封面：'+r.coverTitle+'，纯色占位，非官方海报');
+  $('#metaText').textContent = r.meta+' · 房间 ID：'+(r.id||curRoomId);
+  $('#activeStat').textContent = r.active;
+  $('#heroDesc').textContent = r.desc;
+  $('#statLabel').textContent = r.statLabel;
+  $('#sideShape').textContent = r.sideShape;
+  $('#noticeText').innerHTML = r.notice;
+  $('#videoPolicyBox').classList.toggle('hidden',curRoom!=='video');
+  const room = activeRoom(), owner = isOwner(room);
+  const privateRoom=UKCN.roomIsPrivate(room);
+  $('#privacyToggle').textContent=privateRoom?'改为公开':'设为私密';
+  $('#privacyToggle').setAttribute('aria-pressed',String(privateRoom));
+  const requests=UKCN.roomRequests(room);
+  $('#roomPrivacyRequests').classList.toggle('hidden',!owner||!privateRoom||!requests.length);
+  $('#roomPrivacyRequests').innerHTML=requests.map(req=>'<div class="room-privacy-request"><span>'+esc(req.name||req.handle)+' 申请加入</span><button class="mini-btn" data-act="approve-room-join" data-handle="'+esc(req.handle)+'">批准</button></div>').join('');
+  $('#ownerBadge').textContent = '用户自建 · 非官方频道 · 与片方无关联 · 房主 ' + (owner ? '你' : (room.ownerName || room.owner));
+  $('#ownerName').textContent = owner ? (UKCN.me().name + '（你）') : (room.ownerName || room.owner);
+  $('#ownerAvatar').textContent = String(owner ? UKCN.me().name : (room.ownerName || room.owner.replace('@',''))).charAt(0);
+  $('#ownerAvatar').className = 'avatar uks-av-' + (owner ? (UKCN.me().tone||'a') : 'd');
+  $('#ownerMeta').textContent = '房主 · ' + room.owner + (room.store ? ' · 新建房间' : ' · 已验证手机');
+  $('#roomSwitch').classList.toggle('hidden', !owner);
+  $('#ownerTools').classList.toggle('hidden', !owner);
+  $('#ownerPill').classList.toggle('hidden', !owner);
+  $('#joinBtn').classList.toggle('hidden', owner);
+  $('#subCount').textContent = subCount.toLocaleString()+' 人加入';
+  $('#joinBtn').classList.toggle('joined',joined);
+  $('#joinBtn').setAttribute('aria-pressed',String(joined));
+  $('#joinText').textContent=joined?'已加入':'加入房间';
+  $('#joinIcon').innerHTML=joined?'<use href="#i-check"/>':'<use href="#i-plus"/>';
+  renderStat();
+}
+function renderStat(){
+  let label='', pct=0, val=0, max=100;
+  if(curRoom==='series'){
+    const s=S().s1, seen=s.eps.filter(e=>e.seen).length;
+    label=seen+' / '+s.total+' 集'; pct=Math.round(seen/s.total*100);
+  }else if(curRoom==='film'){
+    const seen=films.filter(f=>f.state==='seen').length;
+    label='已看 '+seen+' / '+films.length+' 部'; pct=Math.round(seen/films.length*100);
+  }else if(curRoom==='video'){
+    const orig=videos.filter(v=>v.origin==='original').length;
+    label='本週 '+ (videos.length+3) +' 條新內容'; pct=Math.min(100,Math.round((videos.length+3)/20*100));
+    val=pct; max=100;
+  }else{
+    label=(commentsByRoom[curRoomId]||[]).length+' 条讨论'; pct=0;
+  }
+  $('#statText').textContent=label;
+  $('#progressBar').style.width=pct+'%';
+  $('#progressRole').setAttribute('aria-valuenow',String(pct));
+}
+
+function renderSeasons(){
+  $('#seasonTabs').innerHTML = Object.keys(S()).map(k=>
+    '<button class="season '+(k===curSeason?'active':'')+'" data-act="season" data-season="'+k+'" role="tab" aria-selected="'+(k===curSeason)+'">'+S()[k].label+(S()[k].total?' ('+S()[k].total+')':'')+'</button>'
+  ).join('');
+}
+function renderEps(){
+  const s = S()[curSeason];
+  $('#epCount').textContent = s.label+' · 共 '+(s.total||s.eps.length)+' 集 · 按集号固定排序';
+  if(!s.eps.length){
+    $('#epList').innerHTML = '<div class="empty">房主尚未錄入本季集數。<br>可點「添加一集」補充，或向房主投稿。<br><br><span style="font-size:12px">隊列空時系統告警，不會自動抓取內容補位</span></div>';
+    return;
+  }
+  $('#epList').innerHTML = s.eps.map((e,i)=>
+    '<div class="ep '+(e.seen?'seen':'')+'" data-i="'+i+'">'+
+      '<div class="ep-no">E'+String(e.no).padStart(2,'0')+'</div>'+
+      '<div class="ep-body">'+
+        '<div class="ep-title">'+esc(e.title)+'</div>'+
+        '<div class="ep-note">'+esc(e.note||'暫無按語，歡迎房主補充')+'</div>'+
+        '<div class="ep-foot">'+
+          '<button class="disc" data-act="goto-comments" aria-label="查看本集讨论">'+I('i-chat')+e.disc+' 條討論</button>'+ 
+        '</div>'+ 
+      '</div>'+
+      '<div class="ep-ops">'+
+        '<button class="op" data-act="move" data-dir="up" aria-label="上移第 '+e.no+' 集">'+I('i-up')+'</button>'+
+        '<button class="op" data-act="move" data-dir="down" aria-label="下移第 '+e.no+' 集">'+I('i-down')+'</button>'+
+      '</div>'+
+      '<button class="mark '+(e.seen?'done':'')+'" data-act="mark-ep" aria-pressed="'+e.seen+'">'+(e.seen?I('i-check')+'已看':'標記已看')+'</button>'+
+    '</div>'
+  ).join('');
+}
+function sortedFilms(){
+  const a=films.slice();
+  if(filmSort==='asc') a.sort((x,y)=>x.year-y.year);
+  if(filmSort==='desc') a.sort((x,y)=>y.year-x.year);
+  return a;
+}
+function renderFilms(){
+  $('#filmCount').textContent = '王家衛片單 · '+films.length+' 部 · '+(filmSort==='custom'?'自定义顺序':filmSort==='asc'?'年份升序':'年份降序');
+  $('#filmGrid').innerHTML = sortedFilms().map(f=>{
+    const i=films.indexOf(f);
+    return '<article class="film-card">'+
+      '<div class="film-poster" style="background:'+f.hue+'" role="img" aria-label="'+esc(f.title)+' 纯色占位封面，非官方海报"><span class="pt">'+esc(f.title)+'</span></div>'+
+      '<div class="film-body">'+
+        '<div class="fn">'+esc(f.title)+'</div>'+
+        '<div class="fm">'+f.year+' · '+esc(f.len)+'</div>'+
+        '<div class="fnote">'+esc(f.note)+'</div>'+
+        '<div class="film-foot">'+
+          '<button class="state-btn '+(f.state==='seen'?'seen':'')+'" data-act="film-state" data-i="'+i+'" aria-pressed="'+(f.state==='seen')+'">'+(f.state==='seen'?I('i-check')+'看過':'想看')+'</button>'+ 
+        '</div>'+
+      '</div>'+
+    '</article>';
+  }).join('');
+}
+/* v3 · 外链内联播放统一组件：三态（占位 / 同意 / 播放器）+ 两种降级 */
+const embedState = {};   // key -> idle | consent | playing
+let embedAlways = false, vidSeq = 10;
+
+function embedSlot(key, it){
+  const provider = it.provider || '第三方平台';
+  const title = it.title || '外鏈影片';
+  const st = embedState[key] || 'idle';
+  const head = '<div class="embed-ph">'+
+    '<div class="ph-mark">'+I('i-link')+'</div>'+
+    '<div class="ph-text"><div class="ph-t">'+esc(title)+'</div>'+
+    '<div class="ph-s">'+esc(provider)+' · 點擊前不載入任何第三方播放器 · 平台不代理、不緩存影片流</div></div>';
+
+  if(it.status==='pending') return '<div class="embed-slot">'+head+
+    '<span class="tag pend">'+I('i-clock')+'連結審核中</span></div></div>';
+
+  if(it.embedStatus==='rejected') return '<div class="embed-slot">'+head+
+    '<span class="provider-badge warn">'+I('i-lock')+'僅登記 · 英區無授權</span>'+
+    '<button class="embed-btn ghost" data-act="embed-report" data-key="'+key+'" aria-label="申诉或举报此链接">'+I('i-flag','sm')+'申訴 / 舉報</button></div></div>';
+
+  if(it.embedStatus==='fallback') return '<div class="embed-slot">'+head+
+    '<span class="provider-badge warn">'+I('i-globe')+'源站禁止嵌入 · 已降級</span>'+
+    '<button class="embed-btn ghost" data-act="embed-external" data-key="'+key+'" aria-label="在原站观看">'+I('i-external','sm')+'去原站看</button></div></div>';
+
+  if(st==='playing') return '<div class="embed-slot"><div class="embed-player">'+
+    '<div class="fake">'+
+      '<div class="fl">OFFICIAL PLAYER · 演示占位</div>'+
+      '<div class="fh">'+esc(provider)+' 官方播放器</div>'+
+      '<div class="fs">真實環境：此處插入 youtube-nocookie.com/embed/… iframe，客戶端直連源站；平台不下載、不代理、不緩存影片流，並保留原平台品牌、控件與廣告。</div>'+
+    '</div>'+
+    '<div class="fbar">'+
+      '<span>'+I('i-play','sm')+' 由 '+esc(provider)+' 提供 · 不自動播放</span>'+
+      '<span>'+
+        '<button class="embed-btn ghost" data-act="embed-external" data-key="'+key+'" style="min-height:36px;color:#e7e9ea;border-color:#6b7378" aria-label="在原站观看">'+I('i-external','sm')+'在原站看</button>'+
+        '<button class="embed-btn ghost" data-act="embed-close" data-key="'+key+'" style="min-height:36px;color:#e7e9ea;border-color:#6b7378" aria-label="收起播放器">'+I('i-close','sm')+'收起</button>'+
+      '</span>'+
+    '</div></div></div>';
+
+  if(st==='consent') return '<div class="embed-slot">'+head+
+    '<button class="embed-btn ghost" data-act="embed-close" data-key="'+key+'" aria-label="取消载入">'+I('i-close','sm')+'取消</button></div>'+
+    '<div class="embed-consent"><div class="ct">'+I('i-shield','sm')+
+      '<span><b>此內容由 '+esc(provider)+' 提供。</b>載入播放器後，'+esc(provider)+' 會收到你的 IP、裝置與瀏覽資訊，並可能設定 cookie（PECR 需事前同意）。我們不代理、不緩存影片。你可以只載入這一次，或去原站觀看；偏好可在設定中撤回。</span></div>'+
+      '<div class="cops">'+
+        '<button class="embed-btn" data-act="embed-once" data-key="'+key+'" aria-label="仅本次载入 '+esc(provider)+' 播放器">'+I('i-play','sm')+'僅本次載入</button>'+
+        '<button class="embed-btn ghost" data-act="embed-always" data-key="'+key+'" aria-label="总是允许此平台播放器">'+I('i-check','sm')+'總是允許此平台</button>'+
+        '<a class="embed-btn ghost" href="#" onclick="return false" data-act="embed-external" data-key="'+key+'" aria-label="去原站观看">'+I('i-external','sm')+'去原站看</a>'+
+      '</div></div></div>';
+
+  return '<div class="embed-slot">'+head+
+    '<button class="embed-btn" data-act="embed-play" data-key="'+key+'" aria-label="在站内播放 '+esc(title)+'">'+I('i-play','sm')+'站內播放</button>'+
+    '<button class="embed-btn ghost" data-act="embed-external" data-key="'+key+'" aria-label="在 '+esc(provider)+' 观看">'+I('i-external','sm')+'去原站看</button>'+
+    '</div></div>';
+}
+function redrawEmbeds(){ renderEps(); renderVideos(); }
+
+function renderVideos(){
+  const orig=videos.filter(v=>v.origin==='original').length;
+  const playable=videos.filter(v=>v.embedStatus==='embeddable' && v.status==='published').length;
+  $('#videoCount').textContent='伦敦中文生活影像 · '+videos.length+' 条 · 原创 '+orig+' / 外链 '+(videos.length-orig)+' · 可站内播放 '+playable;
+  $('#videoList').innerHTML = videos.map((v,i)=>{
+    const isOrig = v.origin==='original';
+    const canInline = !isOrig && v.embedStatus==='embeddable' && v.status==='published';
+    let badge;
+    if(v.status==='pending') badge='<span class="tag pend">'+I('i-clock')+'審核中</span>';
+    else if(v.status==='rejected') badge='<span class="tag pend">'+I('i-lock')+'已駁回 · 僅登記</span>';
+    else if(isOrig) badge='<span class="tag orig">'+I('i-shield')+'原創 · 版權已確認</span>';
+    else if(v.embedStatus==='fallback') badge='<span class="tag linkc">'+I('i-globe')+'禁止嵌入 · 降級跳轉</span>';
+    else badge='<span class="tag linkc">'+I('i-play')+'官方外鏈 · 可站內播放</span>';
+    return '<article class="video-card">'+
+      '<div class="thumb" style="background:'+v.hue+'" data-act="'+(canInline?'embed-play':'play')+'" '+(canInline?'data-key="'+v.id+'"':'data-i="'+i+'"')+' role="button" tabindex="0" aria-label="'+(isOrig?'播放原创视频 ':(canInline?'站内播放官方外链 ':'打开官方外链 '))+esc(v.title)+'">'+
+        '<span class="play">'+((isOrig||canInline)?I('i-play','sm'):I('i-external','sm'))+'</span><span class="dur">'+esc(v.dur)+'</span>'+
+      '</div>'+
+      '<div class="video-body">'+
+        '<div class="video-title">'+esc(v.title)+'</div>'+
+        '<div class="video-meta">'+esc(v.by)+' · '+esc(v.dur)+'</div>'+
+        '<div class="video-note">'+esc(v.note)+'</div>'+
+        '<div class="video-foot">'+badge+
+          '<button class="disc" data-act="goto-comments" aria-label="查看本视频讨论">'+I('i-chat')+v.disc+' 條討論</button>'+
+          '<button class="report" data-act="report" aria-label="举报此视频">'+I('i-flag','sm')+'舉報</button>'+
+        '</div>'+
+        (isOrig ? '' : embedSlot(v.id, v))+
+      '</div>'+
+    '</article>';
+  }).join('');
+}
+function renderListings(){
+  $('#listingList').innerHTML = listings.map(l=>
+    '<div class="listing">'+
+      '<div class="lt">'+esc(l.title)+'</div>'+
+      '<div class="lm">'+esc(l.note)+'</div>'+
+      '<div class="lf">'+
+        '<span class="price">'+(l.price?'£'+l.price:'免费')+'</span>'+
+        '<span class="badge2">'+esc(l.cat)+'</span>'+
+        (l.verified?'<span class="badge2 ok">'+I('i-check')+'已认证</span>':'<span class="badge2">待认证</span>')+
+        '<span class="badge2 exp">'+l.days+' 天后过期</span>'+
+      '</div>'+
+    '</div>'
+  ).join('');
+}
+function renderViews(){
+  const show = id => $(id).classList.remove('hidden');
+  ['#viewGeneral','#viewSeries','#viewFilm','#viewVideo','#viewListings','#viewComments'].forEach(id=>$(id).classList.add('hidden'));
+  if(curView==='comments'){ show('#viewComments'); return; }
+  if(curView==='listings'){ show('#viewListings'); return; }
+  if(curRoom==='general'){show('#viewGeneral');renderGeneralRoom();return;}
+  /* 用户自建房间（共享数据层里有记录）：无论类型都先展示房间帖子，避免新建房间只看到示例剧集 */
+  const own=UKCN.findRoom(curRoomId);
+  $('#viewGeneral').classList.toggle('stacked',!!own);
+  if(own){show('#viewGeneral');renderGeneralRoom();}
+  const v = curRoom.charAt(0).toUpperCase()+curRoom.slice(1);
+  show('#view'+v);
+}
+function syncTabs(){
+  document.querySelectorAll('.room-tab').forEach(b=>{
+    const on = b.dataset.room===curRoom;
+    b.classList.toggle('active',on); b.setAttribute('aria-pressed',String(on));
+  });
+  document.querySelectorAll('.subtab').forEach(b=>{
+    const on = b.dataset.view===curView;
+    b.classList.toggle('active',on); b.setAttribute('aria-pressed',String(on));
+  });
+}
+function updateBadges(){
+  /* v2.6：「消息」角标 = 未读私信 + 未读通知 */
+  const n = UKCN.unreadAll();
+  ['#notifyBadge','#botUnread'].forEach(sel=>{ const b=$(sel); if(!b) return; b.textContent = n>99?'99+':String(n); b.classList.toggle('hidden', !n); });
+  const u = UKCN.me();
+  $('#meNavAvatar').textContent = u ? (u.avatar||u.name.charAt(0)) : '客';
+  $('#meNavAvatar').className = 'avatar uks-av-' + (u ? (u.tone||'a') : 'e');
+  $('#meNavName').textContent = u ? u.name : '游客';
+  $('#meNavHandle').textContent = u ? u.handle + (u.city ? ' · ' + u.city : '') : '点此登录 / 注册';
+}
+function persistJoin(name, on){
+  const s = UKCN.state(); if(UKCN.isGuest()) return;
+  const i = s.roomsJoined.indexOf(name);
+  if(on && i < 0) s.roomsJoined.push(name);
+  if(!on && i >= 0) s.roomsJoined.splice(i, 1);
+  const sr = UKCN.findRoom(curRoomId); if(sr) sr.members = subCount;
+  UKCN.save();
+}
+function renderAll(){
+  updateBadges();
+  renderHero(); renderRoomSwitcher();
+  const room=activeRoom(), locked=UKCN.roomIsPrivate(room)&&!UKCN.canViewRoom(room);
+  document.body.classList.toggle('room-private-locked',locked);
+  $('#roomPrivateGate').classList.toggle('hidden',!locked);
+  if(locked){
+    $('#roomPrivateGate').innerHTML='<h2>'+esc(room.name)+' · 私密房间</h2><p>房间内容仅房主和获准成员可见。申请加入后，等待房主批准。</p>'+
+      (UKCN.isGuest()?'<button class="mini-btn primary" data-act="request-room-join">登录后申请加入</button>':
+      UKCN.roomJoinRequested(room)?'<button class="mini-btn" disabled>已申请 · 等待房主批准</button>':'<button class="mini-btn primary" data-act="request-room-join">申请加入</button>');
+    return;
+  }
+  renderViews(); syncTabs();
+  renderSeasons(); renderEps(); renderFilms(); renderVideos(); renderListings(); renderComments(); renderStat();
+}
+
+document.addEventListener('click', e=>{
+  const el = e.target.closest('[data-act]'); if(!el) return;
+  const act = el.dataset.act;
+  if(act==='privacy-toggle'){
+    const room=activeRoom(), next=!UKCN.roomIsPrivate(room);
+    UKCN.confirm({title:next?'设为私密房间？':'改为公开房间？',body:next?'房间帖子、分类信息和讨论将仅对获准成员可见；已推到频道的帖子会从频道动态移除。':'已有房间内容会重新对所有人可见，房间帖子只有房主推送后才进入频道动态。',ok:next?'设为私密':'确认公开'},()=>{
+      if(UKCN.setRoomPrivate(room,next)){renderAll();toast(next?'房间已设为私密':'房间已改为公开');}
+    }); return;
+  }
+  if(act==='request-room-join'){
+    const request=()=>{if(UKCN.requestRoomJoin(activeRoom())){renderAll();toast('申请已发送，等待房主批准');}};
+    if(UKCN.isGuest())UKCN.requireAuth('申请加入私密房间',request);else request();
+    return;
+  }
+  if(act==='approve-room-join'){
+    if(UKCN.approveRoomJoin(activeRoom(),el.dataset.handle)){renderAll();toast('已批准加入申请');}
+    return;
+  }
+  if(UKCN.roomIsPrivate(activeRoom())&&!UKCN.canViewRoom(activeRoom())&&!['nav','back','theme','mobile','parent-channel','switch-room','create-room'].includes(act)){
+    toast('请先申请加入私密房间'); return;
+  }
+
+  if(act==='nav'){
+    const target = el.dataset.nav || 'home';
+    const map = {
+      home: 'prototype-x-style.html?tab=foryou',
+      add: 'prototype-x-style.html?tab=add&seg=directory',
+      rooms: 'prototype-x-style.html?page=my-channels',
+      me: 'prototype-x-style.html?page=me',
+      discover: 'prototype-x-style.html?page=discover',
+      notifications: 'prototype-x-style.html?page=notifications',
+      favorites: 'prototype-x-style.html?page=favorites',
+    };
+    location.href = map[target] || map.home;
+    return;
+  }
+  if(act==='parent-channel'){
+    const r=activeRoom();
+    if(r.parentCode)location.href='prototype-x-style.html?page=discover&channel='+encodeURIComponent(r.parentCode);
+    return;
+  }
+  if((act==='publish'||act==='add-comment'||act==='join') && roomHiddenHere()){ toast('该房间属于'+UKCN.countryName(UKCN.roomRegion(activeRoom()))+'频道，当前国家不可互动'); return; }
+  if(act==='publish'){ const r=activeRoom();
+    /* v2.0：手机端唯一发帖入口。已加入 / 房主预选当前房间；游客先轻注册，完成后再进发布页 */
+    const go=()=>{ location.href='publish-content.html'+((isOwner(r)||isJoinedRoom(r.name))?'?room='+encodeURIComponent(r.id)+'&roomName='+encodeURIComponent(r.name)+'&parent='+encodeURIComponent(r.parentCode||''):''); };
+    if(UKCN.isGuest()) UKCN.requireAuth('发布内容', go); else go();
+    return; }
+  if(act==='policy'){ toast('演示：《'+el.dataset.label+'》全文待法务定稿'); return; }
+  if(act==='demo-member'){
+    const r=activeRoom();
+    if(!UKCN.findRoom(r.id)){ subCount+=1; renderHero(); UKCN.notify({kind:'member',title:'@lily_ldn 加入了你的房间',body:'「'+r.name+'」现在有 '+subCount+' 人',room:r.name}); updateBadges(); toast('@lily_ldn 加入了「'+r.name+'」· 已发通知'); return; }
+    const res=UKCN.simulateJoin(r.id); if(res){ subCount=res.room.members; r.subs=subCount; renderHero(); updateBadges(); toast(res.who+' 加入了「'+r.name+'」· 已发通知'); }
+    return;
+  }
+  if(act==='back'){ if(history.length>1)history.back();else location.href='prototype-x-style.html'; return; }
+  if(act==='theme'){ const b=document.body; b.dataset.theme = b.dataset.theme==='dark'?'light':'dark'; return; }
+  if(act==='mobile'){ document.body.classList.toggle('preview-mobile'); return; }
+  if(act==='create-room'){ const r=activeRoom();location.href='prototype-x-style.html?tab=add&seg=create'+(r.parentCode?'&parent='+encodeURIComponent(r.parentCode):'');return; }
+  if(act==='switch-room'){
+    const r=myRooms.find(x=>x.id===el.dataset.roomId); if(!r) return;
+    curRoomId=r.id; curRoom=r.type; curSeason='s1'; curView='content'; subCount=r.subs; joined=isJoinedRoom(r.name);
+    renderAll(); toast('已切换到「'+r.name+'」· '+r.tag+' · 用户自建小圈子'); return;
+  }
+  if(act==='room'){ curRoom=el.dataset.room; renderAll(); return; }
+  if(act==='view'){
+    curView=el.dataset.view; renderViews(); syncTabs();
+    if(curView==='comments') renderComments(); return;
+  }
+  if(act==='goto-comments'){
+    curView='comments'; renderViews(); syncTabs(); renderComments();
+    toast('已跳到本房间留言 · 讨论（评论不进推荐流）'); return;
+  }
+  if(act==='tok-search'){
+    e.preventDefault(); toast('演示：跳转到搜索「'+el.dataset.q+'」· @/# 只用于检索，不进画像'); return;
+  }
+  if(act==='cmt-image'){
+    $('#cmtImageInput').click();
+    return;
+  }
+  if(act==='cmt-rm-image'){
+    const i=parseInt(el.dataset.i,10);
+    if(!isNaN(i)){ cmtImages.splice(i,1); renderCmtMedia(); }
+    return;
+  }
+  if(act==='add-comment'){
+    const t=$('#cmtBody').value.trim();
+    if(!t && !cmtImages.length){ toast('请先写点内容或添加图片'); return; }
+    UKCN.requireAuth('发表留言', ()=>{
+      const u=UKCN.me(), list=commentsByRoom[curRoomId]||(commentsByRoom[curRoomId]=[]);
+      const m=t.match(/^\s*@([A-Za-z0-9_.]{2,20})/);
+      const target = m ? list.find(x=>x.handle.toLowerCase()==='@'+m[1].toLowerCase()) : null;
+      const newCmt={id:'c'+(++cSeq),by:u.name,handle:u.handle,time:'刚刚',color:'var(--accent-strong)',
+        likes:0,liked:false,status:'pending',text:t,images:cmtImages.slice()};
+      if(target && target.id!==newCmt.id){
+        (target.replies=target.replies||[]).unshift({id:'c'+(++cSeq)+'r',by:u.name,handle:u.handle,time:'刚刚',color:'var(--accent-strong)',text:t,images:cmtImages.slice()});
+      } else {
+        list.unshift(newCmt);
+      }
+      cmtImages=[]; renderCmtMedia();
+      $('#cmtBody').value=''; updateBadges(); renderAll();
+      toast(target?'回复已提交 · 挂在 @'+m[1]+' 留言下方 · 审核中':'留言已提交 · 审核中仅你自己可见（与内容共用审核队列）');
+    });
+    return;
+  }
+  if(act==='comment-like'){
+    const c=(commentsByRoom[curRoomId]||[]).find(x=>x.id===el.dataset.cid);
+    if(c){ c.liked=!c.liked; c.likes+=c.liked?1:-1; renderComments(); }
+    return;
+  }
+  if(act==='toggle-replies'){
+    const c=(commentsByRoom[curRoomId]||[]).find(x=>x.id===el.dataset.cid);
+    if(!c) return;
+    const wrap=el.closest('.cmt').querySelector('.cmt-replies');
+    const expanded=!wrap.classList.contains('hidden');
+    wrap.classList.toggle('hidden',expanded);
+    el.setAttribute('aria-expanded',String(!expanded));
+    el.innerHTML=expanded
+      ?'<svg class="ico sm"><use href="#i-chat"/></svg>查看 '+(c.replies||[]).length+' 条回复'
+      :'<svg class="ico sm"><use href="#i-chat"/></svg>收起回复';
+    return;
+  }
+  if(act==='comment-reply'){
+    const c=(commentsByRoom[curRoomId]||[]).find(x=>x.id===el.dataset.cid);
+    curView='comments'; renderViews(); syncTabs();
+    const box=$('#cmtBody'); box.value=(c?c.handle:'@')+' '; if(box.focus) box.focus();
+    toast('已带入 @用户名 · 发布后将作为「回复」挂在原留言下方'); return;
+  }
+  if(act==='comment-report'){ const c=(commentsByRoom[curRoomId]||[]).find(x=>x.id===el.dataset.cid); UKCN.openReport({label:c?c.text:'这条留言',kind:'comment',kindLabel:'留言'}); return; }
+  if(act==='join'){
+    if(UKCN.roomIsPrivate(activeRoom())&&!isOwner(activeRoom())){
+      if(!UKCN.canViewRoom(activeRoom())){toast('请先申请加入私密房间');return;}
+    }
+    if(UKCN.isGuest()){
+      /* 游客点加入 → 3 屏轻注册（共享层），完成后自动加入当前房间 */
+      UKCN.requireAuth('加入房间「'+activeRoom().name+'」', ()=>{
+        joined=isJoinedRoom(activeRoom().name);
+        if(!joined){ joined=true; subCount+=1; persistJoin(activeRoom().name,true); UKCN.notify({kind:'room',title:'已加入房间',body:activeRoom().name+' · 后续更新会以摘要通知',room:activeRoom().name}); }
+        renderAll(); toast('已加入房间，之后有更新会通知你');
+      });
+      return;
+    }
+    joined=!joined; subCount+=joined?1:-1;
+    persistJoin(activeRoom().name, joined);
+    if(joined) UKCN.notify({kind:'room',title:'已加入房间',body:activeRoom().name+' · 后续更新会以摘要通知',room:activeRoom().name});
+    updateBadges();
+    el.classList.toggle('joined',joined); el.setAttribute('aria-pressed',String(joined));
+    $('#joinText').textContent=joined?'已加入':'加入房间';
+    $('#joinIcon').innerHTML='<use href="#'+(joined?'i-check':'i-plus')+'"/>';
+    $('#subCount').textContent=subCount.toLocaleString()+' 人加入';
+    if(joined){ // 加入即默认开启更新通知
+      const nb=$('#notifyBtn'); if(nb){ nb.classList.add('on'); nb.setAttribute('aria-pressed','true'); $('#notifyText').textContent='更新通知 · 开'; }
+    }
+    toast(joined?'已加入房间，将出现在「正在关注」，之后有更新会通知你':'已退订'); return;
+  }
+  if(act==='notify'){
+    const on=!el.classList.contains('on');
+    el.classList.toggle('on',on); el.setAttribute('aria-pressed',String(on));
+    $('#notifyText').textContent='更新通知 · '+(on?'开':'关');
+    toast(on?'已开启更新通知：房主发内容/新集会提醒你':'已关闭更新通知：可随时在通知中心回看'); return;
+  }
+
+  if(act==='season'){ curSeason=el.dataset.season; renderSeasons(); renderEps(); return; }
+  if(act==='mark-ep'){
+    const arr=S()[curSeason].eps, i=+el.closest('.ep').dataset.i;
+    arr[i].seen=!arr[i].seen; renderEps(); renderStat(); toast(arr[i].seen?'已標記為看過，進度已更新':'已取消標記'); return;
+  }
+  if(act==='move'){
+    const arr=S()[curSeason].eps, i=+el.closest('.ep').dataset.i, j=el.dataset.dir==='up'?i-1:i+1;
+    if(j<0||j>=arr.length){ toast('已在邊界，不能移動'); return; }
+    [arr[i],arr[j]]=[arr[j],arr[i]]; renderEps(); toast('房主手動調整順序，已寫入 audit_log'); return;
+  }
+  if(act==='sort-eps'){ S()[curSeason].eps.sort((a,b)=>a.no-b.no); renderEps(); toast('已按集號重排'); return; }
+  if(act==='toggle-ep'){ $('#epForm').classList.toggle('hidden'); return; }
+  if(act==='cancel-ep'){ $('#epForm').classList.add('hidden'); return; }
+  if(act==='save-ep'){
+    const no=parseInt($('#fNo').value,10), title=$('#fTitle').value.trim();
+    if(!no||no<1){ toast('請填寫有效集號'); return; }
+    if(!title){ toast('請填寫本集標題'); return; }
+    if(S()[curSeason].eps.some(x=>x.no===no)){ toast('該集號已存在，請勿重複錄入'); return; }
+    S()[curSeason].eps.push({no,title,note:$('#fNote').value.trim()||'房主暫未填寫按語',disc:0,seen:false});
+    S()[curSeason].eps.sort((a,b)=>a.no-b.no);
+    if(curSeason==='s1'&&no>S().s1.total) S().s1.total=no;
+    $('#epForm').classList.add('hidden'); $('#fNo').value=''; $('#fTitle').value=''; $('#fNote').value='';
+    renderEps(); renderStat(); toast('已加入 E'+String(no).padStart(2,'0')+'，按集號自動歸位'); return;
+  }
+
+  if(act==='toggle-film'){ $('#filmForm').classList.toggle('hidden'); return; }
+  if(act==='cancel-film'){ $('#filmForm').classList.add('hidden'); return; }
+  if(act==='film-state'){
+    const i=+el.dataset.i; films[i].state = films[i].state==='seen'?'want':'seen';
+    renderFilms(); renderStat(); toast(films[i].state==='seen'?'已標記看過':'已加入想看'); return;
+  }
+  if(act==='save-film'){
+    const year=parseInt($('#mYear').value,10), title=$('#mTitle').value.trim();
+    if(!year||year<1900||year>2030){ toast('請填寫有效年份'); return; }
+    if(!title){ toast('請填寫片名'); return; }
+    films.push({title,year,len:'—',note:$('#mNote').value.trim()||'房主暫未填寫按語',state:'want',hue:'#2b3a4a'});
+    $('#filmForm').classList.add('hidden'); $('#mYear').value=''; $('#mTitle').value=''; $('#mNote').value='';
+    filmSort='custom'; $('#filmSort').value='custom';
+    renderFilms(); renderStat(); toast('已加入片單末尾，電影無季集，僅按片單順序排'); return;
+  }
+
+  if(act==='toggle-embed'){ $('#embedForm').classList.toggle('hidden'); return; }
+  if(act==='cancel-embed'){ $('#embedForm').classList.add('hidden'); return; }
+  if(act==='save-embed'){
+    const u=$('#eUrl').value.trim(), t=$('#eTitle').value.trim();
+    if(!u){ toast('請貼上官方影片連結'); return; }
+    if(!t){ toast('請填寫卡片標題'); return; }
+    if(!$('#eConfirm').checked){ toast('必須先勾選來源與授權確認'); return; }
+    videos.unshift({id:'v'+(++vidSeq),title:t,dur:'—',origin:'external',by:'@pei',
+      note:'待審核 · 白名單 / 英區授權 / X-Frame-Options 校驗中 · 通過前不生成播放器',
+      status:'pending',disc:0,hue:'#2b3a4a',embed:'youtube',embedStatus:'pending',provider:$('#eProvider').value,ukRights:true});
+    $('#embedForm').classList.add('hidden');
+    $('#eUrl').value=''; $('#eTitle').value=''; $('#eConfirm').checked=false;
+    checkEmbedUrl(); renderVideos(); renderStat();
+    toast('已提交連結審核；通過後生成「點擊才載入」的卡片'); return;
+  }
+
+  if(act==='embed-play'){
+    const k=el.dataset.key;
+    embedState[k]=embedAlways?'playing':'consent';
+    toast(embedAlways?'已按你的偏好直接載入，同意記錄已更新':'載入前需確認第三方資料條款（PECR）');
+    redrawEmbeds(); return;
+  }
+  if(act==='embed-once'){
+    embedState[el.dataset.key]='playing'; redrawEmbeds();
+    toast('僅本次載入：已寫入 user_consent_log（平台 / 時間 / 政策版本）'); return;
+  }
+  if(act==='embed-always'){
+    embedAlways=true; embedState[el.dataset.key]='playing'; redrawEmbeds();
+    toast('已記住偏好，之後直接載入；可在「設定 → 隱私」撤回'); return;
+  }
+  if(act==='embed-close'){ embedState[el.dataset.key]='idle'; redrawEmbeds(); toast('已卸載第三方播放器，第三方連線中斷'); return; }
+  if(act==='embed-external'){ toast('跳轉原站觀看（不嵌入、不代理、不緩存）'); return; }
+  if(act==='embed-report'){ UKCN.openReport({label:'外链：'+(el.dataset.key||'第三方播放器'),kind:'link',kindLabel:'外链'}); return; }
+
+  if(act==='toggle-video'){ $('#videoForm').classList.toggle('hidden'); return; }
+  if(act==='cancel-video'){ $('#videoForm').classList.add('hidden'); return; }
+  if(act==='play'){
+    const v=videos[+el.dataset.i];
+    toast(v.origin==='original' ? (v.status==='pending'?'原創視頻仍在審核，僅自己可見':'播放原創視頻：'+v.title) : '源站禁止嵌入或仍待審核 → 降級為去原站觀看'); return;
+  }
+  if(act==='report'){ UKCN.openReport({label:el.dataset.label||activeRoom().name,kind:'room'}); return; }
+  if(act==='like-post'){
+    const k=el.dataset.key, go=()=>{ UKCN.toggleLike(k); renderAll(); };
+    if(!UKCN.me()){ UKCN.requireAuth('喜欢帖子',go); return; }
+    go(); return;
+  }
+  if(act==='share-post'){ UKCN.shareLink({title:el.dataset.label||activeRoom().name, url:String(location.href).split('#')[0]}); return; }
+  if(act==='push-post'||act==='unpush-post'){
+    const room=activeRoom();
+    if(!UKCN.canPush(room)){ toast('只有房主可以推到频道'); return; }
+    const ok=act==='push-post'?UKCN.pushRoomPost(room,el.dataset.key,el.dataset.src):UKCN.unpushRoomPost(room,el.dataset.key);
+    renderAll();
+    toast(!ok?'操作没有生效，请刷新后重试':act==='push-post'?'已推到频道「'+parentLabel(room)+'」· 频道动态里会标「来自房间」':'已撤回推送 · 频道动态不再显示这条');
+    return;
+  }
+  if(act==='save-video'){
+    const title=$('#vTitle').value.trim();
+    if(!title){ toast('請填寫標題'); return; }
+    if(!$('#vConfirm').checked){ toast('必須先勾選原創版權確認'); return; }
+    videos.unshift({id:'v'+(++vidSeq),title,dur:$('#vDur').value.trim()||'00:15',origin:'original',by:'@pei',note:'待審核 · 版權確認已勾選 · 哈希去重中 · 僅自己可見',status:'pending',disc:0,hue:'#3a2d4f'});
+    $('#videoForm').classList.add('hidden'); $('#vTitle').value=''; $('#vDur').value=''; $('#vConfirm').checked=false;
+    renderVideos(); renderStat(); toast('已提交原創視頻：哈希去重 + 人工審核，通過前僅自己可見'); return;
+  }
+
+  if(act==='toggle-listing'){ $('#listingForm').classList.toggle('hidden'); return; }
+  if(act==='cancel-listing'){ $('#listingForm').classList.add('hidden'); return; }
+  if(act==='save-listing'){
+    const t=$('#lTitle').value.trim(); if(!t){ toast('請填寫標題'); return; }
+    listings.unshift({cat:$('#lCat').value,title:t,price:parseInt($('#lPrice').value,10)||0,days:Math.min(30,parseInt($('#lDays').value,10)||30),verified:false,note:'倫敦 · 待審核 · 需手機驗證後公開'});
+    $('#listingForm').classList.add('hidden'); $('#lTitle').value=''; $('#lPrice').value='';
+    renderListings(); toast('已提交審核，通過後前台可見，30 天自動過期'); return;
+  }
+});
+
+function checkEmbedUrl(){
+  const box=$('#eCheck'), txt=$('#eCheckText'), u=$('#eUrl').value.trim();
+  if(!u){ box.className='urlcheck'; txt.textContent='輸入連結後即時顯示白名單與地區授權校驗結果（演示）。'; return; }
+  let host='';
+  try{ host=new URL(u).hostname.toLowerCase(); }
+  catch(_){ box.className='urlcheck no'; txt.textContent='✕ 無法解析 URL，請貼完整的 https:// 連結。'; return; }
+  if(/^(www\.)?(youtube\.com|youtu\.be|youtube-nocookie\.com)$/.test(host)){
+    box.className='urlcheck ok';
+    txt.textContent='✓ 白名單：YouTube 官方 · 允許框架嵌入 · 英國區可看。將使用 youtube-nocookie 隱私增強域名，且僅在用戶點擊後載入。';
+  }else if(/bilibili|iqiyi|youku|douyin|weibo|qq\.com/.test(host)){
+    box.className='urlcheck no';
+    txt.textContent='✕ 不納入 MVP 白名單：不少中文影視僅中國大陸授權，英區可用性與「向英國公眾傳播」授權不明（TuneIn 案）。請改用官方國際版連結，或僅登記不上架。';
+  }else if(/bit\.ly|t\.co|tinyurl|is\.gd/.test(host)){
+    box.className='urlcheck no';
+    txt.textContent='✕ 短連結不可提交：無法核驗來源與授權，請貼原始連結。';
+  }else{
+    box.className='urlcheck no';
+    txt.textContent='✕ 不在白名單：需人工核驗平台 ToS、英國區授權與 X-Frame-Options 後才可能開放，期間僅顯示跳轉卡片。';
+  }
+}
+
+document.addEventListener('input', e=>{ if(e.target.id==='eUrl') checkEmbedUrl(); });
+/* v2.5 · 手机端下滑收起顶栏（房间名、类型切换、内容 / 留言 Tab），上滑立即恢复；顶部 140px 内始终显示 */
+let lastScrollY=0;
+if(typeof window.addEventListener==='function')window.addEventListener('scroll',()=>{
+  const y=window.scrollY||0, dy=y-lastScrollY; lastScrollY=y;
+  const top=document.querySelector('.top');
+  if(y<140||(top&&top.contains(document.activeElement))||UKCN.isOpen()){document.body.classList.remove('hdr-hide');return;}
+  if(dy>6)document.body.classList.add('hdr-hide');
+  else if(dy<-6)document.body.classList.remove('hdr-hide');
+},{passive:true});
+document.addEventListener('change', e=>{
+  if(e.target.id==='filmSort'){ filmSort=e.target.value; renderFilms(); toast('片單排序已更新：'+e.target.selectedOptions[0].text); }
+  if(e.target.id==='cmtImageInput'){
+    const files=Array.from(e.target.files||[]);
+    if(files.length){ 
+      let chain=Promise.resolve(), added=0;
+      files.forEach(f=>{
+        if(!/^image\/(png|jpeg|webp)/.test(f.type)) return;
+        chain=chain.then(()=>new Promise((res,rej)=>{
+          const r=new FileReader();
+          r.onload=()=>{ cmtImages.push(String(r.result)); added++; res(); };
+          r.onerror=()=>rej();
+          r.readAsDataURL(f);
+        }));
+      });
+      chain.then(()=>{ renderCmtMedia(); if(added) toast('已添加 '+added+' 张图片'); });
+    }
+    e.target.value='';
+  }
+});
+document.addEventListener('keydown', e=>{
+  if((e.key==='Enter'||e.key===' ') && e.target.matches('.thumb')){ e.preventDefault(); e.target.click(); }
+});
+
+renderAll();
+if(routeParams.get('created')==='1') toast('房间已创建 · 发布第一条内容并通过审核后才会公开');
+</script>
+</body>
+</html>

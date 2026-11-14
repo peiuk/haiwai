@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <defs><linearGradient id="wall" x2="0" y2="1"><stop stop-color="#eee8dd"/><stop offset="1" stop-color="#dcd2c4"/></linearGradient><linearGradient id="tile" x2="0" y2="1"><stop stop-color="#faf8f2"/><stop offset="1" stop-color="#e9e2d7"/></linearGradient></defs>
+  <rect width="800" height="600" fill="url(#wall)"/><rect y="484" width="800" height="116" fill="#7d6754"/>
+  <rect x="65" y="85" width="670" height="255" rx="8" fill="url(#tile)"/>
+  <path d="M65 145h670M65 210h670M65 275h670M198 85v255M332 85v255M466 85v255M600 85v255" stroke="#d5cabb" stroke-width="5"/>
+  <rect x="79" y="348" width="646" height="34" rx="6" fill="#3f6462"/>
+  <rect x="82" y="382" width="642" height="115" fill="#ad9173"/>
+  <rect x="103" y="399" width="167" height="82" rx="8" fill="#c8ae8d"/><rect x="293" y="399" width="166" height="82" rx="8" fill="#c8ae8d"/><rect x="481" y="399" width="222" height="82" rx="8" fill="#c8ae8d"/>
+  <path d="M138 424h98M328 424h97M528 424h125" stroke="#826a51" stroke-width="7" stroke-linecap="round"/><path d="M188 424v28m188-28v28m245-28v28" stroke="#826a51" stroke-width="6"/>
+  <rect x="540" y="216" width="140" height="120" rx="8" fill="#b8d1cc"/><path d="M610 216v120M540 276h140" stroke="#f7f4eb" stroke-width="9"/><path d="M543 318h134" stroke="#6e9588" stroke-width="12"/>
+  <rect x="103" y="296" width="125" height="43" rx="8" fill="#d89d62"/><circle cx="165" cy="295" r="25" fill="#bf7651"/>
+</svg>
