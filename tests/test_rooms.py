@@ -48,6 +48,35 @@ def official_channel(client) -> str:
     return channel_id
 
 
+def test_erasing_account_takes_rooms_offline_and_deletes_uploads(client):
+    """「删除账号」承诺删除资料、帖子和房间：房间不再公开，上传文件连磁盘一起删。"""
+    from app.models import UploadObject
+
+    owner = register(client, "erase-owner@example.com")
+    verify(client, owner, "+447700900299")
+    parent_id = official_channel(client)
+    room_id = client.post(
+        "/api/v1/channels", headers=headers(owner), json={"name": "待注销房间", "parent_channel_id": parent_id}
+    ).json()["channel_id"]
+    approved = client.post(
+        f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"}
+    )
+    assert approved.status_code == 200, approved.text
+    assert client.get(f"/api/v1/channels/{room_id}").status_code == 200
+
+    key = client.post("/api/v1/uploads/sign", headers=headers(owner), json={"content_type": "image/jpeg"}).json()["object_key"]
+    assert client.put(f"/api/v1/uploads/{key}", headers=headers(owner), content=b"\xff\xd8\xff\xe0fakejpeg").status_code == 200
+    assert client.get(f"/api/v1/uploads/{key}").status_code == 200
+
+    assert client.delete("/api/v1/me", headers=headers(owner)).status_code == 200
+
+    assert client.get(f"/api/v1/channels/{room_id}").status_code == 404
+    assert client.get(f"/api/v1/uploads/{key}").status_code == 404
+    session = client.session_factory()
+    assert session.get(UploadObject, key) is None
+    session.close()
+
+
 def test_room_needs_official_parent_then_announce_and_accept(client):
     owner = register(client, "owner-room@example.com")
     verify(client, owner, "+447700900201")

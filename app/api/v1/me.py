@@ -7,6 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user
+from app.api.v1.uploads import upload_root
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
@@ -29,6 +30,7 @@ from app.models import (
     DmThread,
     ModerationCase,
     Notification,
+    UploadObject,
     User,
     UserBlock,
     RegionOpenRequest,
@@ -791,6 +793,14 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
     for post in posts:
         post.status = "deleted"
         post.deleted_at = now
+    # 页面承诺「删除资料、帖子和房间」：自建房间下线，上传的文件连磁盘一起删
+    # （不删的话文件仍留在服务器，知道原链接的人还能打开）。
+    for room in session.scalars(select(Channel).where(Channel.owner_id == user.id, Channel.kind == "room")).all():
+        room.is_active = False
+    root = upload_root()
+    for upload in session.scalars(select(UploadObject).where(UploadObject.owner_id == user.id)).all():
+        (root / upload.key).unlink(missing_ok=True)
+        session.delete(upload)
     write_audit(session, user.id, "account.erase", "user", user.id)
     session.commit()
     return {"status": "erased"}
