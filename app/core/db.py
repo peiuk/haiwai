@@ -55,100 +55,12 @@ def prepare_database() -> None:
     if engine is None:
         return
     Base.metadata.create_all(engine)
-    _ensure_sqlite_columns(engine)
+    # 老的开发库按模型补齐缺的列（只加列，不改不删）；新库 create_all 已经完整。
+    if engine.dialect.name == "sqlite":
+        _ensure_remaining_columns(engine)
     from app.seed import seed_if_empty
 
     seed_if_empty()
-
-
-def _ensure_sqlite_columns(engine) -> None:
-    if engine.dialect.name != "sqlite":
-        return
-    with engine.begin() as conn:
-        tables = {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
-        if "app_user" in tables:
-            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(app_user)"))}
-            if "phone" not in columns:
-                conn.execute(text("ALTER TABLE app_user ADD COLUMN phone VARCHAR(32)"))
-            if "handle" not in columns:
-                conn.execute(text("ALTER TABLE app_user ADD COLUMN handle VARCHAR(20)"))
-            if "avatar_tone" not in columns:
-                conn.execute(text("ALTER TABLE app_user ADD COLUMN avatar_tone VARCHAR(1) NOT NULL DEFAULT 'a'"))
-            if "city_label" not in columns:
-                conn.execute(text("ALTER TABLE app_user ADD COLUMN city_label VARCHAR(12)"))
-        if "moderation_case" in tables:
-            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(moderation_case)"))}
-            if "reported_user_id" not in columns:
-                conn.execute(text("ALTER TABLE moderation_case ADD COLUMN reported_user_id VARCHAR(36)"))
-            if "reported_channel_id" not in columns:
-                conn.execute(text("ALTER TABLE moderation_case ADD COLUMN reported_channel_id VARCHAR(36)"))
-            if "reported_comment_id" not in columns:
-                conn.execute(text("ALTER TABLE moderation_case ADD COLUMN reported_comment_id VARCHAR(36)"))
-            if "detail" not in columns:
-                conn.execute(text("ALTER TABLE moderation_case ADD COLUMN detail VARCHAR(300) NOT NULL DEFAULT ''"))
-        if "content" in tables:
-            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(content)"))}
-            if "city_topic" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN city_topic VARCHAR(12)"))
-            if "keyword_source" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN keyword_source VARCHAR(16)"))
-            if "repost_of_id" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN repost_of_id VARCHAR(36)"))
-            if "video_key" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN video_key VARCHAR(64)"))
-            if "rights_confirmed" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN rights_confirmed BOOLEAN NOT NULL DEFAULT 0"))
-            if "author_id" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN author_id VARCHAR(36)"))
-            if "body" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN body TEXT"))
-            if "content_hash" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN content_hash VARCHAR(64)"))
-            if "ai_status" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN ai_status VARCHAR(16) DEFAULT 'pending'"))
-            if "event_cluster_id" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN event_cluster_id VARCHAR(36)"))
-            if "view_count" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0"))
-            if "image_keys_json" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN image_keys_json TEXT NOT NULL DEFAULT '[]'"))
-        if "channel" in tables:
-            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(channel)"))}
-            if "parent_channel_id" not in columns:
-                conn.execute(text("ALTER TABLE channel ADD COLUMN parent_channel_id VARCHAR(36)"))
-            if "review_status" not in columns:
-                conn.execute(text("ALTER TABLE channel ADD COLUMN review_status VARCHAR(16) DEFAULT 'approved'"))
-            if "room_type" not in columns:
-                conn.execute(text("ALTER TABLE channel ADD COLUMN room_type VARCHAR(16) NOT NULL DEFAULT 'general'"))
-        if "channel_item" in tables:
-            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(channel_item)"))}
-            if "sort_key" not in columns:
-                conn.execute(text("ALTER TABLE channel_item ADD COLUMN sort_key VARCHAR(16) NOT NULL DEFAULT ''"))
-            if "rights_confirmed" not in columns:
-                conn.execute(text("ALTER TABLE channel_item ADD COLUMN rights_confirmed BOOLEAN NOT NULL DEFAULT 0"))
-            if "season" not in columns:
-                conn.execute(text("ALTER TABLE channel_item ADD COLUMN season INTEGER"))
-            if "episode" not in columns:
-                conn.execute(text("ALTER TABLE channel_item ADD COLUMN episode INTEGER"))
-            if "year" not in columns:
-                conn.execute(text("ALTER TABLE channel_item ADD COLUMN year INTEGER"))
-        if "user_item_progress" in tables:
-            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(user_item_progress)"))}
-            if "watch_mark" not in columns:
-                conn.execute(text("ALTER TABLE user_item_progress ADD COLUMN watch_mark VARCHAR(16) NOT NULL DEFAULT ''"))
-        if "channel_subscription" in tables:
-            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(channel_subscription)"))}
-            if "last_read_at" not in columns:
-                conn.execute(text("ALTER TABLE channel_subscription ADD COLUMN last_read_at DATETIME"))
-            if "unread_count" not in columns:
-                conn.execute(text("ALTER TABLE channel_subscription ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0"))
-        if "content" in tables:
-            columns = {row[1] for row in conn.execute(text("PRAGMA table_info(content)"))}
-            if "title_hant" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN title_hant VARCHAR(200)"))
-            if "summary_hant" not in columns:
-                conn.execute(text("ALTER TABLE content ADD COLUMN summary_hant VARCHAR(500)"))
-    _ensure_remaining_columns(engine)
 
 
 def _sqlite_literal(value: object) -> str | None:

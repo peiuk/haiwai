@@ -24,6 +24,13 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # 调用方（如测试）直接传入连接时用它，不去读 .env 里的数据库地址，避免误迁移开发库。
+    provided = config.attributes.get("connection")
+    if provided is not None:
+        context.configure(connection=provided, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
