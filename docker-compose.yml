@@ -4,25 +4,19 @@ services:
     environment:
       POSTGRES_DB: ukcn
       POSTGRES_USER: ukcn
-      POSTGRES_PASSWORD: ukcn
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ukcn}
+    # 不对外开放 5432：数据库只给 api 容器用。需要本机连接时临时加上 ports 即可。
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ukcn -d ukcn"]
       interval: 10s
       retries: 5
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - redisdata:/data
   api:
     build: .
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+psycopg://ukcn:ukcn@db:5432/ukcn
+      DATABASE_URL: postgresql+psycopg://ukcn:${POSTGRES_PASSWORD:-ukcn}@db:5432/ukcn
     depends_on:
       db:
         condition: service_healthy
@@ -32,4 +26,3 @@ services:
 
 volumes:
   pgdata:
-  redisdata:
