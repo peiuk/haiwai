@@ -50,7 +50,7 @@ def official_channel(client) -> str:
 
 def test_erasing_account_takes_rooms_offline_and_deletes_uploads(client):
     """「删除账号」承诺删除资料、帖子和房间：房间不再公开，上传文件连磁盘一起删。"""
-    from app.models import UploadObject
+    from app.models import RefreshSession, UploadObject
 
     owner = register(client, "erase-owner@example.com")
     verify(client, owner, "+447700900299")
@@ -74,6 +74,9 @@ def test_erasing_account_takes_rooms_offline_and_deletes_uploads(client):
     assert client.get(f"/api/v1/uploads/{key}").status_code == 404
     session = client.session_factory()
     assert session.get(UploadObject, key) is None
+    # 注册时发的刷新令牌记录也被清掉（访问令牌本身在删号后立刻失效）
+    assert session.scalar(select(RefreshSession.id).join(User, User.id == RefreshSession.user_id).where(User.email.like("erased-%"))) is None
+    assert client.get("/api/v1/me", headers=headers(owner)).status_code == 401
     session.close()
 
 

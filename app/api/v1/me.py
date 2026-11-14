@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user
@@ -30,6 +30,7 @@ from app.models import (
     DmThread,
     ModerationCase,
     Notification,
+    RefreshSession,
     UploadObject,
     User,
     UserBlock,
@@ -797,6 +798,8 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
     # （不删的话文件仍留在服务器，知道原链接的人还能打开）。
     for room in session.scalars(select(Channel).where(Channel.owner_id == user.id, Channel.kind == "room")).all():
         room.is_active = False
+    # 刷新令牌记录也一并清掉：不删的话它们带着用户 id 一直留到有人拿来刷新为止。
+    session.execute(delete(RefreshSession).where(RefreshSession.user_id == user.id))
     root = upload_root()
     for upload in session.scalars(select(UploadObject).where(UploadObject.owner_id == user.id)).all():
         (root / upload.key).unlink(missing_ok=True)
