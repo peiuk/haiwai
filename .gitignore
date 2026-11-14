@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.env
+web/node_modules/
+web/dist/
+*.db
+data/uploads/
+
+# 工具与本地生成物：索引库、浏览器配置、截图、日志、包元数据
+.codegraph/
+.workbuddy/
+.playwright-cli/
+.superpowers/
+output/
+*.egg-info/
+*.log
