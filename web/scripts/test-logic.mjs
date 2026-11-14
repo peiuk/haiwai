@@ -259,6 +259,18 @@ describe("api.request 令牌续期", () => {
   });
 });
 
+describe("hasOwnTitle", () => {
+  it("自动截取的标题（摘要以它开头）不算标题，避免同一段话显示两遍", async () => {
+    const { hasOwnTitle } = await vite.ssrLoadModule("/src/utils/post.ts");
+    assert.equal(hasOwnTitle("今天天气不错", "今天天气不错"), false);
+    assert.equal(hasOwnTitle("今天天气不错，出门走走", "今天天气不错，出门走走，顺便买了咖啡"), false);
+    assert.equal(hasOwnTitle("伦敦租房避坑", "先看合同再付定金"), true);
+    assert.equal(hasOwnTitle("只有标题", null), true);
+    assert.equal(hasOwnTitle("", "只有正文"), false);
+    assert.equal(hasOwnTitle("  ", "  "), false);
+  });
+});
+
 describe("fmtRelativeTime", () => {
   const ago = (ms) => new Date(Date.now() - ms).toISOString();
   it("各档位", () => {

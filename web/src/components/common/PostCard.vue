@@ -10,6 +10,7 @@ import ReportButton from "./ReportButton.vue";
 import Lightbox from "./Lightbox.vue";
 import { useToastStore } from "../../stores/toast";
 import { fmtRelativeTime } from "../../utils/time";
+import { hasOwnTitle } from "../../utils/post";
 
 export interface PostActionItem {
   content_id: string;
@@ -275,7 +276,7 @@ onBeforeUnmount(() => {
 
       <!-- card-copy -->
       <div class="post-copy">
-        <h3 v-if="title" class="post-title" data-ugc>{{ title }}</h3>
+        <h3 v-if="hasOwnTitle(title, summary)" class="post-title" data-ugc>{{ title }}</h3>
         <p v-if="summary" class="post-summary" data-ugc>{{ summary }}</p>
         <div v-if="keywords.length" class="post-tags" data-ugc>
           <span v-for="kw in keywords" :key="kw" class="post-tag">#{{ kw }}</span>

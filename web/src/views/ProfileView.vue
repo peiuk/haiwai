@@ -25,6 +25,7 @@ import Avatar from "../components/base/Avatar.vue";
 import BaseIcon from "../components/base/BaseIcon.vue";
 import BaseButton from "../components/base/BaseButton.vue";
 import Modal from "../components/base/Modal.vue";
+import { hasOwnTitle } from "../utils/post";
 import AccountPanel from "../components/profile/AccountPanel.vue";
 import ProfileCard from "../components/profile/ProfileCard.vue";
 
@@ -361,7 +362,7 @@ watch(
             <BaseIcon name="i-reply" :size="20" />
             <span class="mr-main">
               <span class="mr-t">{{ post.title }}</span>
-              <span v-if="post.summary" class="mr-s">{{ post.summary }}</span>
+              <span v-if="post.summary && hasOwnTitle(post.title, post.summary)" class="mr-s">{{ post.summary }}</span>
             </span>
             <span class="status-pill" :class="post.status">{{ statusLabel(post.status) }}</span>
           </component>
@@ -391,7 +392,7 @@ watch(
             <BaseIcon name="i-bookmark" :size="20" />
             <span class="mr-main">
               <span class="mr-t" data-ugc>{{ item.title }}</span>
-              <span v-if="item.summary" class="mr-s" data-ugc>{{ item.summary }}</span>
+              <span v-if="item.summary && hasOwnTitle(item.title, item.summary)" class="mr-s" data-ugc>{{ item.summary }}</span>
             </span>
             <span class="mr-end">打开</span>
           </RouterLink>
@@ -531,15 +532,8 @@ watch(
     </template>
 
     <!-- 创建房间弹窗 -->
-    <div v-if="roomFormOpen" class="modal-backdrop" @click.self="roomFormOpen = false">
-      <div class="modal" role="dialog" aria-modal="true" aria-label="创建房间">
-        <div class="modal-head">
-          <h2>创建房间</h2>
-          <button type="button" class="modal-close" aria-label="关闭" @click="roomFormOpen = false">
-            <BaseIcon name="i-close" :size="20" />
-          </button>
-        </div>
-        <form class="modal-body" @submit.prevent="submitCreateRoom">
+    <Modal :open="roomFormOpen" title="创建房间" labelledby="create-room-title" @close="roomFormOpen = false">
+        <form class="room-form" @submit.prevent="submitCreateRoom">
           <label class="field">
             <span class="field-label">房间名</span>
             <input
@@ -583,8 +577,7 @@ watch(
             <BaseButton type="submit" :loading="roomFormBusy">提交审核</BaseButton>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
 
     <!-- 删除账号确认：用站内弹窗代替原生 confirm（可 Esc 关闭、焦点陷阱、简繁自动转换） -->
     <Modal :open="deleteOpen" title="删除账号？" labelledby="delete-account-title" @close="deleteOpen = false">
@@ -749,46 +742,8 @@ button.me-row:disabled { cursor: default; }
 .seg-toggle button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
 .seg-toggle button:disabled { opacity: 0.6; cursor: default; }
 
-/* 创建房间弹窗 */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.5);
-}
-.modal {
-  width: min(480px, 100%);
-  max-height: 90vh;
-  overflow-y: auto;
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg, 0 12px 40px rgba(0, 0, 0, 0.2));
-}
-.modal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--border);
-}
-.modal-head h2 { margin: 0; font-size: 17px; font-weight: 800; }
-.modal-close {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.modal-close:hover { background: var(--hover); }
-.modal-body { display: grid; gap: 14px; padding: 18px; }
+/* 创建房间弹窗：外壳用统一的 Modal，这里只管表单 */
+.room-form { display: grid; gap: 14px; }
 .field { display: grid; gap: 6px; }
 .field-label { font-size: 13px; font-weight: 700; color: var(--muted); }
 .field-input {
@@ -814,7 +769,7 @@ button.me-row:disabled { cursor: default; }
 }
 .room-type-opt.active { border-color: var(--accent); color: var(--accent); }
 .room-type-opt input { accent-color: var(--accent); }
-.checkbox-field { flex-direction: row; align-items: center; gap: 8px; }
+.checkbox-field { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .checkbox-field input { accent-color: var(--accent); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 </style>

@@ -6,7 +6,9 @@
 // 官方外链登记（EmbedForm）从本页移除，另设入口（不在发布页混排）。
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { hasOwnTitle } from "../utils/post";
 import {
+  ApiRequestError,
   request,
   jsonBody,
   type Channel,
@@ -130,8 +132,11 @@ function removeTopic(index: number): void {
 }
 // ---- 图片上传（MultiUploadField，多选最多 4 张，带预览/进度）----
 
+const needPhone = ref(false);
+
 async function submit(): Promise<void> {
   submitError.value = "";
+  needPhone.value = false;
   success.value = "";
   if (!auth.isLoggedIn) {
     submitError.value = "请先登录或注册，草稿已保存在这台设备上";
@@ -191,6 +196,8 @@ async function submit(): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "发布没有成功";
     submitError.value = msg;
+    // 手机没验证：给出直达「我的」页的入口，草稿已自动保存
+    needPhone.value = err instanceof ApiRequestError && err.code === "PHONE_NOT_VERIFIED";
     toast.show(submitError.value);
   } finally {
     busy.value = false;
@@ -424,7 +431,10 @@ watch(
           <span class="count" :class="{ over: countOver }">{{ count }} / {{ MAX_LEN }}</span>
         </div>
 
-        <p v-if="submitError" class="type-error" role="alert">{{ submitError }}</p>
+        <p v-if="submitError" class="type-error" role="alert">
+          {{ submitError }}
+          <RouterLink v-if="needPhone" class="type-error-link" :to="{ name: 'profile' }">去验证手机</RouterLink>
+        </p>
         </template>
       </div>
     </section>
@@ -448,7 +458,7 @@ watch(
                 <span class="name">我</span>
                 <span class="status-pill" :class="item.status">{{ statusLabel(item.status) }}</span>
               </div>
-              <strong class="post-title">{{ item.title }}</strong>
+              <strong v-if="hasOwnTitle(item.title, item.summary)" class="post-title">{{ item.title }}</strong>
               <p v-if="item.summary" class="post-copy">{{ item.summary }}</p>
             </div>
           </article>
@@ -725,6 +735,12 @@ watch(
   line-height: 1.45;
 }
 .type-error:empty { display: none; }
+.type-error-link {
+  margin-left: var(--sp-2);
+  color: var(--accent-ink);
+  font-weight: var(--fw-bold);
+  text-decoration: underline;
+}
 
 /* 发布到：顶栏右侧，紧邻主操作 */
 .dest-control {
