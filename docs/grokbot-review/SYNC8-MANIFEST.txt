@@ -1,0 +1,12 @@
+# sync8 · 以 base7 为基线（2026-11-11），只含改动文件
+# sha256  大小(字节)  状态  路径
+a90902e9eed8937cd7b95c1c5e7eb3a1f2b0943a2e4c18c7f7f3ff094120c930  280978  修改  PRD-UK-Chinese-Local-Community-v1.1.md
+3b4292fff66cde06c2ac252239cc98b290a648fe80c066da807c2ce127cc3e87  111276  修改  design-system/MASTER.md
+089fd1f7ef5e341f8cd1281d66c3f30affae390688fbf56937af36b3e30a30a9  34030  修改  design-system/check-h5.js
+8e8b0d5883d597490706988f7c6f4f51370b5fe3dcd52c16572498ccebca053d  9254  修改  design-system/pages/collection-room.md
+3544191f47168ba6f16bc9056546fa6e2745b97f38ed598aa01c2e7777325b6c  13610  修改  design-system/pages/home-feed.md
+61fb69a23973f5446354d740e00ddf0c32f68afcc7156811aaf23f2fd7221b6b  168672  修改  prototype-collection-room.html
+632793e19da15629eddfd86e21a4e7e5daa20b944cd8972ab6e6c67a63eb5c46  300033  修改  prototype-x-style.html
+65cb8164a665d8c674498bad94b7603446db52338ac0bbfc37efb90dcac087cd  125987  修改  publish-content.html
+30f0de9d914128d5787e5294b4a64429f8683663431907971ffe276010814743  52990  修改  shared/ukcn-shared.js
+213a9265d814e4fbb068a868e841c0f4d4d95cf3b5c792b4fc1f8f05f4cb7aab  50270  修改  docs/grokbot-review/CHANGES.md

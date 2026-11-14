@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>海外圈 Design System · 组件与 Token 展示页 v1.3</title>
+<style>
+/* ===== 与 tokens.css 同步的规范副本（改 token 时四处同步：tokens.css / preview.html / 两份原型） ===== */
+:root{
+  --bg:#ffffff; --surface:#f7f9f9; --surface2:#eff3f4;
+  --text:#0f1419; --muted:#536471;
+  --border:#e6ecf0; --line:#707c87; --chip:#eff3f4;
+  --hover:rgba(15,20,25,.04); --shadow:0 2px 12px rgba(0,0,0,.08);
+  --accent:#1d9bf0; --accent-soft:rgba(29,155,240,.12);
+  --accent-ink:#0a6ba8; --accent-strong:#0a72b4; --on-accent:#ffffff; --focus:#0a6ba8;
+  --good:#00875a; --good-solid:#00875a; --on-good:#ffffff; --good-soft:rgba(0,135,90,.10);
+  --warn:#a86800; --warn-soft:rgba(224,168,56,.12);
+  --danger:#d02b32; --danger-soft:rgba(208,43,50,.10);
+  --media-ph-a:#12303f; --media-ph-b:#2b3a4a; --media-ph-c:#4a3520;
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC","Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --font-serif:"Noto Serif TC","Songti SC","SimSun",serif;
+  --fs-11:11px; --fs-12:12px; --fs-13:13px; --fs-14:14px; --fs-15:15px;
+  --fs-16:16px; --fs-17:17px; --fs-19:19px; --fs-21:21px; --fs-30:30px;
+  --lh-body:1.6; --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:16px; --r-pill:999px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px;
+  --sp-8:32px; --sp-11:44px; --sp-12:48px; --sp-16:64px; --tap:44px;
+  --dur-fast:150ms; --dur-base:220ms; --ease-out:cubic-bezier(.2,.8,.2,1);
+  --z-sticky:20; --z-bottom-bar:30; --z-toast:50; --z-modal:60;
+  --app-max:1280px; --col-left:240px; --col-right:320px; --mobile-preview:420px; --bottom-bar:60px;
+}
+[data-theme="dark"]{
+  --bg:#000000; --surface:#16181c; --surface2:#202327;
+  --text:#e7e9ea; --muted:#9aa6b1;
+  --border:#2f3336; --line:#6d7781; --chip:#202327;
+  --hover:rgba(231,233,234,.07); --shadow:0 2px 12px rgba(0,0,0,.5);
+  --accent:#1d9bf0; --accent-soft:rgba(29,155,240,.18);
+  --accent-ink:#1d9bf0; --accent-strong:#1d9bf0; --on-accent:#0f1419; --focus:#1d9bf0;
+  --good:#3ccf91; --good-solid:#3ccf91; --on-good:#0f1419; --good-soft:rgba(60,207,145,.12);
+  --warn:#e0a838; --warn-soft:rgba(224,168,56,.12);
+  --danger:#f07579; --danger-soft:rgba(240,117,121,.12);
+  --media-ph-a:#12303f; --media-ph-b:#2b3a4a; --media-ph-c:#4a3520;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:var(--fs-15);line-height:var(--lh-body);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button,input,select,textarea{font-family:inherit}
+button{cursor:pointer;border:none;background:none;color:inherit}
+a{color:var(--accent-ink);text-decoration:none;cursor:pointer}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--r-sm)}
+.hidden{display:none !important}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+.ico{width:20px;height:20px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ico.sm{width:16px;height:16px}
+
+/* ===== 展示页骨架 ===== */
+.top{position:sticky;top:0;z-index:var(--z-sticky);background:var(--bg);border-bottom:1px solid var(--border)}
+.top-in{max-width:var(--app-max);margin:0 auto;padding:10px var(--sp-5);display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-size:var(--fs-19);font-weight:800;flex:1}
+.brand .mark{width:36px;height:36px;border-radius:var(--r-md);background:var(--accent-strong);color:var(--on-accent);display:grid;place-items:center;font-size:17px}
+.brand .ver{font-size:var(--fs-11);color:var(--muted);font-weight:600;border:1px solid var(--line);border-radius:var(--r-sm);padding:1px 6px}
+.icon-btn{width:var(--tap);height:var(--tap);border-radius:50%;display:grid;place-items:center;color:var(--muted)}
+.icon-btn:hover{background:var(--accent-soft);color:var(--accent-ink)}
+.wrap{max-width:var(--app-max);margin:0 auto;display:grid;grid-template-columns:var(--col-left) minmax(0,1fr);min-height:100vh}
+.toc{border-right:1px solid var(--border);padding:var(--sp-5) var(--sp-4);position:sticky;top:61px;height:calc(100vh - 61px);overflow-y:auto}
+.toc h3{margin:0 0 var(--sp-3);font-size:var(--fs-12);color:var(--muted);letter-spacing:.4px}
+.toc a{display:block;min-height:var(--tap);padding:11px var(--sp-3);border-radius:var(--r-md);font-size:var(--fs-13);color:var(--text)}
+.toc a:hover{background:var(--hover);text-decoration:none}
+.toc a.active{background:var(--accent-soft);color:var(--accent-ink);font-weight:700}
+.toc .note{margin-top:var(--sp-5);padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);font-size:var(--fs-11);color:var(--muted);line-height:1.7}
+main{padding:var(--sp-6) var(--sp-8) var(--sp-16);min-width:0}
+section{margin-bottom:var(--sp-12);scroll-margin-top:76px}
+.sec-h{display:flex;align-items:baseline;gap:var(--sp-3);flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:var(--sp-3);margin-bottom:var(--sp-5)}
+.sec-h h2{margin:0;font-size:var(--fs-21);font-weight:800}
+.sec-h .sub{font-size:var(--fs-12);color:var(--muted)}
+.sec-h .num{font-size:var(--fs-11);color:var(--accent-ink);font-weight:700;border:1px solid var(--accent-ink);border-radius:var(--r-sm);padding:1px 6px}
+h3.blk{font-size:var(--fs-14);font-weight:700;margin:var(--sp-6) 0 var(--sp-3)}
+.desc{font-size:var(--fs-13);color:var(--muted);margin:0 0 var(--sp-4);line-height:1.7}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--sp-3)}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--sp-3)}
+.row{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center}
+.panel{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);padding:var(--sp-4)}
+.panel h4{margin:0 0 var(--sp-3);font-size:var(--fs-13);font-weight:700}
+code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:var(--fs-12);background:var(--surface2);padding:1px 5px;border-radius:4px}
+.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:var(--fs-11);color:var(--muted);word-break:break-all}
+
+/* 色板 */
+.sw{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}
+.sw .chip{height:56px;display:grid;place-items:center;font-size:var(--fs-11);font-weight:700}
+.sw .meta{padding:9px 10px}
+.sw .nm{font-size:var(--fs-12);font-weight:700}
+.sw .hex{font-size:var(--fs-11);color:var(--muted);margin-top:2px}
+.sw .cr{display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:var(--fs-11);font-weight:700}
+.cr.ok{color:var(--good)}.cr.no{color:var(--danger)}.cr.na{color:var(--muted)}
+
+/* 按钮 / 组件 */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);min-height:var(--tap);padding:0 var(--sp-4);border-radius:var(--r-pill);border:1px solid transparent;font-size:var(--fs-13);font-weight:700;white-space:nowrap;transition:opacity var(--dur-fast) var(--ease-out),background-color var(--dur-fast) var(--ease-out)}
+.btn:hover{text-decoration:none}
+.btn:active{opacity:.82}
+.btn:disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+.btn--primary{background:var(--accent-strong);color:var(--on-accent)}
+.btn--primary:hover{opacity:.9}
+.btn--outline{border-color:var(--line);color:var(--text);background:transparent}
+.btn--outline:hover{background:var(--hover)}
+.btn--solid-dark{background:var(--text);color:var(--bg)}
+.btn--ghost{color:var(--muted)}
+.btn--ghost:hover{background:var(--hover);color:var(--text)}
+.btn--danger{background:var(--danger);color:var(--bg)}
+.btn--sm{padding:0 var(--sp-3);font-size:var(--fs-12)}
+.field label{display:block;font-size:var(--fs-12);color:var(--muted);margin-bottom:5px}
+.input{width:100%;min-height:var(--tap);border:1px solid var(--line);border-radius:var(--r-md);padding:10px;background:var(--bg);color:var(--text);font-size:var(--fs-14);outline:none}
+.input:focus-visible{border-color:var(--accent);outline-offset:0}
+.input[aria-invalid="true"]{border-color:var(--danger)}
+.input:disabled{opacity:.5;cursor:not-allowed}
+.check{display:flex;gap:var(--sp-2);align-items:flex-start;font-size:var(--fs-13);line-height:var(--lh-body);cursor:pointer}
+.check input{width:20px;height:20px;flex-shrink:0;margin-top:2px;accent-color:var(--accent-strong);cursor:pointer}
+.tag{display:inline-flex;align-items:center;gap:var(--sp-1);min-height:28px;padding:0 var(--sp-2);border-radius:var(--r-sm);border:1px solid var(--line);font-size:var(--fs-11);font-weight:600;color:var(--muted)}
+.tag--good{color:var(--good);border-color:var(--good)}
+.tag--link{color:var(--accent-ink);border-color:var(--accent-ink)}
+.tag--warn{color:var(--warn);border-color:var(--warn)}
+.tag--danger{color:var(--danger);border-color:var(--danger)}
+.tag--solid{background:var(--good-solid);color:var(--on-good);border-color:var(--good-solid)}
+.notice{display:flex;gap:var(--sp-2);align-items:flex-start;padding:var(--sp-3) var(--sp-4);background:var(--accent-soft);color:var(--text);font-size:var(--fs-13);line-height:1.65;border-radius:var(--r-md)}
+.notice--warn{background:var(--warn-soft)}
+.notice--danger{background:var(--danger-soft)}
+.notice .ico{color:var(--accent-ink)}
+.notice--warn .ico{color:var(--warn)}
+.notice--danger .ico{color:var(--danger)}
+.empty{padding:var(--sp-11) var(--sp-5);text-align:center;color:var(--muted);font-size:var(--fs-13);line-height:1.75;border:1px dashed var(--line);border-radius:var(--r-md)}
+.progress{height:6px;border-radius:var(--r-pill);background:var(--surface2);overflow:hidden}
+.progress>i{display:block;height:100%;background:var(--accent);border-radius:var(--r-pill);transition:width var(--dur-base) var(--ease-out)}
+.skeleton{border-radius:var(--r-sm);background:var(--surface2);animation:ds-pulse 1.4s ease infinite}
+@keyframes ds-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.toast{position:fixed;bottom:var(--sp-6);left:50%;z-index:var(--z-toast);transform:translateX(-50%) translateY(20px);background:var(--accent-strong);color:var(--on-accent);padding:11px var(--sp-5);border-radius:var(--r-pill);font-size:var(--fs-13);font-weight:700;opacity:0;pointer-events:none;transition:transform var(--dur-base) var(--ease-out),opacity var(--dur-base) var(--ease-out);box-shadow:var(--shadow)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.tabs{display:flex;gap:var(--sp-2);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tab{min-height:var(--tap);padding:0 var(--sp-4);font-size:var(--fs-13);font-weight:600;color:var(--muted);position:relative}
+.tab:hover{background:var(--hover)}
+.tab.active{color:var(--text);font-weight:700}
+.tab.active::after{content:"";position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:56px;height:4px;border-radius:var(--r-pill);background:var(--accent)}
+.src{margin-top:var(--sp-3);padding:9px 11px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg);font-size:var(--fs-12);color:var(--muted);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.src b{color:var(--text);font-weight:600}
+.src .lic{border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:10px}
+.report{display:inline-flex;align-items:center;gap:4px;min-height:var(--tap);padding:0 var(--sp-2);font-size:var(--fs-12);color:var(--muted)}
+.report:hover{color:var(--danger)}
+.embed-slot{margin-top:var(--sp-3);border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface)}
+.embed-ph{min-height:96px;display:flex;gap:var(--sp-3);align-items:center;padding:var(--sp-3);flex-wrap:wrap}
+.embed-ph .ph-mark{width:52px;height:52px;border-radius:var(--r-md);background:var(--surface2);display:grid;place-items:center;color:var(--muted);flex-shrink:0}
+.embed-ph .ph-text{flex:1;min-width:0}
+.embed-ph .ph-t{font-size:var(--fs-13);font-weight:700}
+.embed-ph .ph-s{font-size:var(--fs-12);color:var(--muted);margin-top:3px;line-height:1.55}
+.embed-consent{padding:var(--sp-3);background:var(--warn-soft);border-top:1px solid var(--border)}
+.embed-consent .ct{font-size:var(--fs-12);line-height:1.7;display:flex;gap:var(--sp-2);align-items:flex-start}
+.embed-consent .ct .ico{color:var(--warn);margin-top:2px}
+.embed-consent .cops{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:10px}
+.embed-player{position:relative;aspect-ratio:16/9;background:#0b0f12;display:grid;place-items:center;color:#e7e9ea;text-align:center;font-size:var(--fs-12)}
+table{width:100%;border-collapse:collapse;font-size:var(--fs-13)}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+th{font-size:var(--fs-12);color:var(--muted);font-weight:700}
+td code{white-space:nowrap}
+.sp-bar{display:flex;align-items:flex-end;gap:var(--sp-3);flex-wrap:wrap}
+.sp-bar .u{text-align:center;font-size:var(--fs-11);color:var(--muted)}
+.sp-bar .u i{display:block;background:var(--accent-soft);border:1px solid var(--accent);border-radius:3px;margin-bottom:5px}
+.r-box{width:88px;height:60px;background:var(--surface2);border:1px solid var(--line);display:grid;place-items:center;font-size:var(--fs-11);color:var(--muted)}
+.avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:var(--fs-14);flex-shrink:0}
+.scale-row{display:flex;align-items:baseline;gap:var(--sp-3);border-bottom:1px solid var(--border);padding:8px 0;flex-wrap:wrap}
+.scale-row .lbl{width:72px;flex-shrink:0;font-size:var(--fs-11);color:var(--muted)}
+.scale-row .sample{min-width:0;flex:1}
+.ck{display:flex;gap:var(--sp-2);align-items:flex-start;font-size:var(--fs-13);padding:7px 0;border-bottom:1px solid var(--border)}
+.ck .ico{color:var(--good);margin-top:2px}
+.ck:last-child{border-bottom:none}
+
+@media(max-width:900px){
+  .wrap{display:block}
+  .toc{display:none}
+  main{padding:var(--sp-5) var(--sp-4) var(--sp-16)}
+}
+@media(max-width:760px){
+  body{font-size:var(--fs-15)}  /* v2.3：移动端帖子正文 15px / 1.5，输入框 16px */
+  input,textarea,select{font-size:var(--fs-16)}
+  .embed-btn{width:100%}
+}
+body.preview-mobile{background:var(--surface2)}
+body.preview-mobile .top,body.preview-mobile .wrap{max-width:var(--mobile-preview);margin-left:auto;margin-right:auto;background:var(--bg);border-left:1px solid var(--border);border-right:1px solid var(--border)}
+body.preview-mobile main{padding:var(--sp-4) var(--sp-3) var(--sp-16)}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none !important;animation:none !important}}
+/* ===== §15 媒体布局与内容优先推荐展示 ===== */
+.md-wrap{border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;background:var(--surface2);margin-top:10px}
+.md-grid{display:grid;gap:2px}
+.md-2 .md-grid{grid-template-columns:repeat(2,1fr)}
+.md-3 .md-grid{grid-template-columns:1.35fr 1fr}
+.md-3 .md-f:first-child{grid-row:span 2}
+.md-4 .md-grid{grid-template-columns:repeat(2,1fr)}
+.md-f{position:relative;min-height:96px;display:grid;place-items:center;text-align:center;padding:12px;background:linear-gradient(135deg,var(--media-ph-a),var(--media-ph-b));color:#fff;font-size:var(--fs-12);line-height:1.7;text-shadow:0 1px 3px rgba(0,0,0,.7)}
+.md-f.a1{background:linear-gradient(135deg,var(--media-ph-b),var(--media-ph-c))}
+.md-f.a2{background:linear-gradient(135deg,var(--media-ph-c),var(--media-ph-a))}
+.md-f.a3{background:linear-gradient(135deg,var(--media-ph-a),var(--media-ph-c))}
+.md-single .md-f{min-height:190px}
+.md-land .md-f{aspect-ratio:16/9;min-height:0}
+.md-port .md-f{aspect-ratio:9/16;min-height:0;width:min(100%,210px);max-height:320px;margin:0 auto}
+.md-tag{position:absolute;left:8px;top:8px;padding:2px 8px;border-radius:var(--r-pill);background:rgba(0,0,0,.68);color:#fff;font-size:var(--fs-11);text-shadow:none}
+.md-tag.br{left:auto;right:8px;top:auto;bottom:8px}
+.md-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;border-top:1px solid var(--border);font-size:var(--fs-11);color:var(--muted)}
+.md-from{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface2);font-size:var(--fs-12)}
+.md-from .join{margin-left:auto;min-height:44px;padding:0 14px;border-radius:var(--r-pill);background:var(--accent-strong);color:var(--on-accent);font-size:var(--fs-12);font-weight:700}
+.md-pb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface2);font-size:var(--fs-12)}
+.md-pb .b{min-height:44px;padding:0 12px;border-radius:var(--r-pill);border:1px solid var(--line);background:var(--bg);font-size:var(--fs-11);font-weight:700}
+.md-pb .b.on{background:var(--accent-strong);color:var(--on-accent);border-color:var(--accent-strong)}
+@media(max-width:760px){.md-port .md-f{width:min(100%,190px);max-height:280px}.md-from .join{margin-left:0;width:100%}}
+/* §16 / §28 · 自动定位与开通权限组件（复用既有 token） */
+.locd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface2);font-size:12px}
+.locd.slim{padding:7px 10px}
+.locd .t{font-weight:700;color:var(--text)}
+.locd .d{color:var(--muted);line-height:1.6}
+.locd .sp{margin-left:auto}
+.locd .src{flex:1 1 100%;font-size:11px;color:var(--muted);line-height:1.7}
+.locd .src b{color:var(--text)}
+.lb{min-height:44px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:11px;font-weight:700}
+.lb.primary{background:var(--accent-strong);color:var(--on-accent);border-color:var(--accent-strong)}
+.gtag,.otag{display:inline-flex;align-items:center;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 9px;white-space:nowrap}
+.gtag.dash,.otag.dash{border-style:dashed}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.launch{border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;background:var(--surface)}
+.launch .h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:500;color:var(--text)}
+.launch .b{font-size:11px;color:var(--muted);line-height:1.7;margin:8px 0}
+.launch .f{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.launch .ok{color:var(--good)}
+@media(max-width:760px){.locd .sp{display:none}.lb{flex:1 1 auto}}
+/* §17 / §29 · 首屏精简与 X 式帖子卡（v1.4） */
+.join-demo{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface2);font-size:12px}
+.join-demo .av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--accent-strong);color:var(--on-accent);font-weight:700;flex-shrink:0}
+.join-demo .nm{font-weight:700}
+.join-demo .h{color:var(--muted)}
+.join-demo .jn{margin-left:auto;min-height:30px;padding:0 11px;border-radius:var(--r-pill);background:var(--text);color:var(--bg);font-size:12px;font-weight:700;white-space:nowrap}
+.join-demo .jn.ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.join-demo .jn.more{margin-left:0;background:transparent;color:var(--muted);border:none;padding:0 6px}
+.set-demo{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface2);padding:10px 12px}
+.set-demo h5{margin:0 0 6px;font-size:11px;color:var(--muted);letter-spacing:.4px}
+.set-demo .row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.set-demo .b{min-height:30px;padding:0 10px;border-radius:var(--r-pill);border:1px solid var(--line);background:var(--bg);font-size:11px;font-weight:700}
+.set-demo .b.on{background:var(--accent-strong);color:var(--on-accent);border-color:var(--accent-strong)}
+.xd-card{display:flex;gap:12px;padding:12px 14px;border:1px solid var(--border);border-bottom:none;background:var(--surface)}
+.xd-card:last-child{border-bottom:1px solid var(--border)}
+.xd-card .av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#00ba7c;color:#fff;font-weight:700;flex-shrink:0}
+.xd-body{flex:1;min-width:0}
+.xd-head{display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;overflow:hidden}
+.xd-head .nm{font-weight:700}
+.xd-head .h,.xd-head .tm{color:var(--muted)}
+.xd-head .ico{width:14px;height:14px;color:var(--muted)}
+.xd-join{margin-left:auto;min-height:30px;padding:0 11px;border-radius:var(--r-pill);background:var(--text);color:var(--bg);font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0}
+.xd-join.joined{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.roomdir-demo{display:flex;flex-direction:column;gap:8px}
+.r-row{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg)}
+.rav{width:36px;height:36px;border-radius:10px;background:var(--surface2);color:var(--accent-ink);display:grid;place-items:center;font-weight:700;flex-shrink:0}
+.rinfo{flex:1;min-width:0}
+.rinfo b{font-size:13px}
+.rinfo .otag{margin-left:4px}
+.rsub{font-size:11px;color:var(--muted);margin-top:2px}
+.set-demo .in{display:flex;align-items:center;min-height:30px;padding:0 10px;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--bg);font-size:11px}
+.xd-more{width:30px;height:30px;border-radius:50%;color:var(--muted);display:grid;place-items:center;flex-shrink:0}
+.xd-more .ico{width:16px;height:16px}
+.xd-copy{margin-top:4px}
+.xd-copy b{display:block;font-size:14px}
+.xd-copy p{margin:2px 0 0;font-size:13px;line-height:1.55}
+.xd-tag{color:var(--accent-ink);font-size:12px}
+.xd-media{margin-top:8px;aspect-ratio:16/9;border-radius:var(--r-lg);background:linear-gradient(135deg,var(--media-ph-a),var(--media-ph-b));display:grid;place-items:center;color:#fff;font-size:12px;position:relative;border:1px solid var(--border)}
+.xd-media .tag{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.68);padding:2px 8px;border-radius:var(--r-pill);font-size:10px}
+.xd-media .dur{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.68);padding:2px 8px;border-radius:var(--r-pill);font-size:10px;display:inline-flex;align-items:center;gap:4px}
+.xd-media .ico{width:12px;height:12px}
+.xd-src{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:11px;color:var(--muted)}
+.xd-src b{color:var(--text)}
+.xd-src .lic{border:1px solid var(--line);border-radius:5px;padding:0 5px;font-size:10px}
+.xd-src a{color:var(--accent-ink);font-weight:600}
+.xd-acts{display:flex;justify-content:space-between;max-width:420px;margin-top:4px}
+.xd-acts .a{width:44px;height:34px;display:grid;place-items:center;border-radius:var(--r-pill);color:var(--muted)}
+.xd-acts .a .ico{width:17px;height:17px}
+.xd-acts .a:hover{background:var(--accent-soft);color:var(--accent-ink)}
+.arch{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.7;color:var(--muted);white-space:pre-wrap;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px}
+.join-demo .jn{display:inline-flex;align-items:center;gap:3px}
+.join-demo .jn .ico{width:13px;height:13px}
+.join-demo .jn.more .ico{width:16px;height:16px}
+@media(max-width:760px){.xd-head .h{display:none}.xd-card{padding:10px 12px}}
+</style>
+</head>
+<body data-theme="dark">
+
+<svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+<symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z"/></symbol>
+<symbol id="i-mobile" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h12l-2 4 2 4H5"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+<symbol id="i-reply" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H8l-5 2 1.6-4.8A8.5 8.5 0 1 1 21 11.5z"/></symbol>
+<symbol id="i-repost" viewBox="0 0 24 24"><path d="M4 8h13l-3.2-3.2M20 16H7l3.2 3.2"/></symbol>
+<symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-8-4.7-8-10a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.3-8 10-8 10z"/></symbol>
+<symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3.5h12v17l-6-4.2-6 4.2z"/></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3m0 0L8 7m4-4 4 4M4 13v7h16v-7"/></symbol>
+<symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9h3l4-3.5v13L7 15H4zM15 9l5 6M20 9l-5 6"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><span class="mark" aria-hidden="true">海</span><span>海外圈 Design System</span><span class="ver">v1.7</span></div>
+    <button class="icon-btn" id="themeBtn" data-act="theme" aria-label="切换深浅色主题" aria-pressed="true"><svg class="ico"><use href="#i-theme"/></svg></button>
+    <button class="icon-btn" id="mobileBtn" data-act="mobile" aria-label="切换 420px 移动视图" aria-pressed="false"><svg class="ico"><use href="#i-mobile"/></svg></button>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" aria-label="设计规范目录">
+    <h3>目录 · MASTER v1.3</h3>
+    <div id="tocLinks"></div>
+    <div class="note">本页是 <b>MASTER.md</b> 的可视验收物。token 唯一来源为 <code>tokens.css</code>；组件代码禁止硬编码颜色与尺寸。</div>
+  </nav>
+
+  <main>
+    <div class="notice" style="margin-bottom:24px">
+      <svg class="ico"><use href="#i-info"/></svg>
+      <span><b>单一准绳</b>：本页与 <code>tokens.css</code>、两份原型共用同一套变量。品牌色 <code>--accent</code> 仅用于装饰；链接文字用 <code>--accent-ink</code>；按钮用 <code>--accent-strong</code> + <code>--on-accent</code> 配对。所有对比度数值均为实测。</span>
+    </div>
+
+    <section id="s1">
+      <div class="sec-h"><span class="num">01</span><h2>颜色基础</h2><span class="sub">表面 / 文字 / 强调 / 语义 · 深浅双主题</span></div>
+      <p class="desc">色板由脚本渲染。标注 <code>AA 4.5:1</code> 的项可作为正文文字色；标注「仅装饰」的项只能用于焦点环、Tab 下划线、进度条等非文字用途。</p>
+      <div id="swatches" class="grid3"></div>
+      <h3 class="blk">Token 对照表</h3>
+      <div class="panel"><table id="tokenTable"><thead><tr><th>Token</th><th>用途</th><th>浅色</th><th>深色</th><th>约束</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="s2">
+      <div class="sec-h"><span class="num">02</span><h2>字体与字阶</h2><span class="sub">简繁一等公民 · 不加载外部字体</span></div>
+      <p class="desc">正文 <code>line-height:1.6</code>、行长上限 <code>68ch</code>、移动端帖子正文 15px / 行高 1.5（v2.3），输入框 ≥16px。衬线字体仅用于房间封面与影视标题。</p>
+      <div class="panel" id="typeScale"></div>
+      <h3 class="blk">简繁混排与衬线标题</h3>
+      <div class="grid2">
+        <div class="panel"><h4>简体 zh-Hans</h4><div style="font-size:var(--fs-16)">伦敦落地必读：办卡、GP 注册与押金保护</div><div class="mono" style="margin-top:8px">font-family: var(--font-sans)</div></div>
+        <div class="panel"><h4>繁體 zh-Hant</h4><div style="font-size:var(--fs-16)">倫敦落地必讀：辦卡、GP 註冊與押金保護</div><div class="mono" style="margin-top:8px">Noto Sans TC 優先字形</div></div>
+      </div>
+      <div class="panel" style="margin-top:12px"><h4>房间封面（唯一衬线场景）</h4><div style="font-family:var(--font-serif);font-size:var(--fs-30);font-weight:700;letter-spacing:4px">新聞女王</div></div>
+    </section>
+
+    <section id="s3">
+      <div class="sec-h"><span class="num">03</span><h2>间距 / 圆角 / 层级</h2><span class="sub">4px 基准 · 8pt 节奏</span></div>
+      <div class="grid2">
+        <div class="panel"><h4>间距刻度</h4><div class="sp-bar" id="spBars"></div></div>
+        <div class="panel"><h4>圆角</h4><div class="row" id="radii"></div></div>
+      </div>
+      <h3 class="blk">z-index 阶梯（固定，禁止其他数值）</h3>
+      <div class="panel"><code>20</code> 吸顶栏　<code>30</code> 底部 Tab　<code>50</code> Toast　<code>60</code> Modal</div>
+    </section>
+
+    <section id="s4">
+      <div class="sec-h"><span class="num">04</span><h2>按钮与状态矩阵</h2><span class="sub">44px 触控目标 · 五变体</span></div>
+      <div class="panel"><h4>变体</h4><div class="row">
+        <button class="btn btn--primary">主要操作</button>
+        <button class="btn btn--outline">描边按钮</button>
+        <button class="btn btn--solid-dark">加入频道</button>
+        <button class="btn btn--ghost">次要操作</button>
+        <button class="btn btn--danger">删除</button>
+        <button class="btn btn--primary btn--sm">小尺寸</button>
+      </div></div>
+      <div class="panel" style="margin-top:12px"><h4>状态（hover 用背景色，不位移；focus 请用 Tab 键走查）</h4><div class="row">
+        <button class="btn btn--primary">default</button>
+        <button class="btn btn--primary" disabled>disabled · 加载中禁用</button>
+        <button class="btn btn--outline" aria-busy="true">loading · aria-busy</button>
+        <button class="icon-btn" data-act="toast" aria-label="触发 Toast 提示"><svg class="ico"><use href="#i-info"/></svg></button>
+      </div></div>
+      <div class="panel" style="margin-top:12px"><h4>纯图标按钮（必须 aria-label）</h4><div class="row">
+        <button class="icon-btn" aria-label="收藏"><svg class="ico"><use href="#i-check"/></svg></button>
+        <button class="icon-btn" aria-label="举报"><svg class="ico"><use href="#i-flag"/></svg></button>
+        <button class="icon-btn" aria-label="打开原文"><svg class="ico"><use href="#i-external"/></svg></button>
+        <span class="mono">44×44px · hover → accent-soft</span>
+      </div></div>
+    </section>
+
+    <section id="s5">
+      <div class="sec-h"><span class="num">05</span><h2>表单</h2><span class="sub">label for / id · 错误可恢复</span></div>
+      <div class="grid2">
+        <div class="panel"><h4>默认 / 禁用</h4>
+          <div class="field"><label for="fName">频道名称</label><input class="input" id="fName" placeholder="例如：伦敦落地必读"></div>
+          <div class="field" style="margin-top:12px"><label for="fCity">城市</label><input class="input" id="fCity" value="London" disabled></div>
+        </div>
+        <div class="panel"><h4>错误态（role="alert" + 恢复路径）</h4>
+          <div class="field"><label for="fUrl">外链地址</label><input class="input" id="fUrl" aria-invalid="true" aria-describedby="fErr" value="https://短链.example/abc"></div>
+          <div id="fErr" role="alert" class="mono" style="color:var(--danger);margin-top:8px">短链不在白名单内 · 请粘贴官方平台完整地址</div>
+          <button class="btn btn--outline btn--sm" style="margin-top:10px" data-act="toast">重试校验</button>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px"><h4>版权确认（勾选前提交禁用）</h4>
+        <label class="check" for="fConfirm"><input type="checkbox" id="fConfirm" data-role="confirm"><span>我确认：画面人物已同意、无未授权音乐与影视片段，且本人拥有该原创视频版权。</span></label>
+        <button class="btn btn--primary" id="submitBtn" style="margin-top:12px" disabled>提交审核</button>
+        <span class="mono" style="margin-left:8px" id="submitHint">未勾选 · 提交不可用</span>
+      </div>
+    </section>
+
+    <section id="s6">
+      <div class="sec-h"><span class="num">06</span><h2>数据展示与反馈</h2><span class="sub">Tag / Notice / Empty / Skeleton / Progress / Toast</span></div>
+      <div class="grid2">
+        <div class="panel"><h4>语义徽章（文字 + SVG + 颜色三重指示）</h4><div class="row" id="tagRow"></div></div>
+        <div class="panel"><h4>Notice</h4>
+          <div class="notice"><svg class="ico"><use href="#i-info"/></svg><span>本平台只展示开放许可来源的摘要与回链。</span></div>
+          <div class="notice notice--warn" style="margin-top:8px"><svg class="ico"><use href="#i-info"/></svg><span>該內容審核中，僅自己可見。</span></div>
+          <div class="notice notice--danger" style="margin-top:8px"><svg class="ico"><use href="#i-flag"/></svg><span>檢舉已受理 · 24 小時內處置。</span></div>
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="panel"><h4>Empty / Skeleton</h4><div class="empty" id="emptyDemo">你還沒有加入頻道<br><button class="btn btn--primary btn--sm" style="margin-top:10px" data-act="toast">去添加频道</button></div><div style="margin-top:12px"><div class="skeleton" style="height:12px;width:70%"></div><div class="skeleton" style="height:12px;width:90%;margin-top:8px"></div><div class="skeleton" style="height:12px;width:45%;margin-top:8px"></div></div></div>
+        <div class="panel"><h4>Progress（role="progressbar"）</h4><div class="progress" role="progressbar" aria-valuenow="12" aria-valuemin="0" aria-valuemax="26" aria-label="追更进度"><i style="width:46%"></i></div><div class="mono" style="margin-top:10px">已看 12 / 26 集 · aria-valuenow="12"</div><h4 style="margin-top:20px">Tab（role="tablist"）</h4><div class="tabs" role="tablist" id="demoTabs"></div><div id="tabPanel" class="mono" style="margin-top:10px"></div></div>
+      </div>
+    </section>
+
+    <section id="s7">
+      <div class="sec-h"><span class="num">07</span><h2>合规 UI（不可协商）</h2><span class="sub">来源署名 / 四态徽章 / 同意面板 / 举报</span></div>
+      <div class="panel"><h4>SourceBlock · 每张资讯卡必显，不可折叠</h4>
+        <div style="font-size:var(--fs-14);font-weight:700">本月中超周折：三家连锁同步更新</div>
+        <div class="src"><b>GOV.UK · ONS</b><span class="lic">OGL v3.0</span><a href="#" onclick="return false">原文回链 <svg class="ico sm" style="vertical-align:-3px"><use href="#i-external"/></svg></a><span class="lic">AI 摘要 ≤200 字</span><button class="cluster" style="margin-left:auto;color:var(--accent-ink);font-size:var(--fs-12);font-weight:600" data-act="sources">5 个来源</button></div>
+        <div id="sourceList" class="hidden" style="margin-top:8px;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden"></div>
+        <button class="report" data-act="report" aria-label="举报此内容"><svg class="ico sm"><use href="#i-flag"/></svg>舉報</button>
+      </div>
+      <div class="panel" style="margin-top:12px"><h4>内容状态四态（简繁成对维护）</h4><div class="row" id="stateRow"></div></div>
+      <div class="panel" style="margin-top:12px"><h4>EmbedPlayerCard · 占位 → 同意 → 播放 → 收起销毁</h4>
+        <div class="embed-slot" id="embedSlot"></div>
+        <div class="mono" style="margin-top:8px">列表页禁止默认加载 iframe；收起必须销毁 DOM，不能仅隐藏。embed 卡不进「为你推荐」。</div>
+      </div>
+    </section>
+
+    <section id="s8">
+      <div class="sec-h"><span class="num">08</span><h2>响应式与无障碍验收</h2><span class="sub">发布门禁</span></div>
+      <div class="grid2">
+        <div class="panel"><h4>断点</h4><table><thead><tr><th>宽度</th><th>布局</th></tr></thead><tbody>
+          <tr><td>≥1100px</td><td>240 / 1fr / 320 三栏</td></tr>
+          <tr><td>760–1099px</td><td>两栏，隐藏右栏</td></tr>
+          <tr><td>≤759px</td><td>单栏 + 60px 底部 Tab，帖子正文 15px / 1.5，输入框 16px</td></tr>
+          <tr><td>420px</td><td>移动预览（顶部第二个按钮可切）</td></tr>
+        </tbody></table></div>
+        <div class="panel"><h4>Pre-Delivery Checklist</h4><div id="checklist"></div></div>
+      </div>
+      <div class="notice notice--warn" style="margin-top:12px"><svg class="ico"><use href="#i-shield"/></svg><span><b>验收方式</b>：语法检查不算通过。交付前需跑 <code>node design-system/check-ui.js</code>（真实执行页面脚本、验证渲染与交互）与 <code>python design-system/check-contrast.py</code>（对比度断言）。</span></div>
+    </section>
+
+    <section id="s9">
+      <div class="sec-h"><span class="num">09</span><h2>区域化组件</h2><span class="sub">全球布局 · PRD §26 / MASTER §14</span></div>
+      <p class="desc">区域是 <code>channel</code> 上的数据维度，不是站点切换器。v1.9（PRD §36）：当前国家单选，国际频道（<code>global</code>）各国共享、恒可见且卡片不显示地域徽章；开通国家的分类数据彼此隔离；合规文案按法域配置渲染，禁止写死单一国家条款。</p>
+      <div class="grid2">
+        <div class="panel">
+          <h4>RegionPicker · 当前国家（单选）</h4>
+          <div role="group" aria-label="当前国家" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+            <span style="display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 10px;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--bg);font-size:12px">英国 · 伦敦<button aria-label="离开英国 · 伦敦，只看国际频道" style="min-width:44px;min-height:44px;color:var(--muted);font-size:12px">×</button></span>
+            <span style="display:inline-flex;align-items:center;min-height:44px;padding:0 10px;border:1px dashed var(--line);border-radius:var(--r-pill);background:var(--bg);font-size:12px">国际频道 · 共享</span>
+            <button style="min-height:44px;padding:0 14px;border-radius:var(--r-pill);background:var(--accent-strong);color:var(--on-accent);border:1px solid var(--accent-strong);font-size:12px">添加区域</button>
+          </div>
+          <div class="mono" style="margin-top:10px">来源：商店地区 / 系统语言 / 自选 · 仅存城市级 · 可随时移除 · 移除区域不退订频道</div>
+        </div>
+        <div class="panel">
+          <h4>RegionPackCard · 法域状态</h4>
+          <div style="border:1px solid var(--border);border-radius:var(--r-lg);padding:12px;margin-top:10px">
+            <div style="font-size:14px;font-weight:500">英国频道包 <span style="font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:var(--r-pill);padding:1px 7px">首启法域</span></div>
+            <div class="mono" style="margin-top:6px">落地必读 + 签证与政策 + 伦敦租房 + … 共 5 个频道</div>
+            <button style="min-height:44px;padding:0 14px;margin-top:10px;border-radius:var(--r-pill);background:var(--accent-strong);color:var(--on-accent);border:1px solid var(--accent-strong);font-size:12px">已加入 · 点此移除区域</button>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:var(--r-lg);padding:12px;margin-top:8px;background:var(--surface2)">
+            <div style="font-size:14px;font-weight:500">东京频道包 <span style="font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:var(--r-pill);padding:1px 7px">用户自建</span></div>
+            <div class="mono" style="margin-top:6px">东京落地 + 东京租房（全部由用户自建）</div>
+            <button style="min-height:44px;padding:0 14px;margin-top:10px;border-radius:var(--r-pill);background:var(--accent-strong);color:var(--on-accent);border:1px solid var(--accent-strong);font-size:12px">一键加入 2 个频道</button>
+            <div style="font-size:11px;color:var(--warn);margin-top:8px">平台未设官方频道 · 官方频道需法域评估后启用</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h4>RegionBadge / RecommendReason / JurisdictionNotice</h4>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <span style="font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:var(--r-pill);padding:1px 7px">国际频道</span>
+          <span style="font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:var(--r-pill);padding:1px 7px">英国 · 伦敦 · 同城</span>
+          <span style="font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:var(--r-pill);padding:1px 7px">东京</span>
+        </div>
+        <div class="mono" style="margin-top:10px">推荐理由示例：频道数据 · 与「伦敦落地必读」订阅共现 0.62 ／ 同区域 128 人加入了「东京落地」／ 房间近 7 日新增 3 集。只用频道级数据，不采集逐条行为画像。</div>
+        <div class="notice notice--warn" style="margin-top:10px"><svg class="ico"><use href="#i-shield"/></svg><span><b>JurisdictionNotice</b>：UK 显示 OSA 2023 / NLA / UK GDPR / PECR；EU 显示 DSA 通知与申诉入口及 Art 17 声明；US 显示 DMCA designated agent 与反通知；其他仅显示「用户自建频道」声明。禁止全球共用一份文案。</span></div>
+      </div>
+    </section>
+
+    <section id="s10">
+      <div class="sec-h"><span class="num">10</span><h2>媒体布局与内容优先推荐</h2><span class="sub">PRD §27 / MASTER §15</span></div>
+      <p class="desc">媒体是 <code>content.media_layout</code> 上的一个字段，不是新的内容类型：纯文本 / 单图 / 2 图 / 3 图 / 4 图 / 竖屏手机视频 / 横屏视频 / 第三方占位，共用同一张卡片、来源署名与举报入口。<b>默认站内播放分两层</b>：平台自有图片与用户原创视频静音自动播；第三方 iframe 首次征询 PECR 同意，选择「总是允许此平台」后默认站内播放，且推荐流内永不预加载 iframe。<b>v1.4 / §17 修订</b>：媒体块下方不再挂来源条或播放控件，来源统一到卡片级 <code>SourceLine</code>（第 12 节），播放偏好收进顶部 <code>SettingsPanel</code>。</p>
+      <div class="grid2">
+        <div class="panel">
+          <h4>单图 / 横屏视频 16:9</h4>
+          <div class="md-wrap md-single">
+            <div class="md-grid"><div class="md-f"><span class="md-tag">原创信息图</span>单图等比缩放 · 桌面 ≤510px / 移动 ≤320px</div></div>
+          </div>
+          <div class="md-wrap md-land" style="margin-top:12px">
+            <div class="md-grid"><div class="md-f"><span class="md-tag">原创横屏 · 16:9</span>横屏视频全宽 16:9 · 下滑静音自动播<span class="md-tag br">01:30</span></div></div>
+          </div>
+          <div class="mono" style="margin-top:8px">v1.4：媒体下方无条、无按钮；点按画面暂停 / 继续，静音状态只用角标指示。</div>
+        </div>
+        <div class="panel">
+          <h4>竖屏手机视频 9:16</h4>
+          <div class="md-wrap md-port">
+            <div class="md-grid"><div class="md-f"><span class="md-tag">原创竖屏 · 9:16</span>手机视频<br>居中限宽 258px<br>两侧用 --bg 留白<span class="md-tag br">00:42</span></div></div>
+          </div>
+          <div class="mono" style="margin-top:10px">IntersectionObserver 仅可视区播放 · 离开视口暂停 · 省流量 / prefers-reduced-motion 下不自动播 · 一律静音起播 · 有文字替代 · <b>暂停靠点按画面，不靠按钮</b></div>
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="panel">
+          <h4>多图网格 2 / 3 / 4 图</h4>
+          <div class="md-wrap md-2"><div class="md-grid"><div class="md-f">2 图 · 等分两列</div><div class="md-f a1">2 图</div></div></div>
+          <div class="md-wrap md-3" style="margin-top:8px"><div class="md-grid"><div class="md-f">3 图 · 左大右两小</div><div class="md-f a1">图 2</div><div class="md-f a2">图 3</div></div></div>
+          <div class="md-wrap md-4" style="margin-top:8px"><div class="md-grid"><div class="md-f">4 图 · 2×2</div><div class="md-f a1">图 2</div><div class="md-f a2">图 3</div><div class="md-f a3">图 4</div></div></div>
+          <div class="mono" style="margin-top:10px">间隙固定 2px · 圆角由外层容器统一裁切 · 来源 / 许可 / 原创声明统一由卡片级 SourceLine 一行承载，媒体块下方不再放条</div>
+        </div>
+        <div class="panel">
+          <h4>第三方播放器占位 / 同意面板</h4>
+          <div class="md-wrap"><div class="md-grid"><div class="md-f" style="min-height:118px"><span class="md-tag">官方外链 · 静态占位</span>推荐流只渲染占位卡<br>点击后才加载 iframe</div></div>
+          </div>
+          <div class="notice notice--warn" style="margin-top:10px"><svg class="ico"><use href="#i-shield"/></svg><span><b>首次同意三选项</b>：仅本次加载 / 总是允许此平台（此后默认站内播放）/ 去原站看。PECR 事前同意，cookie 与 IP 传输须告知；同意写入 <code>user_consent_log</code>，可在「设置 → 隐私」撤回。</span></div>
+          <div class="mono" style="margin-top:8px">源站禁嵌入、英区无授权、死链 → 自动降级为「去原站看」或「仅登记」，禁止破解地区限制</div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h4>CardJoinButton · 加入频道固定在卡片右上角（v1.4 取代 FromChannelRow）</h4>
+        <div class="join-demo">
+          <span class="av">房</span><span class="nm">伦敦租房</span><span class="h">@london-housing · 40 分钟前</span>
+          <svg class="ico" style="width:14px;height:14px;color:var(--muted)"><use href="#i-spark"/></svg>
+          <button class="jn"><svg class="ico"><use href="#i-plus"/></svg>加入</button><button class="jn more" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button>
+        </div>
+        <div class="join-demo" style="margin-top:8px">
+          <span class="av">政</span><span class="nm">签证与政策</span><span class="h">@visa-policy · 2 小时前</span>
+          <button class="jn ghost"><svg class="ico"><use href="#i-check"/></svg>已加入</button><button class="jn more" aria-label="更多操作"><svg class="ico"><use href="#i-more"/></svg></button>
+        </div>
+        <div class="mono" style="margin-top:10px">推荐流先给内容卡，频道名已在头部，看完在<b>右上角</b>一键加入来源频道；不再有「来自频道 X」独立行，也不在卡内重复区域徽章。已订阅频道内容降权 0.12 并标「已加入」。0 订阅的新用户首屏也非空页。视觉 30px / 命中区 44px。</div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h4>SettingsPanel · 播放偏好与推荐透明度收进顶部浮层（v1.4 取代常驻 PlaybackPrefBar）</h4>
+        <div class="set-demo">
+          <h5>播放</h5><div class="row"><button class="b on">第一方自动播 开</button><button class="b">第三方 每次询问</button></div>
+          <h5>推荐与透明度</h5><div class="row"><button class="b">模拟新用户（0 订阅）</button></div>
+          <h5>区域与定位</h5><div class="row"><button class="b">更改区域</button><button class="b">关闭定位</button><button class="b">重放首次进入</button></div>
+          <div class="mono" style="margin-top:6px">推荐主要参数（DSA Art 27）：订阅共现 0.40 / 区域匹配 0.30 / 频道活跃 0.20 / 编辑精选 0.10；从推荐界面一次点击可达，并可直接切到「正在关注」时间序（非画像选项）。面板内容始终渲染，仅 hidden 控可见性。</div>
+        </div>
+        <div class="notice notice--warn" style="margin-top:10px"><svg class="ico"><use href="#i-shield"/></svg><span><b>合规红线</b>：禁止服务端代理 / 转存 / 缓存媒体流；禁止推荐流预加载第三方 iframe；分类信息、房间单集、外链按语不进推荐流；OSA 非法内容风险评估须补「推荐放大」，EU DSA 下还要评估未授权版权材料被推荐的放大风险。</span></div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h4>状态矩阵（验收口径）</h4>
+        <div class="mono">媒体（v1.4）：占位 → 下滑静音自动播 → <b>点按画面</b>暂停 → 再点继续 / 开声 → 离开视口暂停 → 省流量 / 减少动效降级静态封面；媒体下方零按钮</div>
+        <div class="mono" style="margin-top:6px">第三方：静态占位 → 首次同意面板 → 仅本次 / 总是允许 / 去原站 → iframe 播放 → 收起销毁 DOM → 死链或禁嵌入降级</div>
+        <div class="mono" style="margin-top:6px">订阅：未加入（右上角「加入」）→ 已加入（退订 + 内容降权）→ 切换国家只暂停显示其他国家频道，不影响已有订阅</div>
+        <div class="mono" style="margin-top:6px">每张卡恒有：来源署名 + 许可徽章 + 原文回链 + 举报入口 + 命中区 44px + 可见焦点环；区域徽章只在顶部区域栏</div>
+        <div class="mono" style="margin-top:6px">设置：齿轮展开（播放 / 推荐 / 定位 / 演示四组）→ 切 Tab 自动收起；内容始终渲染，收起不丢失 DSA 披露</div>
+      </div>
+    </section>
+
+    <section id="s11">
+      <div class="sec-h"><span class="num">11</span><h2>自动定位与开通权限</h2><span class="sub">PRD §28 / MASTER §16</span></div>
+      <p class="desc">App 首次进入自动推断<b>国家级大区域</b>，只决定默认展示哪个频道包；<b>绝不启用任何法域的官方频道</b>。定位用 CDN 边缘 IP 粗粒度推断，不申请设备 GPS 权限、不存 IP 原文与经纬度。<b>区域是官方的合规容器，频道是用户的表达空间</b>：区域 / 官方包 / 官方频道由平台在法域风险评估后创建，用户可自建频道，包括官方未开通的地区。</p>
+      <div class="grid2">
+        <div class="panel">
+          <h4>LocationConfirmBar · 首次确认（非弹窗）</h4>
+          <div class="locd"><span class="t">根据网络判断你在 英国 · 伦敦</span><span class="d">只到国家 / 城市级，不申请设备 GPS 权限，不存 IP 原文与经纬度。</span><span class="gtag">官方已开通 · 平台开设官方频道</span><span class="sp"></span><button class="lb primary">确认，用这个区域</button><button class="lb">不是这里 · 手动改</button><button class="lb">关闭定位</button><div class="src">来源：网络推断（CDN 边缘 IP → 国家）· 区域只决定默认展示的频道包，<b>不会启用任何法域的官方频道</b>。</div></div>
+          <div class="locd slim" style="margin-top:8px"><span class="t">英国 · 伦敦</span><span class="d">已确认 · 来源网络推断 · 仅国家 / 城市级 · 此后不再自动覆盖 · 可在设置中切换国家（单选）</span><span class="sp"></span><button class="lb">详情与开关</button></div>
+          <div class="locd slim" style="margin-top:8px"><span class="t">定位已关闭</span><span class="d">仅显示国际频道，不推断所在国家。</span><span class="sp"></span><button class="lb">详情与开关</button><button class="lb">重新开启定位</button></div>
+          <div class="mono" style="margin-top:10px">三态：prompt（首次两行横幅）/ confirmed（锁定，不再自动覆盖，收成一行细条）/ off（国际兜底，绝不空白页）。<b>v1.4</b>：详细开关、演示按钮与来源复述收进 <code>SettingsPanel</code>，来源与精度在首次条 + 设置两处可见。按钮命中区 ≥44px，容器 <code>aria-live="polite"</code> + <code>role="region"</code>。</div>
+        </div>
+        <div class="panel">
+          <h4>RegionGovernanceBadge · 三态</h4>
+          <div class="badges"><span class="gtag">已开通 · 有本国分类频道</span><span class="gtag dash">未开通 · 仅显示国际频道</span><span class="gtag dash">国际频道 · 各国共享</span></div>
+          <div class="mono" style="margin-top:10px">状态用<b>文字 + 实线 / 虚线描边</b>双重指示，不用语义色（避免与合规状态徽章混淆）；区域名走 <code>name_hans</code> / <code>name_hant</code>，禁止前端硬编码。</div>
+          <h4 style="margin-top:14px">ChannelOwnerBadge · 频道归属</h4>
+          <div class="badges"><span class="otag">平台开设 · 官方自动</span><span class="otag">平台开设 · 官方精选</span><span class="otag dash">用户创建 · 用户自建</span><span class="otag dash">用户创建 · 用户房间</span></div>
+          <div class="mono" style="margin-top:10px">频道目录每行必带归属徽章。未启用法域内的用户自建频道<b>不得使用官方认证徽章</b>，也不得自动进入官方区域包或推荐高权重位。</div>
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="panel">
+          <h4>RegionLaunchCard · 已开通法域</h4>
+          <div class="launch"><div class="h">英国 · 伦敦 <span class="gtag">官方已开通 · 平台开设官方频道</span></div><div class="b">区域由平台创建：开一个法域需完成风险评估、通知渠道、下架 SLA 与申诉入口。频道构成：平台开设 7 个 · 用户自建 5 个。</div><div class="f"><span class="ok">已开通 · 官方区域包可一键加入</span></div></div>
+          <h4 style="margin-top:14px">RegionLaunchCard · 未开法域</h4>
+          <div class="launch"><div class="h">东京 <span class="gtag dash">未开通 · 仅显示国际频道</span></div><div class="b">未开通：暂无本国分类频道，该国用户只看国际频道；不得使用官方认证徽章，也不会自动进入官方区域包。</div><div class="f"><span>已有 37 人希望开通此地区官方频道</span><button class="lb">申请开通（仅登记需求）</button></div></div>
+          <div class="notice notice--warn" style="margin-top:10px"><svg class="ico"><use href="#i-shield"/></svg><span><b>「申请开通」是需求信号，不是开通动作</b>。文案必须写明「仅登记需求」，数据只用于下一法域排序，不得让用户误以为点完就有官方内容。</span></div>
+        </div>
+        <div class="panel">
+          <h4>定位信号优先级（两个用途，禁止混用）</h4>
+          <div class="mono">内容区域（我在哪）：已保存的明确选择 → CDN 边缘 IP 国家 → 系统语言 / 时区 → 自选 → GLOBAL 兜底</div>
+          <div class="mono" style="margin-top:6px">法域参考（我受谁约束）：商店地区（Apple ID / Play 账号国）、账号国、上架地区、用户声明</div>
+          <div class="mono" style="margin-top:6px">App Store 商店地区跟<b>账号国</b>走，不跟设备语言、GPS 或 IP；移民用户常滞后于实际所在地，因此只能作弱信号。VPN / 漫游误判靠在设置中手动切换国家纠正。</div>
+          <div class="mono" style="margin-top:6px">ICO 将「不识别个人的城市 / 区域级粗粒度定位」列为可免 PECR 同意的统计目的例外；但 IP 仍属 UK GDPR 个人数据，须透明、最小化、可反对。设备 GPS 精确定位才需要单独同意与权限弹窗 —— <b>本产品不用</b>。</div>
+          <div class="notice" style="margin-top:10px"><svg class="ico"><use href="#i-info"/></svg><span><b>可交互活示例</b>：打开 <code>prototype-x-style.html</code> v6，顶部定位条可确认 / 手动改 / 关闭；右上角齿轮的「区域与定位」分组可模拟定位到未开法域（日本）验证回退；「添加频道」页可点「申请开通」。区域信息只在顶部出现，帖子卡内不再重复。</span></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h4>状态矩阵与验收（§16.8）</h4>
+        <div class="mono">定位：首次推断 → 确认（锁定）→ 更改 / 关闭 → 重新开启 → 国际兜底；用户确认后自动定位不得再覆盖</div>
+        <div class="mono" style="margin-top:6px">区域：官方创建（无 risk_assessment_ref 不得 enabled）→ 官方包可启用；当前国家单选不叠加，切换国家只暂停显示、不退订频道</div>
+        <div class="mono" style="margin-top:6px">频道：平台开设（仅已启用法域）/ 用户自建（任意区域，含未启用）；一律同一套审核、举报与 24h 下架</div>
+        <div class="mono" style="margin-top:6px">发布门禁：<code>node design-system/check-location.js</code>（真实执行定位状态机、开通徽章、需求登记与动态标签平衡）</div>
+        <div class="notice notice--warn" style="margin-top:10px"><svg class="ico"><use href="#i-shield"/></svg><span><b>合规 UI 不可省略</b>：定位来源与精度必须可见、可改、可关；未启用法域必须显示「仅用户自建频道」并按法域渲染合规角标；自动定位与法域启用必须在界面和代码层彻底分离，禁止 <code>if country=='UK'</code> 式硬编码。</span></div>
+      </div>
+    </section>
+
+    <section id="s12">
+      <div class="sec-h"><span class="num">12</span><h2>首屏精简与 X 式帖子卡</h2><span class="sub">PRD §29 / MASTER §17 / v1.4</span></div>
+      <p class="desc">裴总第十轮反馈：<b>区域与定位放在顶部、加入频道放帖子右上角、视频下方不要播放 / 静音按钮、帖子区像 X 平台那样</b>。裁决是把所有「设置型信息」收进吸顶层，把帖子区还给内容；8 种媒体布局、两层默认播放、内容优先推荐、DSA Art 27 与合规署名一条不减。</p>
+      <div class="grid2">
+        <div class="panel">
+          <h4>三层信息架构（不许混层）</h4>
+          <div class="arch">吸顶层 sticky：标题 → 三 Tab → 首次定位条 / 细条 → 区域栏（唯一区域表达）→ 齿轮设置浮层
+内容层：1 条极细提示 → Compose → N 张内容卡 → 尾部频道候选 → 1 条收尾
+右栏：搜索 / 推荐频道 / 趋势 / 合规说明</div>
+          <div class="mono" style="margin-top:10px">禁止出现在第一条帖子上方或卡片内部：区域徽章、定位来源说明、播放偏好开关、DSA 参数长文、多行演示说明、原型版本号。旧版 4 条 section-hint + PlaybackPrefBar + demo-note 已废止。</div>
+        </div>
+        <div class="panel">
+          <h4>SettingsPanel · 一次点击可达</h4>
+          <div class="set-demo">
+            <h5>播放</h5><div class="row"><button class="b on">第一方自动播 开</button><button class="b">第三方 每次询问</button></div>
+            <h5>推荐与透明度</h5><div class="row"><button class="b">0.40 / 0.30 / 0.20 / 0.10</button><button class="b">模拟新用户</button></div>
+            <h5>区域与定位</h5><div class="row"><button class="b">更改区域</button><button class="b">关闭定位</button><button class="b">模拟日本</button></div>
+            <h5>演示</h5><div class="mono">v6 · 不占信息流高度 · 不遮挡吸顶 Tab</div>
+          </div>
+          <div class="mono" style="margin-top:10px">入口是区域栏最右齿轮；内容始终渲染，仅 hidden 控可见性，保证读屏与门禁能读到 DSA 参数；切 Tab 自动收起。</div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h4>X 式帖子卡 · 活示例（加入在右上角，视频下方无按钮）</h4>
+        <div class="xd-card">
+          <div class="av">房</div>
+          <div class="xd-body">
+            <div class="xd-head">
+              <span class="nm">伦敦租房</span><span class="h">@london-housing</span><span class="tm">· 40 分钟前</span>
+              <svg class="ico" role="img" aria-label="推荐理由：频道数据"><use href="#i-spark"/></svg>
+              <button class="xd-join">加入</button>
+              <span class="xd-more"><svg class="ico"><use href="#i-more"/></svg></span>
+            </div>
+            <div class="xd-copy"><b>Zone 2 合租单间 · 近 Elizabeth line</b><p>步行约 6 分钟，月租 £720，押金一个月，已确认加入押金保护计划。<span class="xd-tag">#伦敦租房</span> <span class="xd-tag">#押金</span></p></div>
+            <div class="xd-media"><span class="tag">原创横屏 · 16:9</span>下滑静音自动播 · 点按画面暂停<span class="dur"><svg class="ico"><use href="#i-mute"/></svg>01:30</span></div>
+            <div class="xd-src"><span>来源 <b>GOV.UK / 用户原创</b></span><span class="lic">OGL v3.0</span><a href="#">查看原文 ↗</a><span>3 个来源 ▾</span></div>
+            <div class="xd-acts">
+              <span class="a"><svg class="ico"><use href="#i-reply"/></svg></span>
+              <span class="a"><svg class="ico"><use href="#i-repost"/></svg></span>
+              <span class="a"><svg class="ico"><use href="#i-heart"/></svg></span>
+              <span class="a"><svg class="ico"><use href="#i-bookmark"/></svg></span>
+              <span class="a"><svg class="ico"><use href="#i-share"/></svg></span>
+              <span class="a"><svg class="ico"><use href="#i-flag"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <div class="mono" style="margin-top:10px">结构：头像 40px | 头部（名字 / handle / 时间 / 推荐理由小图标 + <b>右上角加入</b>） | 正文与标签 | 媒体（下方零条零按钮） | SourceLine 一行 | 6 个图标操作。来源 / 许可 / 回链 / 举报全部常驻，只是从「多块」压成「两行」。</div>
+      </div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="panel">
+          <h4>三条硬裁决与覆盖关系</h4>
+          <div class="mono">区域 / 定位 → 顶部区域栏 + 首次条 + 设置浮层；卡片内删 rbadge 与来源频道独立行</div>
+          <div class="mono" style="margin-top:6px">加入频道 → CardJoinButton 固定 card-head 最右，视觉 30px / 命中区 44px，aria-label 写频道名</div>
+          <div class="mono" style="margin-top:6px">视频 → 下滑静音自动播，点按画面暂停 / 继续，右下角只有时长 + 静音指示图标；删 mbar 与全部 data-media 控件</div>
+          <div class="notice notice--warn" style="margin-top:10px"><svg class="ico"><use href="#i-shield"/></svg><span><b>不变项</b>：PECR 事前同意、iframe 销毁、DSA Art 27 披露、内容优先推荐与打分、来源署名与举报、24h 下架、区域 / 法域权限矩阵。</span></div>
+        </div>
+        <div class="panel">
+          <h4>触控例外与验收</h4>
+          <div class="mono">44×44 约束的是<b>命中区</b>：视觉 30–34px 的紧凑按钮用 <code>::after{inset:-7px}</code> 扩展；相邻命中区不重叠。</div>
+          <div class="mono" style="margin-top:6px">推荐理由收进头部 why-dot（role="img" + aria-label + title），悬停与读屏仍可读。</div>
+          <div class="mono" style="margin-top:6px">门禁：check-media / check-global / check-location 同步断言右上角加入、无底部播放按钮、卡片内无区域徽章、设置面板可达。</div>
+          <div class="mono" style="margin-top:6px">人工：深浅主题 / 420px 移动 / 200% 缩放无重叠；齿轮展开不遮挡 Tab；点按视频能暂停。</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="s13">
+      <div class="sec-h"><span class="num">13</span><h2>房间小圈子与轻量化</h2><span class="sub">PRD §30 + §31 + §32 / MASTER §18 + §19 + §20 / v1.7</span></div>
+      <p class="desc">裴总第十一～十三轮反馈的合成：<b>用户创建多个「房间 · 小圈子」</b>（一部剧一个房间、一部电影一个房间），其他用户可留言评论、@ 用户名、# 关键词；发帖没设关键词时官方 AI 自动补最多 5 个；<b>房间不一定视频、没有类型与版权确认，想建就建</b>；房间有内容就显示在频道目录，右上角一键加入，加入后更新有通知。</p>
+      <div class="grid2">
+        <div class="panel">
+          <h4>创建房间 · 一步化（§32 核心回拨）</h4>
+          <div class="set-demo">
+            <h5>房间名（唯一必填）</h5><div class="row"><span class="in">新闻女王 追更房间</span></div>
+            <h5>可选 · 挂靠频道</h5><div class="row"><button class="b">不挂靠 · 独立小圈子 ▾</button></div>
+            <h5>可选 · 类型（默认通用，可后改）</h5><div class="row"><button class="b on">通用</button><button class="b">剧集</button><button class="b">电影</button><button class="b">视频</button></div>
+            <div class="row" style="margin-top:8px"><button class="b on" style="width:100%">创建房间</button></div>
+          </div>
+          <div class="mono" style="margin-top:10px">从 §31 的「选父频道 → 房间名 + 类型 + 版权确认」两段式，回拨为「填房间名」一步式。类型 / 挂靠 / 版权确认全部可选；<b>版权确认下移到「上传原创视频 / 登记外链」的内容动作</b>，空房间零门槛。</div>
+        </div>
+        <div class="panel">
+          <h4>房间目录卡 · 右上角加入 + 更新通知</h4>
+          <div class="roomdir-demo">
+            <div class="r-row"><div class="rav">房</div><div class="rinfo"><b>新闻女王 追更房间</b> <span class="otag dash">用户自建 · 非官方</span><div class="rsub">剧集 · 20 集 · 房主 @manling · 1284 人加入 · 今日新增 3 集</div></div><button class="xd-join joined"><svg class="ico" style="width:13px;height:13px"><use href="#i-check"/></svg>已加入</button></div>
+            <div class="r-row"><div class="rav" style="background:#2b3a4a">房</div><div class="rinfo"><b>伦敦烘焙同好会</b> <span class="otag dash">用户自建 · 非官方</span><div class="rsub">通用 · 12 条 · 独立小圈子 · 137 人加入 · 3 小时前更新</div></div><button class="xd-join"><svg class="ico" style="width:13px;height:13px"><use href="#i-plus"/></svg>加入</button></div>
+          </div>
+          <div class="mono" style="margin-top:10px">房间有 ≥1 条已发布内容才进目录（空房不展示）；右上角 CardJoinButton 与帖子卡 / 频道卡一致。加入即默认订阅「更新通知」（房主发内容时推摘要，频控 24h ≤3 条），可全局或按房间静音。</div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h4>通知中心 + 留言评论 + @/# + AI 关键词（§30 已冻结）</h4>
+        <div class="mono">更新通知：加入房间 / 频道即订阅；通知进「通知」中心 + 未读角标，`channel_notification` 摘要（「房间 X 新增 1 条内容」），不带原文 / 单集 / 外链。</div>
+        <div class="mono" style="margin-top:6px">留言评论：房间「留言 · 讨论」Tab，@ 人 / # 关键词 / 举报，共用 24h 下架 SLA；评论不进推荐流、不推送、不做算法放大。</div>
+        <div class="mono" style="margin-top:6px">官方 AI 关键词：仅用户 0 关键词时生成 ≤5 个，逐个标「AI」角标、可改可删；用户填 ≥1 个则 AI 完全不介入；关键词不进推荐打分、不进画像。</div>
+        <div class="notice notice--warn" style="margin-top:10px"><svg class="ico"><use href="#i-shield"/></svg><span><b>红线不变</b>：房间永不带认证徽章、永不进官方区域包、永不进「为你推荐」个性化流（频道目录 ≠ 推荐流）；原创视频上传仍强制版权确认；通知删除 / 24h SLA / 重复侵权政策一条不减。</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite">操作已完成</div>
+
+<script>
+function I(id, cls){ return '<svg class="ico'+(cls?' '+cls:'')+'"><use href="#'+id+'"/></svg>'; }
+function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+var $ = function(s){ return document.querySelector(s); };
+
+var SECTIONS = [
+  ['s1','01 颜色基础'],['s2','02 字体与字阶'],['s3','03 间距 / 圆角 / 层级'],
+  ['s4','04 按钮与状态矩阵'],['s5','05 表单'],['s6','06 数据展示与反馈'],
+  ['s7','07 合规 UI'],['s8','08 响应式与无障碍'],['s9','09 区域化组件'],['s10','10 媒体布局与内容优先推荐'],['s11','11 自动定位与开通权限'],['s12','12 首屏精简与 X 式帖子卡'],['s13','13 房间小圈子与轻量化']
+];
+
+var SWATCHES = [
+  {n:'--bg',       l:'#ffffff', d:'#000000', u:'页面底',        cr:null},
+  {n:'--surface',  l:'#f7f9f9', d:'#16181c', u:'卡片表面',      cr:null},
+  {n:'--surface2', l:'#eff3f4', d:'#202327', u:'输入 / chip',   cr:null},
+  {n:'--text',     l:'#0f1419', d:'#e7e9ea', u:'正文 AA',       cr:'18.51 / 17.24'},
+  {n:'--muted',    l:'#536471', d:'#9aa6b1', u:'次要文字 AA',   cr:'6.12 / 8.46'},
+  {n:'--border',   l:'#e6ecf0', d:'#2f3336', u:'仅分隔线',      cr:null},
+  {n:'--line',     l:'#707c87', d:'#6d7781', u:'控件边框 3:1',  cr:'4.27 / 4.61'},
+  {n:'--accent',   l:'#1d9bf0', d:'#1d9bf0', u:'仅装饰',        cr:'3.00 焦点环'},
+  {n:'--accent-ink',l:'#0a6ba8',d:'#1d9bf0',u:'链接文字 AA',   cr:'5.70 / 7.00'},
+  {n:'--accent-strong',l:'#0a72b4',d:'#1d9bf0',u:'按钮实底',   cr:'白字 5.15 / 6.17'},
+  {n:'--good',     l:'#00875a', d:'#3ccf91', u:'成功 AA',       cr:'4.55 / 10.53'},
+  {n:'--warn',     l:'#a86800', d:'#e0a838', u:'警告 AA',       cr:'4.52 / 9.83'},
+  {n:'--danger',   l:'#d02b32', d:'#f07579', u:'危险 AA',       cr:'5.16 / 7.53'}
+];
+
+var TOKEN_ROWS = [
+  ['--accent','装饰：Tab 线 / 进度条','#1d9bf0','#1d9bf0','禁止作浅色正文链接'],
+  ['--focus','焦点环（独立 token）','#0a6ba8','#1d9bf0','≥3:1；修补浅色卡片 2.84:1'],
+  ['--accent-ink','链接、强调文字','#0a6ba8','#1d9bf0','≥4.5:1'],
+  ['--accent-strong','按钮实底','#0a72b4','#1d9bf0','须配 --on-accent'],
+  ['--on-accent','按钮文字','#ffffff','#0f1419','与 strong 成对'],
+  ['--border','分隔线','#e6ecf0','#2f3336','不承担控件识别'],
+  ['--line','输入框 / 描边 / 徽章边框','#707c87','#6d7781','≥3:1'],
+  ['--muted','次要文字','#536471','#9aa6b1','≥4.5:1'],
+  ['--tap','触控目标','44px','44px','所有可点击元素']
+];
+
+var SCALE = [
+  ['11px','角标 / 许可 / 元信息'],['12px','说明文字 / 表单标签'],['13px','按钮 / 列表描述'],
+  ['14px','卡片正文 / 输入'],['15px','桌面默认正文 / 移动端帖子正文（行高 1.5）'],['16px','输入框（移动端下限，防 iOS 放大）'],
+  ['17px','页面标题'],['19px','品牌 / 大标题'],['21px','区块标题'],['30px','房间封面']
+];
+
+var SPACES = [4,8,12,16,20,24,32,44,48];
+var RADII = [['r-sm','6px','var(--r-sm)'],['r-md','10px','var(--r-md)'],['r-lg','14px','var(--r-lg)'],['r-xl','16px','var(--r-xl)'],['r-pill','999px','var(--r-pill)']];
+
+var TAGS = [
+  ['tag--good','i-check','原創 · 版權已確認'],['tag--link','i-link','官方外鏈卡片'],
+  ['tag--warn','i-info','審核中'],['tag--danger','i-flag','已檢舉'],['tag--solid','i-check','已認證']
+];
+var STATES = [
+  ['tag--warn','i-info','審核中 · 僅自己可見'],['tag--warn','i-info','僅登記 · 暫無合法入口'],
+  ['tag--warn','i-external','去原站看（源站禁止嵌入）'],['tag--good','i-shield','原創 · 版權已確認'],
+  ['tag--link','i-link','官方外鏈 · YouTube']
+];
+var TABS = [['为你推荐','每日精选 · 有限列表'],['正在关注','严格按时间排序 · 仅已订阅频道'],['添加频道','日更新 ≥3 条才展示']];
+var CHECKS = [
+  '无 emoji / Unicode 图标，统一 SVG symbol',
+  '所有可点击元素 ≥44px 且 cursor:pointer',
+  'hover 有反馈且不造成布局位移',
+  ':focus-visible 可见，prefers-reduced-motion 已处理',
+  '浅色与深色都测过，正文 ≥4.5:1 / 控件 ≥3:1',
+  '375 / 420 / 768 / 1024 / 1440px 无横向滚动',
+  'label for ↔ id，错误有 role="alert" 与恢复路径',
+  '空 / 加载 / 错误 / 禁用四态齐全',
+  '来源署名、许可徽章、举报入口常驻',
+  'embed 默认不加载、收起销毁 DOM、不进推荐流',
+  '简繁两套文案齐全，主题与语言互不耦合'
+];
+var SOURCES = [
+  ['GOV.UK · eVisa','https://www.gov.uk/'],['ONS · 民生统计','https://www.ons.gov.uk/'],
+  ['Bank of England','https://www.bankofengland.co.uk/'],['London Councils','https://www.londoncouncils.gov.uk/'],
+  ['TfL · 出行通告','https://tfl.gov.uk/']
+];
+
+var embedState = 'placeholder';
+var activeTab = 0;
+
+/* ---------- 渲染 ---------- */
+function renderToc(){
+  $('#tocLinks').innerHTML = SECTIONS.map(function(s,i){
+    return '<a href="#'+s[0]+'"'+(i===0?' class="active"':'')+'>'+esc(s[1])+'</a>';
+  }).join('');
+}
+function renderSwatches(){
+  var dark = document.body.getAttribute('data-theme')==='dark';
+  $('#swatches').innerHTML = SWATCHES.map(function(s){
+    var hex = dark ? s.d : s.l;
+    var cr = s.cr
+      ? '<span class="cr ok">'+I('i-check','sm')+'AA · '+esc(s.cr)+'</span>'
+      : '<span class="cr na">'+I('i-info','sm')+'仅表面 / 装饰</span>';
+    return '<div class="sw"><div class="chip" style="background:'+hex+';color:'+(dark?'#0f1419':'#ffffff')+';border-bottom:1px solid var(--border)">'+esc(hex)+'</div>'+
+      '<div class="meta"><div class="nm">'+esc(s.n)+'</div><div class="hex">'+esc(s.u)+'</div>'+cr+'</div></div>';
+  }).join('');
+}
+function renderTokenTable(){
+  $('#tokenTable tbody').innerHTML = TOKEN_ROWS.map(function(r){
+    return '<tr><td><code>'+esc(r[0])+'</code></td><td>'+esc(r[1])+'</td><td class="mono">'+esc(r[2])+'</td><td class="mono">'+esc(r[3])+'</td><td>'+esc(r[4])+'</td></tr>';
+  }).join('');
+}
+function renderTypeScale(){
+  $('#typeScale').innerHTML = SCALE.map(function(s){
+    return '<div class="scale-row"><span class="lbl">'+esc(s[0])+' · '+esc(s[1])+'</span>'+
+      '<span class="sample" style="font-size:'+s[0]+'">伦敦落地必读 · 簡繁並存</span></div>';
+  }).join('');
+}
+function renderSpacing(){
+  $('#spBars').innerHTML = SPACES.map(function(v){
+    return '<div class="u"><i style="width:'+Math.max(8,v)+'px;height:'+Math.max(6,v)+'px"></i>'+v+'</div>';
+  }).join('');
+  $('#radii').innerHTML = RADII.map(function(r){
+    return '<div style="text-align:center"><div class="r-box" style="border-radius:'+r[2]+'">'+esc(r[0])+'</div><div class="mono" style="margin-top:5px">'+esc(r[1])+'</div></div>';
+  }).join('');
+}
+function renderTags(){
+  $('#tagRow').innerHTML = TAGS.map(function(t){
+    return '<span class="tag '+t[0]+'">'+I(t[1],'sm')+esc(t[2])+'</span>';
+  }).join('');
+  $('#stateRow').innerHTML = STATES.map(function(t){
+    return '<span class="tag '+t[0]+'">'+I(t[1],'sm')+esc(t[2])+'</span>';
+  }).join('');
+}
+function renderTabs(){
+  $('#demoTabs').innerHTML = TABS.map(function(t,i){
+    return '<button class="tab'+(i===activeTab?' active':'')+'" role="tab" aria-selected="'+(i===activeTab)+'" data-tab="'+i+'">'+esc(t[0])+'</button>';
+  }).join('');
+  $('#tabPanel').textContent = TABS[activeTab][1];
+}
+function renderChecklist(){
+  $('#checklist').innerHTML = CHECKS.map(function(c){
+    return '<div class="ck">'+I('i-check','sm')+'<span>'+esc(c)+'</span></div>';
+  }).join('');
+}
+function renderSources(){
+  $('#sourceList').innerHTML = SOURCES.map(function(s){
+    return '<a href="'+esc(s[1])+'" target="_blank" rel="noopener" style="display:flex;justify-content:space-between;gap:8px;padding:8px 10px;font-size:var(--fs-12);border-bottom:1px solid var(--border);color:var(--text)"><span>'+esc(s[0])+'</span>'+I('i-external','sm')+'</a>';
+  }).join('');
+}
+function renderEmbed(){
+  var box = $('#embedSlot');
+  if(embedState==='placeholder'){
+    box.innerHTML =
+      '<div class="embed-ph"><div class="ph-mark">'+I('i-play')+'</div>'+
+      '<div class="ph-text"><div class="ph-t">TVB 官方預告｜新聞女王</div>'+
+      '<div class="ph-s">官方 YouTube 頻道 · 加載後將由第三方播放器提供，並傳輸你的 IP 與設備信息</div></div>'+
+      '<button class="btn btn--primary btn--sm" data-embed="consent">'+I('i-play','sm')+'站內播放</button>'+
+      '<button class="btn btn--outline btn--sm" data-embed="external">'+I('i-external','sm')+'去原站看</button></div>';
+  } else if(embedState==='consent'){
+    box.innerHTML =
+      '<div class="embed-ph"><div class="ph-mark">'+I('i-play')+'</div>'+
+      '<div class="ph-text"><div class="ph-t">TVB 官方預告｜新聞女王</div>'+
+      '<div class="ph-s">官方 YouTube 頻道</div></div></div>'+
+      '<div class="embed-consent"><div class="ct">'+I('i-shield','sm')+
+      '<span><b>PECR 事前同意</b>：加載第三方播放器會向該平台傳輸 IP / 設備信息並可能寫入 cookie。請選擇加載方式；偏好可隨時撤回。</span></div>'+
+      '<div class="cops"><button class="btn btn--primary btn--sm" data-embed="player">僅本次加載</button>'+
+      '<button class="btn btn--outline btn--sm" data-embed="player">總是允許此平台</button>'+
+      '<button class="btn btn--ghost btn--sm" data-embed="external">去原站看</button>'+
+      '<button class="btn btn--ghost btn--sm" data-embed="placeholder">'+I('i-close','sm')+'取消</button></div></div>';
+  } else if(embedState==='player'){
+    box.innerHTML =
+      '<div class="embed-player"><div><div style="font-size:var(--fs-11);letter-spacing:2px;color:#9aa6b1">OFFICIAL PLAYER · youtube-nocookie</div>'+
+      '<div style="font-size:var(--fs-15);font-weight:700;margin:8px 0">模擬官方 iframe（客戶端直連源站）</div>'+
+      '<div style="font-size:var(--fs-11);color:#9aa6b1">媒體流不經平台 · 不代理 / 不轉存 / 不緩存</div></div></div>'+
+      '<div class="embed-consent"><div class="cops" style="margin-top:0"><button class="btn btn--outline btn--sm" data-embed="placeholder">'+I('i-close','sm')+'收起並銷毀 iframe</button>'+
+      '<button class="btn btn--ghost btn--sm" data-embed="external">去原站看</button></div></div>';
+  } else {
+    box.innerHTML = '<div class="empty" style="border:none">已降級為跳轉卡 · 源站禁止嵌入或英區無授權<br><button class="btn btn--outline btn--sm" style="margin-top:10px" data-embed="placeholder">返回</button></div>';
+  }
+}
+function renderAll(){
+  renderToc(); renderSwatches(); renderTokenTable(); renderTypeScale();
+  renderSpacing(); renderTags(); renderTabs(); renderChecklist();
+  renderSources(); renderEmbed();
+}
+
+/* ---------- 交互 ---------- */
+var toastTimer;
+function toast(msg){
+  var t = $('#toast');
+  t.textContent = msg; t.classList.add('show');
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+}
+document.addEventListener('click', function(e){
+  var el = e.target.closest('[data-act]');
+  if(el){
+    var act = el.getAttribute('data-act');
+    if(act==='theme'){
+      var dark = document.body.getAttribute('data-theme')==='dark';
+      document.body.setAttribute('data-theme', dark?'light':'dark');
+      el.setAttribute('aria-pressed', String(!dark));
+      renderSwatches();
+      toast('已切換至'+(dark?'淺色':'深色')+'主題');
+      return;
+    }
+    if(act==='mobile'){
+      var on = document.body.classList.toggle('preview-mobile');
+      el.setAttribute('aria-pressed', String(on));
+      toast(on?'已切換至 420px 移動視圖':'已返回桌面視圖');
+      return;
+    }
+    if(act==='toast'){ toast('操作已完成 · Toast 使用 role="status"'); return; }
+    if(act==='sources'){ $('#sourceList').classList.toggle('hidden'); return; }
+    if(act==='report'){ toast('檢舉已受理 · 24h SLA'); return; }
+  }
+  var emb = e.target.closest('[data-embed]');
+  if(emb){
+    embedState = emb.getAttribute('data-embed')==='external' ? 'fallback' : emb.getAttribute('data-embed');
+    renderEmbed();
+    toast(embedState==='player'?'已加載官方播放器（模擬）':'播放器已銷毀 / 降級');
+    return;
+  }
+  var tab = e.target.closest('[data-tab]');
+  if(tab){ activeTab = +tab.getAttribute('data-tab'); renderTabs(); return; }
+});
+document.addEventListener('change', function(e){
+  if(e.target && e.target.getAttribute('data-role')==='confirm'){
+    var on = e.target.checked;
+    $('#submitBtn').disabled = !on;
+    $('#submitHint').textContent = on ? '版權已確認 · 可提交審核' : '未勾選 · 提交不可用';
+  }
+});
+
+renderAll();
+</script>
+</body>
+</html>
