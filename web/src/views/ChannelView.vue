@@ -5,6 +5,7 @@ import { request, toMessage, type RoomDetail, type RoomItem, type RoomItemsRespo
 import { useAuthStore } from "../stores/auth";
 import { useToastStore } from "../stores/toast";
 import { usePostReactions } from "../composables/usePostReactions";
+import { setDocumentTitle } from "../i18n/uiLang";
 import Avatar from "../components/base/Avatar.vue";
 import BaseButton from "../components/base/BaseButton.vue";
 import BaseTag from "../components/base/BaseTag.vue";
@@ -18,6 +19,13 @@ const auth = useAuthStore();
 const toast = useToastStore();
 const channelId = computed(() => String(route.params.id ?? ""));
 const detail = ref<RoomDetail | null>(null);
+// 网页标题带上频道名，多开标签页时分得清
+watch(
+  () => detail.value?.name_hans,
+  (name) => {
+    if (name) setDocumentTitle(`${name} · 海外圈`);
+  },
+);
 const items = ref<RoomItem[]>([]);
 const cursor = ref<string | null>(null);
 const roomCount = ref(6);

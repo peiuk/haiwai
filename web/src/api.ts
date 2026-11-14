@@ -354,6 +354,8 @@ export type RoomDetail = {
   name_hant: string;
   kind: string;
   room_type: string;
+  /** 房间类型的中文名（通用 / 剧集 / 电影 / 视频），由后端下发 */
+  room_type_label?: string;
   review_status?: string;
   is_private?: boolean;
   join_request_pending?: boolean;

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 房间详情页：房间头部信息 + 按 room_type 分支渲染条目 + 留言讨论。
 // 四种形态（general/series/film/video）通过 RoomItems 内部按 room_type 渲染。
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { setDocumentTitle } from "../i18n/uiLang";
 import { useRoute } from "vue-router";
 import RoomComments from "../components/RoomComments.vue";
 import RoomItems from "../components/room/RoomItems.vue";
@@ -21,6 +22,13 @@ const auth = useAuthStore();
 const toast = useToastStore();
 
 const detail = ref<RoomDetail | null>(null);
+// 网页标题带上房间名，多开标签页时分得清
+watch(
+  () => detail.value?.name_hans,
+  (name) => {
+    if (name) setDocumentTitle(`${name} · 海外圈`);
+  },
+);
 const loading = ref(true);
 const error = ref("");
 const requesting = ref(false);
@@ -148,7 +156,7 @@ onMounted(load);
       <header class="room-head">
         <h1 class="page-title" data-ugc>{{ detail.name_hans }}</h1>
         <div class="room-tags">
-          <BaseTag>{{ detail.room_type }}</BaseTag>
+          <BaseTag>{{ detail.room_type_label || detail.room_type }}</BaseTag>
           <BaseTag v-if="detail.certified" variant="link">官方</BaseTag>
           <BaseTag v-else variant="warn">用户自建 · 非官方</BaseTag>
           <BaseTag v-if="detail.is_owner" variant="good">我是房主</BaseTag>
