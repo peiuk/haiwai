@@ -29,6 +29,7 @@ from app.models import (
 from app.privacy import can_view_content
 from app.rooms import (
     ROOM_LIMIT,
+    ROOM_TYPE_LABELS,
     SORT_BASIS,
     drop_pushes,
     episode_sort_key,
@@ -230,6 +231,7 @@ def channel_detail(
         "name_hant": channel.name_hant,
         "kind": channel.kind,
         "room_type": channel.room_type,
+        "room_type_label": ROOM_TYPE_LABELS.get(channel.room_type, channel.room_type),
         "review_status": channel.review_status,
         "is_private": channel.is_private,
         "is_owner": user is not None and channel.owner_id == user.id,
