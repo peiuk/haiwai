@@ -31,6 +31,8 @@ class User(Base):
     script_pref: Mapped[str] = mapped_column(String(8), default="hans")
     status: Mapped[str] = mapped_column(String(16), default="active")
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 管理员：可以审核内容、处理举报。设置方式见 app/make_admin.py。
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     dm_allow_strangers: Mapped[bool] = mapped_column(Boolean, default=True)
     feed_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

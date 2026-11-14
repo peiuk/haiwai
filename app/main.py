@@ -19,7 +19,7 @@ from app.api.v1.room_social import router as room_social_router
 from app.api.v1.search import router as search_router
 from app.api.v1.uploads import router as uploads_router
 from app.api.v1.users import router as users_router
-from app.core.config import get_settings
+from app.core.config import DEFAULT_SECRET_KEY, get_settings
 from app.core.db import prepare_database
 from app.core.errors import APIError
 
@@ -32,6 +32,9 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # 非开发环境还在用写在代码里的默认密钥：任何人都能伪造任意用户的登录令牌，直接拒绝启动。
+    if settings.app_env != "dev" and settings.app_secret_key == DEFAULT_SECRET_KEY:
+        raise RuntimeError("APP_SECRET_KEY 还是默认值：非 dev 环境必须设置自己的随机密钥")
     app = FastAPI(title="海外圈", version="0.1.0", lifespan=lifespan)
     origins = [item.strip() for item in settings.cors_origins.split(",") if item.strip()]
     app.add_middleware(

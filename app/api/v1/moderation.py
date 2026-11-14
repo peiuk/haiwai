@@ -15,6 +15,13 @@ from app.rooms import drop_pushes, notify_room_update
 router = APIRouter(prefix="/moderation")
 
 
+def _require_moderator(user: User) -> None:
+    # 开发环境任何登录用户都能审（方便自测）；其余环境必须是管理员（python -m app.make_admin 设置）。
+    if user.is_admin or get_settings().app_env == "dev":
+        return
+    raise APIError(403, "FORBIDDEN", "需要管理员权限")
+
+
 class DecisionBody(BaseModel):
     decision: str
 
@@ -30,11 +37,10 @@ class DecisionBody(BaseModel):
 def decide(
     content_id: str,
     body: DecisionBody,
-    _user: User = Depends(current_user),
+    user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    if get_settings().app_env != "dev":
-        raise APIError(404, "NOT_FOUND", "没有这个功能")
+    _require_moderator(user)
     content = session.get(Content, content_id)
     if content is None or content.deleted_at is not None:
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
@@ -64,11 +70,10 @@ def decide(
 def decide_comment(
     comment_id: str,
     body: DecisionBody,
-    _user: User = Depends(current_user),
+    user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    if get_settings().app_env != "dev":
-        raise APIError(404, "NOT_FOUND", "没有这个功能")
+    _require_moderator(user)
     comment = session.get(RoomComment, comment_id)
     if comment is None or comment.removed_at is not None:
         raise APIError(404, "COMMENT_NOT_FOUND", "留言不存在")
@@ -116,8 +121,7 @@ def decide_case(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    if get_settings().app_env != "dev":
-        raise APIError(404, "NOT_FOUND", "没有这个功能")
+    _require_moderator(user)
     case = session.get(ModerationCase, case_id)
     if case is None or case.status != "open":
         raise APIError(404, "CASE_NOT_FOUND", "举报不存在")
@@ -221,8 +225,7 @@ def decide_channel(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    if get_settings().app_env != "dev":
-        raise APIError(404, "NOT_FOUND", "没有这个功能")
+    _require_moderator(user)
     channel = session.get(Channel, channel_id)
     if channel is None or channel.owner_id is None:
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")

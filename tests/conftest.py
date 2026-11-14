@@ -1,5 +1,10 @@
-import pytest
-from fastapi.testclient import TestClient
+import os
+
+# 设置里默认是 prod；测试依赖开发环境行为（验证码、审核接口），必须在导入 app 之前显式声明。
+os.environ["APP_ENV"] = "dev"
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
