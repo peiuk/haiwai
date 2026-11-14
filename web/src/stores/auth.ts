@@ -35,6 +35,13 @@ export const useAuthStore = defineStore("auth", () => {
     clearToken();
     token.value = "";
     profile.value = null;
+    // 主动退出 / 删号时清掉发布草稿，免得下一个用这台设备登录的人看到。
+    // 登录过期被动登出走 onAuthCleared，不会清：用户正在写的内容要保住。
+    try {
+      localStorage.removeItem("ukcn.publish-draft");
+    } catch {
+      // 存储不可用时忽略
+    }
   }
 
   // refresh token 失效被 api.ts 清除时，同步本地登录态，避免 UI 显示「已登录」但请求已 401。

@@ -163,6 +163,17 @@ describe("usePostReactions", () => {
   });
 });
 
+describe("auth.logout 与发布草稿", () => {
+  it("主动退出清掉草稿；登录过期被动登出（onAuthCleared）不清", () => {
+    const { auth } = setup({ loggedIn: true });
+    localStorage.setItem("ukcn.publish-draft", "{\"body\":\"写到一半\"}");
+    mods.api.clearToken(); // 模拟 refresh 失败：只广播清除，不是用户主动退出
+    assert.equal(localStorage.getItem("ukcn.publish-draft"), "{\"body\":\"写到一半\"}");
+    auth.logout();
+    assert.equal(localStorage.getItem("ukcn.publish-draft"), null);
+  });
+});
+
 describe("loginPrompt", () => {
   it("登录成功后自动完成刚才的点赞，且先于信息流刷新", async () => {
     const { auth, prompt, reactions } = setup({ loggedIn: false });

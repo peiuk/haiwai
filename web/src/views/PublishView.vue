@@ -73,6 +73,10 @@ const rightsConfirmed = ref(false);
 const busy = ref(false);
 const submitError = ref("");
 const success = ref("");
+// 切换发布类型后，上一条帖子的「已提交」提示不该还留着
+watch(currentType, () => {
+  success.value = "";
+});
 
 const MAX_LEN = 2000;
 
