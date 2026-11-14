@@ -12,7 +12,7 @@ import RightRail from "../components/common/RightRail.vue";
 import LoginPrompt from "../components/common/LoginPrompt.vue";
 import Avatar from "../components/base/Avatar.vue";
 import { request, type BadgesResponse } from "../api";
-import { homeCacheKey } from "../router";
+import { homeCacheKey } from "../router/homeCache";
 
 const route = useRoute();
 const auth = useAuthStore();

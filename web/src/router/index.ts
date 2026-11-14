@@ -1,8 +1,8 @@
-import { ref } from "vue";
 import { createRouter, createWebHistory } from "vue-router";
 import type { RouteRecordRaw } from "vue-router";
 import AppShell from "../layouts/AppShell.vue";
 import { setDocumentTitle } from "../i18n/uiLang";
+import { homeCacheKey } from "./homeCache";
 
 // 路由结构对齐原型：首页三 Tab（Home 内含「为你推荐/正在关注/频道」）、
 // 发现、消息、我的，以及房间详情、发布页、内容详情、用户主页。
@@ -26,11 +26,6 @@ const routes: RouteRecordRaw[] = [
   // 兜底：未匹配回到首页
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
-
-// 首页缓存的版本号：AppShell 用它作为首页的 key。
-// 浏览器「后退 / 前进」回到首页时版本不变，沿用缓存的信息流和滚动位置；
-// 从别的页面主动点进首页时版本加一，得到一份新加载的首页。
-export const homeCacheKey = ref(0);
 
 let viaHistory = false;
 if (typeof window !== "undefined") {
