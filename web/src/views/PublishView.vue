@@ -4,7 +4,7 @@
 // 「发分类信息」为类型下拉中的第 4 类（info）。
 // 底部「我的发布」为可折叠 X 式帖子卡流。
 // 官方外链登记（EmbedForm）从本页移除，另设入口（不在发布页混排）。
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { hasOwnTitle } from "../utils/post";
 import {
@@ -114,6 +114,19 @@ async function loadChannels(): Promise<void> {
   }
 }
 
+const pickerEl = ref<HTMLElement | null>(null);
+const pickerTrigger = ref<HTMLButtonElement | null>(null);
+function closePicker(returnFocus = false): void {
+  if (!typePickerOpen.value) return;
+  typePickerOpen.value = false;
+  if (returnFocus) pickerTrigger.value?.focus();
+}
+function onDocumentPointer(event: PointerEvent): void {
+  if (pickerEl.value && !pickerEl.value.contains(event.target as Node)) closePicker();
+}
+onMounted(() => document.addEventListener("pointerdown", onDocumentPointer));
+onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPointer));
+
 function setType(tp: ContentType): void {
   currentType.value = tp;
   typePickerOpen.value = false;
@@ -140,12 +153,18 @@ function removeTopic(index: number): void {
 
 const needPhone = ref(false);
 
+// Ctrl / ⌘ + Enter 直接发布（与 X 一致）；条件不满足时不做任何事，按钮的禁用状态已说明原因
+function publishByKeyboard(): void {
+  if (canPublish.value) void submit();
+}
+
 async function submit(): Promise<void> {
   submitError.value = "";
   needPhone.value = false;
   success.value = "";
   if (!auth.isLoggedIn) {
-    submitError.value = "请先登录或注册，草稿已保存在这台设备上";
+    // 与全站一致：弹登录 / 注册，登录成功后自动把这条发出去（草稿已在本机保存）
+    loginPrompt.require("登录后就能发布，登录成功会自动帮你发出。", () => submit());
     return;
   }
   if (!body.value.trim() || body.value.trim().length < 2) {
@@ -199,6 +218,7 @@ async function submit(): Promise<void> {
     channelId.value = "";
     clearDraft();
     await loadFeed();
+    feedOpen.value = true; // 展开「我的发布」，刚发的这条（审核中）马上能看到
   } catch (err) {
     const msg = err instanceof Error ? err.message : "发布没有成功";
     submitError.value = msg;
@@ -239,6 +259,7 @@ const DRAFT_KEY = "ukcn.publish-draft";
 let draftTimer: ReturnType<typeof setTimeout> | null = null;
 const draftSaved = ref(false);
 function clearDraft(): void {
+  if (draftTimer) clearTimeout(draftTimer); // 还没写进去的那次保存也取消，否则清掉后又被写回
   localStorage.removeItem(DRAFT_KEY);
   draftSaved.value = false;
 }
@@ -307,7 +328,11 @@ watch(() => route.query.channel, (value) => {
 watch(
   [body, title, topics, currentType, channelId, cityTopic, imageKeys, videoKey, rightsConfirmed],
   () => {
-    if (body.value.trim() || title.value.trim() || topics.value.length) saveDraft();
+    const hasContent =
+      body.value.trim() || title.value.trim() || topics.value.length || imageKeys.value.length || videoKey.value;
+    // 内容全删掉时连草稿一起删：否则下次进来会恢复出已经删掉的文字
+    if (hasContent) saveDraft();
+    else clearDraft();
   },
 );
 </script>
@@ -327,7 +352,7 @@ watch(
           <option v-for="opt in channelOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
       </div>
-      <BaseButton v-if="currentType !== 'info'" type="button" variant="primary" :disabled="!canPublish" :loading="busy" @click="submit">发布</BaseButton>
+      <BaseButton v-if="currentType !== 'info'" type="button" variant="primary" :disabled="!canPublish" :loading="busy" title="Ctrl / ⌘ + Enter 发布" aria-keyshortcuts="Control+Enter Meta+Enter" @click="submit">发布</BaseButton>
     </header>
 
     <!-- 草稿提示 -->
@@ -338,17 +363,18 @@ watch(
 
     <!-- 编辑区：以正文为中心，其他设置按需展开 -->
     <section class="compose" aria-label="发布内容">
-      <Avatar v-if="currentType !== 'info'" name="我" :size="44" class="compose-avatar" />
+      <Avatar v-if="currentType !== 'info'" :name="auth.displayName || '我'" :size="44" class="compose-avatar" />
       <div class="compose-body">
         <div class="compose-switch">
-          <div class="type-picker" :class="{ open: typePickerOpen }">
-            <button class="type-trigger" type="button" :aria-expanded="typePickerOpen" aria-haspopup="menu" @click="typePickerOpen = !typePickerOpen">
+          <!-- 展开面板（不是 ARIA menu：menu 要求方向键导航，这里用普通按钮 + Tab 更可靠）；Esc / 点外面关闭 -->
+          <div ref="pickerEl" class="type-picker" :class="{ open: typePickerOpen }" @keydown.esc="closePicker(true)">
+            <button ref="pickerTrigger" class="type-trigger" type="button" :aria-expanded="typePickerOpen" aria-controls="publish-type-options" @click="typePickerOpen = !typePickerOpen">
               <BaseIcon :name="currentTypeMeta.icon" :size="16" />
               <span>{{ currentTypeMeta.label }}</span>
               <BaseIcon name="i-chev" :size="14" :rotate="typePickerOpen ? 180 : 0" />
             </button>
-            <div v-if="typePickerOpen" class="type-tabs" role="menu">
-              <button v-for="opt in TYPE_OPTIONS" :key="opt.value" type="button" role="menuitem" class="type-tab" :class="{ active: currentType === opt.value }" @click="setType(opt.value)">
+            <div v-if="typePickerOpen" id="publish-type-options" class="type-tabs">
+              <button v-for="opt in TYPE_OPTIONS" :key="opt.value" type="button" class="type-tab" :class="{ active: currentType === opt.value }" :aria-pressed="currentType === opt.value" @click="setType(opt.value)">
                 <BaseIcon :name="opt.icon" :size="18" /><span>{{ opt.label }}</span>
               </button>
             </div>
@@ -370,6 +396,8 @@ watch(
           maxlength="2000"
           placeholder="有什么新鲜事想分享？"
           aria-label="正文"
+          @keydown.ctrl.enter.exact.prevent="publishByKeyboard"
+          @keydown.meta.enter.exact.prevent="publishByKeyboard"
         ></textarea>
 
         <!-- 视频提示 -->
@@ -461,7 +489,7 @@ watch(
         <p v-else-if="!feed.length" class="feed-note">还没有发布内容。</p>
         <template v-else>
           <article v-for="item in feed" :key="item.content_id" class="post">
-            <Avatar name="我" :size="42" />
+            <Avatar :name="auth.displayName || '我'" :size="42" />
             <div class="post-body">
               <div class="post-head">
                 <span class="name">我</span>
@@ -687,6 +715,7 @@ watch(
   font-size: var(--fs-13);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .count.over { color: var(--danger); }
 
@@ -766,7 +795,7 @@ watch(
 .dest-control-label { font-size: var(--fs-12); color: var(--muted); white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .dest-select {
-  min-height: 40px;
+  min-height: var(--tap);
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   background: var(--bg);
