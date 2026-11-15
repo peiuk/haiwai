@@ -8,10 +8,13 @@ import RoomComments from "../components/RoomComments.vue";
 import RoomItems from "../components/room/RoomItems.vue";
 import RoomManager from "../components/room/RoomManager.vue";
 import RoomSubmissions from "../components/room/RoomSubmissions.vue";
-import { request, type MeProfile, type RoomDetail } from "../api";
+import { jsonBody, request, type MeProfile, type RoomDetail } from "../api";
+import { ROOM_TYPES } from "../utils/room";
 import { useAuthStore } from "../stores/auth";
 import { useToastStore } from "../stores/toast";
 import BaseButton from "../components/base/BaseButton.vue";
+import TextField from "../components/base/TextField.vue";
+import SelectField from "../components/base/SelectField.vue";
 import BaseTag from "../components/base/BaseTag.vue";
 import ErrorState from "../components/base/ErrorState.vue";
 import ReportButton from "../components/common/ReportButton.vue";
@@ -132,6 +135,41 @@ async function rejectJoin(requestId: string): Promise<void> {
   }
 }
 
+// 新建的房间要等管理员审核：房主先发内容，任一条审核通过后房间自动上线
+const pending = computed(() => detail.value?.review_status === "pending");
+
+// ---- 房主改房间（名字、类型）----
+const editing = ref(false);
+const editName = ref("");
+const editType = ref("general");
+const saving = ref(false);
+
+function startEdit(): void {
+  if (!detail.value) return;
+  editName.value = detail.value.name_hans;
+  editType.value = detail.value.room_type;
+  editing.value = true;
+}
+
+async function saveEdit(): Promise<void> {
+  const name = editName.value.trim();
+  if (!name) {
+    toast.show("房间名不能为空");
+    return;
+  }
+  saving.value = true;
+  try {
+    await request(`/api/v1/channels/${roomId}`, { ...jsonBody({ name, room_type: editType.value }), method: "PATCH" });
+    editing.value = false;
+    toast.show("房间已更新");
+    onChanged();
+  } catch (err) {
+    toast.show(err instanceof Error ? err.message : "保存没有成功");
+  } finally {
+    saving.value = false;
+  }
+}
+
 function onChanged(): void {
   // 条目增删/移动/重排后：刷新条目列表与房间详情（entry_count 等）
   roomItemsRef.value?.reload();
@@ -168,7 +206,20 @@ onMounted(load);
         <p v-if="detail.subscriber_count !== undefined" class="room-meta">
           <template v-if="countryName">{{ countryName }} · </template>{{ detail.subscriber_count }} 人订阅<template v-if="detail.sort_basis"> · 排序：{{ detail.sort_basis }}</template>
         </p>
+        <BaseButton v-if="detail.is_owner && !editing" size="sm" variant="outline" @click="startEdit">编辑房间</BaseButton>
+        <form v-if="editing" class="room-edit" @submit.prevent="saveEdit">
+          <TextField id="room-edit-name" v-model="editName" label="房间名" required />
+          <SelectField id="room-edit-type" v-model="editType" label="类型" :options="[...ROOM_TYPES]" />
+          <div class="room-edit__actions">
+            <BaseButton size="sm" variant="outline" type="button" @click="editing = false">取消</BaseButton>
+            <BaseButton size="sm" type="submit" :loading="saving">保存</BaseButton>
+          </div>
+        </form>
       </header>
+
+      <p v-if="pending && canModerate" class="notice room-pending" role="status">
+        房间正在审核，暂时只有你和协作者能看到。先发一条内容，管理员审核通过后房间就会公开。
+      </p>
 
       <!-- §26.9 CountryGuard：其他国家频道 → 占位拦截，隐藏内容区 -->
       <section v-if="detail.region_blocked" class="country-guard" role="status">
@@ -221,12 +272,15 @@ onMounted(load);
       <RoomSubmissions
         :room-id="roomId"
         :can-moderate="canModerate"
+        :can-post="detail.room_type === 'general'"
         @changed="onChanged"
       />
 
-      <!-- 留言讨论 -->
-      <h2 class="section-title">讨论</h2>
-      <RoomComments :room-id="roomId" :room-name="detail.name_hans" />
+      <!-- 留言讨论：房间上线后才开放 -->
+      <template v-if="!pending">
+        <h2 class="section-title">讨论</h2>
+        <RoomComments :room-id="roomId" :room-name="detail.name_hans" />
+      </template>
       </template>
     </template>
   </section>
@@ -259,6 +313,22 @@ onMounted(load);
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-12);
+}
+.room-edit {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.room-edit__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.room-pending {
+  margin: var(--sp-3) 0;
 }
 .section-title {
   margin: var(--sp-6) 0 var(--sp-3);

@@ -10,6 +10,7 @@ from app.feed import image_keys_of, reaction_flags
 from app.keywords import load_keywords
 from app.models import Channel, ChannelItem, Content, ModerationCase, User, UserBlock, UserFollow
 from app.privacy import can_view_content
+from app.rooms import ROOM_TYPE_LABELS
 from app.reports import ReportBody, report_receipt
 
 router = APIRouter()
@@ -46,7 +47,29 @@ def public_profile(
         "following_count": _count(session, select(func.count()).select_from(UserFollow).where(UserFollow.user_id == profile.id)),
         "following": following,
         "blocked": blocked,
+        "rooms": _rooms(session, profile, own=viewer is not None and viewer.id == profile.id),
     }
+
+
+def _rooms(session: Session, profile: User, own: bool) -> list[dict[str, object]]:
+    """这个人建的房间。别人只看到已上线的公开房间；本人还能看到私密的和审核中的（被拒的不列）。"""
+    query = select(Channel).where(Channel.kind == "room", Channel.owner_id == profile.id, Channel.visibility == "public")
+    if own:
+        query = query.where(Channel.review_status != "rejected")
+    else:
+        query = query.where(Channel.is_active.is_(True), Channel.is_private.is_(False))
+    return [
+        {
+            "id": room.id,
+            "name_hans": room.name_hans,
+            "room_type": room.room_type,
+            "room_type_label": ROOM_TYPE_LABELS.get(room.room_type, room.room_type),
+            "is_private": room.is_private,
+            "pending": not room.is_active,
+            "subscriber_count": room.subscriber_count,
+        }
+        for room in session.scalars(query.order_by(Channel.created_at.desc())).all()
+    ]
 
 
 def _count(session: Session, stmt: Select[tuple[int]]) -> int:

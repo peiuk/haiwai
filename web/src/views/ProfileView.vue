@@ -26,6 +26,7 @@ import BaseIcon from "../components/base/BaseIcon.vue";
 import BaseButton from "../components/base/BaseButton.vue";
 import Modal from "../components/base/Modal.vue";
 import { hasOwnTitle } from "../utils/post";
+import { ROOM_TYPES } from "../utils/room";
 import AccountPanel from "../components/profile/AccountPanel.vue";
 import ProfileCard from "../components/profile/ProfileCard.vue";
 
@@ -237,12 +238,6 @@ async function loadMoreRooms(): Promise<void> {
 }
 
 // ---- 创建房间 ----
-const ROOM_TYPES = [
-  { value: "general", label: "综合讨论" },
-  { value: "series", label: "剧集系列" },
-  { value: "film", label: "电影" },
-  { value: "video", label: "视频" },
-] as const;
 
 const roomForm = ref({
   name: "",

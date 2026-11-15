@@ -43,6 +43,7 @@ const dmOpen = ref(false);
 const dmBody = ref("");
 const dmBusy = ref(false);
 const activeContentId = ref<string | null>(null);
+const tab = ref<"posts" | "rooms">("posts");
 
 const isSelf = computed(() => selfId.value !== "" && selfId.value === userId.value);
 const displayName = computed(() => profile.value?.display_name || profile.value?.handle || "匿名用户");
@@ -162,6 +163,7 @@ watch(userId, () => {
   profile.value = null;
   posts.value = [];
   activeContentId.value = null;
+  tab.value = "posts";
   void load();
 });
 </script>
@@ -228,12 +230,43 @@ watch(userId, () => {
         </div>
 
         <div class="profile-tabs" role="tablist">
-          <span class="profile-tab profile-tab--on" role="tab" aria-selected="true">帖子</span>
+          <button
+            type="button"
+            class="profile-tab"
+            :class="{ 'profile-tab--on': tab === 'posts' }"
+            role="tab"
+            :aria-selected="tab === 'posts'"
+            @click="tab = 'posts'"
+          >帖子</button>
+          <button
+            type="button"
+            class="profile-tab"
+            :class="{ 'profile-tab--on': tab === 'rooms' }"
+            role="tab"
+            :aria-selected="tab === 'rooms'"
+            @click="tab = 'rooms'"
+          >房间 {{ profile.rooms.length || "" }}</button>
         </div>
       </header>
 
+      <template v-if="tab === 'rooms'">
+        <EmptyState v-if="profile.rooms.length === 0" title="还没有房间" description="这位用户还没有创建公开房间" />
+        <ul v-else class="room-list">
+          <li v-for="room in profile.rooms" :key="room.id">
+            <RouterLink class="room-row" :to="{ name: 'room', params: { id: room.id } }">
+              <span class="room-row-name" data-ugc>{{ room.name_hans }}</span>
+              <span class="room-row-meta">
+                {{ room.room_type_label }} · {{ room.subscriber_count }} 人订阅
+                <template v-if="room.is_private"> · 私密</template>
+                <template v-if="room.pending"> · 审核中</template>
+              </span>
+            </RouterLink>
+          </li>
+        </ul>
+      </template>
+
       <EmptyState
-        v-if="posts.length === 0"
+        v-else-if="posts.length === 0"
         title="还没有公开帖子"
         description="这位用户暂时没有发布公开内容"
       />
@@ -467,9 +500,41 @@ watch(userId, () => {
   display: grid;
   place-items: center;
   min-height: 52px;
+  border: 0;
+  background: transparent;
   color: var(--muted);
   font-size: var(--fs-14);
   font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+.profile-tab:hover {
+  background: var(--accent-soft);
+}
+.room-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.room-list li {
+  border-bottom: 1px solid var(--border);
+}
+.room-row {
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--text);
+  text-decoration: none;
+}
+.room-row:hover {
+  background: var(--accent-soft);
+}
+.room-row-name {
+  font-weight: var(--fw-bold);
+  overflow-wrap: anywhere;
+}
+.room-row-meta {
+  color: var(--muted);
+  font-size: var(--fs-13);
 }
 .profile-tab {
   position: relative;

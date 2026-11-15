@@ -791,3 +791,60 @@ def test_collaborator_can_review_submissions(client):
     assert decided.status_code == 200, decided.text
     assert decided.json()["status"] == "published"
     assert client.get(f"/api/v1/channels/{room_id}/submissions", headers=headers(collab)).json()["pending_count"] == 0
+
+
+def test_owner_can_fill_rename_and_show_a_pending_room(client):
+    """新建的房间在审核中：房主能改名、能先加条目（待审，不外漏），主页本人可见、别人不可见；审核通过一条后上线。"""
+    from app.models import BlockedTerm
+
+    owner = register(client, "pending-owner@example.com")
+    verify(client, owner, "+447700900311")
+    stranger = register(client, "pending-stranger@example.com")
+    parent_id = official_channel(client)
+    room_id = client.post(
+        "/api/v1/channels", headers=headers(owner), json={"name": "待审剧", "parent_channel_id": parent_id, "room_type": "series"}
+    ).json()["channel_id"]
+    with client.session_factory() as session:
+        owner_id = session.scalar(select(User.id).where(User.email == "pending-owner@example.com"))
+        session.add(BlockedTerm(term="坏词"))
+        session.commit()
+
+    # 改名、改类型；敏感词房名被挡
+    renamed = client.patch(f"/api/v1/channels/{room_id}", headers=headers(owner), json={"name": "伦敦剧场"})
+    assert renamed.status_code == 200 and renamed.json()["name_hans"] == "伦敦剧场"
+    assert client.patch(f"/api/v1/channels/{room_id}", headers=headers(owner), json={"name": "坏词房"}).status_code == 422
+    assert client.patch(f"/api/v1/channels/{room_id}", headers=headers(stranger), json={"name": "抢房"}).status_code == 404
+
+    # 审核中也能加条目，但先待审：房主自己能看到，搜索 / 主页里没有
+    entry = client.post(
+        f"/api/v1/channels/{room_id}/entries",
+        headers=headers(owner),
+        json={"title": "第一集", "body": "内容", "season": 1, "episode": 1},
+    )
+    assert entry.status_code == 200, entry.text
+    assert entry.json()["status"] == "pending"
+    assert [row["title"] for row in client.get(f"/api/v1/channels/{room_id}/items", headers=headers(owner)).json()["items"]] == ["第一集"]
+    assert client.get(f"/api/v1/users/{owner_id}/posts").json()["items"] == []
+
+    # 主页：本人看到审核中的房间，别人看不到
+    mine = client.get(f"/api/v1/users/{owner_id}", headers=headers(owner)).json()["rooms"]
+    assert [(room["name_hans"], room["pending"]) for room in mine] == [("伦敦剧场", True)]
+    assert client.get(f"/api/v1/users/{owner_id}", headers=headers(stranger)).json()["rooms"] == []
+
+    # 条目审核通过 → 房间自动上线，别人也能在主页看到
+    approved = client.post(f"/api/v1/moderation/{entry.json()['content_id']}/decision", headers=headers(owner), json={"decision": "approve"})
+    assert approved.status_code == 200, approved.text
+    shown = client.get(f"/api/v1/users/{owner_id}").json()["rooms"]
+    assert [(room["name_hans"], room["pending"]) for room in shown] == [("伦敦剧场", False)]
+
+    # 房主自己发的帖子等平台审核：不进房间的待审队列，也不能在房间里自己通过
+    own = client.post("/api/v1/contents", headers=headers(owner), json={"channel_id": room_id, "title": "房主帖", "body": "正文"})
+    assert own.status_code == 200, own.text
+    assert own.json()["status"] == "pending"
+    assert client.get(f"/api/v1/channels/{room_id}/submissions", headers=headers(owner)).json()["items"] == []
+    self_ok = client.post(
+        f"/api/v1/channels/{room_id}/submissions/{own.json()['content_id']}/decision",
+        headers=headers(owner),
+        json={"decision": "accept"},
+    )
+    assert self_ok.status_code == 403

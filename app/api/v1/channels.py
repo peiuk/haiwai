@@ -12,6 +12,7 @@ from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.regions import open_regions
+from app.guard import blocked_term_in
 from app.models import (
     Channel,
     ChannelCollaborator,
@@ -514,30 +515,46 @@ def create_room(
     return {"channel_id": channel.id, "review_status": channel.review_status, "room_type": channel.room_type}
 
 
-class RoomTypeBody(BaseModel):
-    room_type: str
+class RoomEditBody(BaseModel):
+    """房主改房间：名字、类型都可选，只改传了的。"""
+
+    room_type: str | None = None
+    name: str | None = None
 
     @field_validator("room_type")
     @classmethod
-    def known_room_type(cls, value: str) -> str:
-        if value not in _ROOM_TYPES:
+    def known_room_type(cls, value: str | None) -> str | None:
+        if value is not None and value not in _ROOM_TYPES:
             raise ValueError("房间类型不正确")
         return value
 
+    @field_validator("name")
+    @classmethod
+    def name_length(cls, value: str | None) -> str | None:
+        return None if value is None else RoomBody.name_length(value)
+
 
 @router.patch("/{channel_id}")
-def update_room_type(
+def update_room(
     channel_id: str,
-    body: RoomTypeBody,
+    body: RoomEditBody,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
     channel = _owner_channel(session, channel_id, user)
     if channel.kind != "room":
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
-    channel.room_type = body.room_type
+    if body.name is not None and body.name != channel.name_hans:
+        # 通过审核后改名不再过人审，至少挡住敏感词
+        if blocked_term_in(session, body.name):
+            raise APIError(422, "VALIDATION_FAILED", "房间名包含不允许的词，换一个吧")
+        channel.name_hans = body.name
+        channel.name_hant = body.name
+        write_audit(session, user.id, "channel.rename", "channel", channel.id, body.name)
+    if body.room_type is not None:
+        channel.room_type = body.room_type
     session.commit()
-    return {"channel_id": channel.id, "room_type": channel.room_type}
+    return {"channel_id": channel.id, "room_type": channel.room_type, "name_hans": channel.name_hans}
 
 
 @router.put("/{channel_id}/collaborators/{member_id}")
@@ -655,9 +672,18 @@ def _editor_channel(session: Session, channel_id: str, user: User) -> Channel:
     raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
 
 
+def _editor_ids(session: Session, channel: Channel) -> list[str]:
+    """房主 + 协作者的 user id。"""
+    ids = list(session.scalars(select(ChannelCollaborator.user_id).where(ChannelCollaborator.channel_id == channel.id)).all())
+    return ids + [channel.owner_id] if channel.owner_id else ids
+
+
 def _catalog_room(session: Session, channel_id: str, user: User) -> Channel:
     channel = _editor_channel(session, channel_id, user)
-    if not channel.is_active or channel.room_type not in {"series", "film", "video"}:
+    # 审核中的房间也能先加条目（以待审身份进去，见 add_entry）；被拒或下线的不行
+    if not channel.is_active and channel.review_status != "pending":
+        raise APIError(403, "CHANNEL_PENDING", "房间没有通过审核，不能编排条目")
+    if channel.room_type not in {"series", "film", "video"}:
         raise APIError(409, "ROOM_TYPE", "这个房间不能编排条目")
     return channel
 
@@ -714,15 +740,17 @@ def add_entry(
         sort_key = film_sort_key(int(count or 0) + 1)
         confirmed = False
     now = utcnow()
+    # 房间还在审核：条目先待审，管理员通过任一条后房间自动上线（同公告）。直接发布会经搜索、主页漏出去
+    waiting = not channel.is_active
     content = Content(
         type="post",
-        status="published",
+        status="pending" if waiting else "published",
         author_id=user.id,
         title=body.title,
         summary=body.body[:500],
         body=body.body,
         source_name=user.display_name,
-        published_at=now,
+        published_at=None if waiting else now,
     )
     session.add(content)
     session.flush()
@@ -738,9 +766,10 @@ def add_entry(
             added_at=now,
         )
     )
-    notify_room_update(session, channel, content)
+    if not waiting:
+        notify_room_update(session, channel, content)
     session.commit()
-    return {"content_id": content.id, "sort_key": sort_key}
+    return {"content_id": content.id, "sort_key": sort_key, "status": content.status}
 
 
 @router.post("/{channel_id}/entries/{content_id}/move")
@@ -913,6 +942,7 @@ def list_submissions(
             ChannelItem.channel_id == channel.id,
             Content.status == "pending",
             Content.deleted_at.is_(None),
+            Content.author_id.not_in(_editor_ids(session, channel)),
         )
         .order_by(ChannelItem.added_at.desc())
     ).all()
@@ -984,6 +1014,9 @@ def decide_submission(
         raise APIError(404, "CONTENT_NOT_FOUND", "投稿不存在")
     if content.status != "pending":
         raise APIError(409, "CONTENT_ALREADY_DECIDED", "这条投稿已经处理过")
+    if content.author_id in _editor_ids(session, channel):
+        # 房主 / 协作者自己发的帖子在等平台审核，不能在房间里自己放行
+        raise APIError(403, "FORBIDDEN", "自己发的内容由平台审核，不能在房间里通过")
     now = utcnow()
     if body.decision == "accept":
         content.status = "published"

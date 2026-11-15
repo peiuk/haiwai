@@ -831,6 +831,16 @@ export type UserProfile = {
   following_count: number;
   following: boolean;
   blocked: boolean;
+  /** 这个人建的房间；本人看自己时含私密和审核中的 */
+  rooms: {
+    id: string;
+    name_hans: string;
+    room_type: string;
+    room_type_label: string;
+    is_private: boolean;
+    pending: boolean;
+    subscriber_count: number;
+  }[];
 };
 
 export type UserPost = {
