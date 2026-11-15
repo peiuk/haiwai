@@ -26,7 +26,7 @@ from app.models import (
     new_id,
     utcnow,
 )
-from app.privacy import can_view_content
+from app.privacy import can_view_content, is_room_member
 from app.rooms import (
     ROOM_LIMIT,
     ROOM_TYPE_LABELS,
@@ -178,7 +178,7 @@ def channel_detail(
     joined = False
     if user is not None:
         joined = session.get(ChannelSubscription, (user.id, channel.id)) is not None
-    if channel.kind == "room" and channel.is_private and not joined and (user is None or channel.owner_id != user.id):
+    if channel.kind == "room" and channel.is_private and not is_room_member(session, channel, user):
         pending = user is not None and session.scalar(
             select(RoomJoinRequest.id).where(RoomJoinRequest.room_id == channel.id, RoomJoinRequest.user_id == user.id)
         ) is not None
@@ -282,7 +282,7 @@ def channel_items(
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
     channel = _open_channel(session, session.get(Channel, channel_id), user)
-    if channel.is_private and (user is None or (channel.owner_id != user.id and session.get(ChannelSubscription, (user.id, channel.id)) is None)):
+    if channel.is_private and not is_room_member(session, channel, user):
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
     if country_blocked(session, user, channel):
         return {"items": [], "region_blocked": True}
@@ -794,7 +794,7 @@ def save_progress(
     channel = session.get(Channel, channel_id)
     if channel is None or not channel.is_active:
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
-    if channel.is_private and channel.owner_id != user.id and session.get(ChannelSubscription, (user.id, channel.id)) is None:
+    if channel.is_private and not is_room_member(session, channel, user):
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
     item = session.get(ChannelItem, (channel.id, content_id))
     if item is None:
@@ -835,7 +835,7 @@ def report_room(
     channel = session.get(Channel, channel_id)
     if channel is None or not channel.is_active or channel.visibility != "public":
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
-    if channel.is_private and (user is None or channel.owner_id != user.id) and (user is None or session.get(ChannelSubscription, (user.id, channel.id)) is None):
+    if channel.is_private and not is_room_member(session, channel, user):
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
     if user is not None and channel.owner_id == user.id:
         raise APIError(403, "SELF_REPORT", "不能举报自己的房间")
@@ -945,7 +945,7 @@ def create_submission(
     channel = session.get(Channel, channel_id)
     if channel is None or not channel.is_active or channel.visibility != "public":
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
-    if channel.kind == "room" and channel.is_private and channel.owner_id != user.id and session.get(ChannelSubscription, (user.id, channel.id)) is None:
+    if channel.kind == "room" and channel.is_private and not is_room_member(session, channel, user):
         raise APIError(403, "ROOM_PRIVATE", "加入私密房间后才能投稿")
     if country_blocked(session, user, channel):
         raise APIError(403, "REGION_BLOCKED", "当前国家看不到这个频道")

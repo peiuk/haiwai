@@ -3,7 +3,7 @@ from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user, optional_user
@@ -11,7 +11,9 @@ from app.api.v1.uploads import owned_upload
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
-from app.core.pagination import paginate_rows
+from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
+from app.feed import author_names
+from app.privacy import is_room_member
 from app.recommend import country_blocked, is_roaming
 from app.reports import ReportBody, report_receipt
 from app.models import (
@@ -123,13 +125,7 @@ def _room(session: Session, channel_id: str) -> Channel:
 
 
 def _can_view(session: Session, room: Channel, user: User | None) -> bool:
-    if not room.is_private:
-        return True
-    if user is None:
-        return False
-    if room.owner_id == user.id:
-        return True
-    return session.get(ChannelSubscription, (user.id, room.id)) is not None
+    return not room.is_private or is_room_member(session, room, user)
 
 
 def _aware(value):
@@ -149,30 +145,41 @@ def list_comments(
     room = _room(session, channel_id)
     if not _can_view(session, room, user):
         raise APIError(403, "ROOM_PRIVATE", "这个房间需要先加入")
-    rows = list(
-        session.scalars(
-            select(RoomComment)
-            .where(
-                RoomComment.room_id == room.id,
-                RoomComment.removed_at.is_(None),
-                (RoomComment.status == "published")
-                | ((RoomComment.status == "pending") & (RoomComment.author_id == (user.id if user else ""))),
-            )
-            .order_by(RoomComment.created_at.desc())
-        ).all()
-    )
     bounded = min(max(limit, 1), 50)
-    page, next_cursor = paginate_rows(rows, cursor, bounded, "id", "created_at")
+    # 在数据库里按 (时间, id) 翻页，每页只读一页：原来每次把整个房间的留言读进内存再截取。
+    query = (
+        select(RoomComment)
+        .where(
+            RoomComment.room_id == room.id,
+            RoomComment.removed_at.is_(None),
+            (RoomComment.status == "published")
+            | ((RoomComment.status == "pending") & (RoomComment.author_id == (user.id if user else ""))),
+        )
+        .order_by(RoomComment.created_at.desc(), RoomComment.id.desc())
+    )
+    parts = decode_cursor(cursor) if cursor else None
+    after_at = parse_added_at(parts[1]) if parts and len(parts) == 2 else None
+    if parts and after_at is not None:
+        query = query.where(
+            or_(
+                RoomComment.created_at < after_at,
+                and_(RoomComment.created_at == after_at, RoomComment.id < parts[0]),
+            )
+        )
+    rows = session.scalars(query.limit(bounded + 1)).all()
+    page = rows[:bounded]
+    next_cursor = encode_cursor(page[-1].id, page[-1].created_at.isoformat()) if len(rows) > bounded else None
     counts, liked = comment_like_state(session, user, [row.id for row in page])
+    authors = author_names(session, [row.author_id for row in page])
     items: list[dict[str, object]] = []
     for row in page:
-        author = session.get(User, row.author_id)
+        author_name, author_handle = authors.get(row.author_id, ("", ""))
         items.append(
             {
                 "id": row.id,
                 "author_id": row.author_id,
-                "author_name": author.display_name if author else "",
-                "author_handle": author.handle or "" if author else "",
+                "author_name": author_name,
+                "author_handle": author_handle,
                 "body": row.body,
                 "image_key": row.image_key,
                 "content_id": row.content_id,
@@ -282,6 +289,17 @@ def report_comment(
         )
         if existing:
             raise APIError(409, "DUPLICATE_REPORT", "你已经举报过这条留言")
+    else:
+        # 游客没法按人去重：同一条留言已有待处理的游客举报就直接复用。
+        pending = session.scalar(
+            select(ModerationCase).where(
+                ModerationCase.reported_comment_id == comment.id,
+                ModerationCase.reporter_id.is_(None),
+                ModerationCase.status == "open",
+            )
+        )
+        if pending is not None:
+            return report_receipt(pending)
     case = ModerationCase(
         reported_comment_id=comment.id,
         reporter_id=user.id if user else None,

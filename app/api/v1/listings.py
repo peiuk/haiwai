@@ -574,6 +574,8 @@ def _published_rows(
             Content.deleted_at.is_(None),
             Content.type.notin_(["listing", "embed", "repost"]),
             ChannelItem.origin_room_id.is_(None),
+            # 时间窗放进 SQL：原来每次首页访问都把全部收录读进内存再按日期筛。
+            func.coalesce(Content.published_at, Content.created_at) >= since,
         )
         .options(joinedload(ChannelItem.content), joinedload(ChannelItem.channel))
     ).unique().all()
@@ -614,6 +616,9 @@ def home_rail(
         )
         .options(joinedload(ChannelItem.content), joinedload(ChannelItem.channel))
         .order_by(Content.published_at.desc())
+        # 只要 6 条，多取一些给去重和地区过滤留余量。
+        # shortcut: 若可见地区的新闻全排在 60 条之外会少于 6 条，地区频道多起来后把地区条件也放进 SQL。
+        .limit(60)
     ).unique().all()
     news: list[dict[str, object]] = []
     seen_news: set[str] = set()

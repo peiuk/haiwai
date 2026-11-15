@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
@@ -195,7 +196,14 @@ def open_message(
     if body.listing_id:
         ext = session.get(ListingExt, body.listing_id)
         listed_content = session.get(Content, body.listing_id)
-        if ext is None or ext.closed_reason or listed_content is None or listed_content.status != "published":
+        # 只能就「对方自己发的」分类信息咨询，否则任何房源 id 都能绕过「不接收陌生人私信」。
+        if (
+            ext is None
+            or ext.closed_reason
+            or listed_content is None
+            or listed_content.status != "published"
+            or listed_content.author_id != peer.id
+        ):
             raise APIError(404, "CONTENT_NOT_FOUND", "这条分类信息不存在")
         inquiry = True
         snapshot = {
@@ -237,7 +245,6 @@ def open_message(
         first = session.scalar(select(DmMessage).where(DmMessage.thread_id == thread.id).order_by(DmMessage.created_at))
         if first is not None and first.sender_id != user.id:
             raise APIError(403, "DM_REQUEST_PENDING", "接受前不能回复")
-    kind, image_key = _message_payload(session, user, body.body, body.image_key)
     session.add(DmMessage(thread_id=thread.id, sender_id=user.id, kind=kind, body=body.body, image_key=image_key))
     if inquiry:
         session.add(
@@ -274,7 +281,20 @@ def reply_message(
     return {"thread_id": thread.id, "status": thread.status}
 
 
+DM_PER_MINUTE = 10
+DM_PER_HOUR = 100
+
+
 def _message_payload(session: Session, user: User, text: str, image_key: str | None) -> tuple[str, str | None]:
+    now = utcnow()
+    for window, limit in ((timedelta(minutes=1), DM_PER_MINUTE), (timedelta(hours=1), DM_PER_HOUR)):
+        sent = session.scalar(
+            select(func.count())
+            .select_from(DmMessage)
+            .where(DmMessage.sender_id == user.id, DmMessage.created_at >= now - window)
+        )
+        if (sent or 0) >= limit:
+            raise APIError(429, "RATE_LIMITED", "私信发得太频繁，请稍后再试")
     if image_key:
         owned_upload(session, user, image_key)
         return "image", image_key

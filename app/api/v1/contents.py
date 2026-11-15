@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user, optional_user
@@ -245,7 +245,9 @@ def get_content(
     if not can_view_content(session, content, user):
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
     # 浏览埋点：详情页每次打开自增一次浏览计数，供「本周看得最多」排行使用。
-    content.view_count = (content.view_count or 0) + 1
+    # 在数据库里原地加一并提交：原来改了内存对象却没提交，计数从没保存过；同时打开也不会少算。
+    session.execute(update(Content).where(Content.id == content.id).values(view_count=func.coalesce(Content.view_count, 0) + 1))
+    session.commit()
     author = session.get(User, content.author_id) if content.author_id else None
     liked = False
     favorited = False
@@ -325,6 +327,17 @@ def report_content(
         )
         if existing:
             raise APIError(409, "DUPLICATE_REPORT", "你已经举报过这条内容")
+    else:
+        # 游客没法按人去重：同一条内容已有待处理的游客举报就直接复用，脚本刷不爆审核队列。
+        pending = session.scalar(
+            select(ModerationCase).where(
+                ModerationCase.content_id == content.id,
+                ModerationCase.reporter_id.is_(None),
+                ModerationCase.status == "open",
+            )
+        )
+        if pending is not None:
+            return report_receipt(pending)
     case = ModerationCase(
         content_id=content.id,
         reporter_id=user.id if user else None,
