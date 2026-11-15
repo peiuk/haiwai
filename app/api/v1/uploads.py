@@ -74,6 +74,11 @@ def public_url(key: str) -> str:
     return f"{base.rstrip('/')}/{key}"
 
 
+# 文件内容永不变，但删除（下架、注销）后 CDN 节点上的副本要在这个时间内过期，所以只缓存 1 天。
+# shortcut: 删除后最多 1 天内仍可能从 CDN 打开；要立即生效时在 delete_object 里调用 CDN 的清缓存接口。
+MEDIA_CACHE = "public, max-age=86400"
+
+
 def save_object(key: str, source: Path, content_type: str) -> None:
     """把已经收完的临时文件 source 存成 key：本地磁盘直接改名，对象存储则流式上传。会阻塞，异步接口里要放到线程池跑。"""
     remote = _s3()
@@ -83,10 +88,7 @@ def save_object(key: str, source: Path, content_type: str) -> None:
     client, bucket = remote
     try:
         with source.open("rb") as body:
-            # key 随机生成且不可覆盖，内容永远不变，可以让浏览器和 CDN 长期缓存
-            client.put_object(
-                Bucket=bucket, Key=key, Body=body, ContentType=content_type, CacheControl="public, max-age=31536000, immutable"
-            )
+            client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type, CacheControl=MEDIA_CACHE)
     except Exception as exc:  # 存储服务器连不上、密钥不对等：让用户稍后再试，不能当成上传成功
         raise APIError(503, "STORAGE_UNAVAILABLE", "存储服务暂时不可用，请稍后再试") from exc
 
@@ -184,8 +186,8 @@ def read_upload(key: str, session: Session = Depends(get_db)) -> Response:
         raise APIError(404, "UPLOAD_NOT_FOUND", "图片不存在")
     if _s3() is not None:
         # 文件在对象存储上：让浏览器直接去媒体域名取，流量不经过这台服务器
-        return RedirectResponse(public_url(key), status_code=302)
+        return RedirectResponse(public_url(key), status_code=302, headers={"Cache-Control": MEDIA_CACHE})
     path = upload_root() / key
     if not path.is_file():
         raise APIError(404, "UPLOAD_NOT_FOUND", "图片不存在")
-    return FileResponse(path, media_type=row.content_type)
+    return FileResponse(path, media_type=row.content_type, headers={"Cache-Control": MEDIA_CACHE})

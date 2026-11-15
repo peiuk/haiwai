@@ -63,6 +63,9 @@ def test_upload_goes_to_object_storage_and_reads_redirect(client, s3, tmp_path, 
     read = client.get(f"/api/v1/uploads/{key}", follow_redirects=False)
     assert read.status_code == 302
     assert read.headers["location"] == f"https://media.example.test/media/{key}"
+    # CDN：媒体只缓存 1 天（删除后能过期），普通接口一律不缓存
+    assert read.headers["cache-control"] == "public, max-age=86400"
+    assert client.get("/api/v1/me", headers=auth).headers["cache-control"] == "no-store"
     # 已存过的不能覆盖：这条规则不因为换了存储而失效
     assert client.put(f"/api/v1/uploads/{key}", headers=auth, content=b"other").status_code == 409
 
