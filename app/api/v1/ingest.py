@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user
@@ -31,6 +32,9 @@ def fetch_news(admin: User = Depends(require_admin), session: Session = Depends(
         result = run_daily_news(session)
     except NewsUnavailable as err:
         raise APIError(503, "NEWS_UNAVAILABLE", str(err)) from err
+    except IntegrityError as err:  # 定时任务正好也在跑，同一篇新闻被它先存了
+        session.rollback()
+        raise APIError(409, "NEWS_BUSY", "已有一次抓取正在进行，请稍后刷新页面查看") from err
     write_audit(session, admin.id, "admin.news.fetch", "content", None, f"生成 {result['drafted']} 条")
     session.commit()
     return result

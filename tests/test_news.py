@@ -56,6 +56,8 @@ def test_next_run_is_8am_london_across_dst():
     assert news.seconds_until_next_run(datetime(2026, 11, 15, 9, 0, tzinfo=timezone.utc)) == 23 * 3600
     # 夏令时（伦敦 = UTC+1）：伦敦 8 点是 UTC 7 点
     assert news.seconds_until_next_run(datetime(2026, 7, 1, 6, 0, tzinfo=timezone.utc)) == 3600
+    # 跨 10 月改时：周六伦敦 10 点（夏令时）到周日伦敦 8 点（冬令时）实际是 23 小时，不能早一小时
+    assert news.seconds_until_next_run(datetime(2026, 10, 24, 9, 0, tzinfo=timezone.utc)) == 23 * 3600
 
 
 def test_numbers_match():
@@ -68,16 +70,15 @@ def test_daily_news_drafts_wait_for_review(client):
     session = client.session_factory()
     result = news.run_daily_news(session, fetch=lambda: ITEMS, write=fake_write)
     session.close()
-    assert result == {"fetched": 3, "drafted": 2, "skipped": 1, "to_check": 1}  # 太旧的那条不送去 AI
+    # 太旧的那条不送去 AI；还没有通过的稿子，所以不出汇总帖
+    assert result == {"fetched": 3, "drafted": 2, "skipped": 1, "to_check": 1, "digest": 0}
 
     session = client.session_factory()
     rows = session.scalars(select(Content).where(Content.source_name == "GOV.UK")).all()
     by_title = {row.title: row for row in rows}
-    assert all(row.status == "pending" for row in rows)
+    assert all(row.status == "pending" and row.type == "news" for row in rows)
     assert by_title["签证费涨到524英镑"].ai_status == "ok"
     assert by_title["NHS 等候名单减少30%"].ai_status == "check"
-    digest = next(row for row in rows if row.type == "post")
-    assert digest.title.startswith("今日英国要闻") and "https://www.gov.uk/n/visa" in digest.body
     visa_id = by_title["签证费涨到524英镑"].id
     # 签证类进签证频道，其余进资讯频道
     assert session.scalar(select(ChannelItem.channel_id).where(ChannelItem.content_id == visa_id)) == ids["visa"]
@@ -95,9 +96,33 @@ def test_daily_news_drafts_wait_for_review(client):
     flagged = next(row for row in queue if row["content_id"] == nhs_id)
     assert flagged["ai_draft"] and flagged["ai_check"] and flagged["source_url"] == "https://www.gov.uk/n/nhs"
 
-    # 重跑：已生成的不重复
+    # 拒绝 NHS 那条；再跑一次：已生成的不重复，汇总帖只收通过的，被拒的不能混进去
+    rejected = client.post(f"/api/v1/moderation/{nhs_id}/decision", headers=headers(token), json={"decision": "reject"})
+    assert rejected.status_code == 200
     session = client.session_factory()
-    assert news.run_daily_news(session, fetch=lambda: ITEMS, write=fake_write)["drafted"] == 0
+    again = news.run_daily_news(session, fetch=lambda: ITEMS, write=fake_write)
+    assert again["drafted"] == 0 and again["digest"] == 1
+    digest = session.scalar(select(Content).where(Content.type == "post", Content.source_name == "GOV.UK"))
+    assert digest.status == "published" and digest.title.startswith("今日英国要闻")
+    assert "https://www.gov.uk/n/visa" in digest.body and "https://www.gov.uk/n/nhs" not in digest.body
+    # 同一天只出一篇
+    assert news.run_daily_news(session, fetch=lambda: ITEMS, write=fake_write)["digest"] == 0
+    session.close()
+
+
+def test_mismatched_ai_items_write_nothing(client):
+    channels(client)
+
+    def skips_one(items):  # 漏掉第 0 条、编号顺延：摘要会配错链接，必须整批作废
+        return [d.model_copy(update={"index": d.index - 1}) for d in fake_write(items)[1:]]
+
+    session = client.session_factory()
+    try:
+        news.run_daily_news(session, fetch=lambda: ITEMS, write=skips_one)
+        raise AssertionError("应当报 NewsUnavailable")
+    except news.NewsUnavailable:
+        pass
+    assert session.scalar(select(Content).where(Content.source_name == "GOV.UK")) is None
     session.close()
 
 

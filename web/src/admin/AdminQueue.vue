@@ -58,13 +58,14 @@ async function fetchNews(): Promise<void> {
   fetching.value = true;
   fetchNote.value = "";
   try {
-    const result = await adminRequest<{ fetched: number; drafted: number; skipped: number; to_check: number }>(
+    const result = await adminRequest<{ fetched: number; drafted: number; skipped: number; to_check: number; digest: number }>(
       "/api/v1/admin/ingest/news",
       { method: "POST" },
     );
+    const digest = result.digest ? "已把之前通过的资讯汇成「今日英国要闻」发布。" : "";
     fetchNote.value = result.fetched
-      ? `新抓到 ${result.fetched} 条，生成 ${result.drafted} 条中文稿（${result.skipped} 条和华人生活关系不大，已跳过）${result.to_check ? `，其中 ${result.to_check} 条数字需要对照原文` : ""}。`
-      : "GOV.UK 暂时没有新资讯。";
+      ? `新抓到 ${result.fetched} 条，生成 ${result.drafted} 条中文稿（${result.skipped} 条和华人生活关系不大，已跳过）${result.to_check ? `，其中 ${result.to_check} 条数字需要对照原文` : ""}。${digest}`
+      : `GOV.UK 暂时没有新资讯。${digest}`;
     await load();
   } catch (err) {
     fetchNote.value = toMessage(err);

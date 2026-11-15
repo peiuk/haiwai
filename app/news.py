@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -40,8 +40,8 @@ Topic = Literal["签证移民", "租房住房", "医疗健康", "税务财务", 
 
 class Draft(BaseModel):
     index: int
-    title_zh: str = Field(max_length=60)
-    summary_zh: str = Field(max_length=240)
+    title_zh: str  # 不设长度上限：一条写长了不该让整批作废，保存时会截断
+    summary_zh: str
     relevant: bool
     topic: Topic
 
@@ -163,26 +163,85 @@ def _uk_channel(session: Session, codes: tuple[str, ...]) -> Channel | None:
 _TOPIC_CHANNELS = {"签证移民": ("uk-visa",), "租房住房": ("uk-housing",)}
 
 
+DIGEST_PREFIX = "今日英国要闻"
+
+
+def publish_digest(session: Session) -> int:
+    """把上一篇要闻之后（或最近 24 小时内）管理员已通过的资讯汇成一篇「今日英国要闻」，直接发布。
+
+    只收已发布的稿子：被拒绝的不会出现；内容都经过人工审核，汇总帖本身不再待审。一天只发一篇。
+    """
+    channel = _uk_channel(session, ())
+    if channel is None:
+        return 0
+    now = utcnow()
+    title = f"{DIGEST_PREFIX} · {now.month}月{now.day}日"
+    previous = session.scalar(
+        select(Content)
+        .where(Content.type == "post", Content.source_name == SOURCE, Content.title.startswith(DIGEST_PREFIX))
+        .order_by(Content.created_at.desc())
+        .limit(1)
+    )
+    if previous is not None and previous.title == title:
+        return 0
+    since = previous.created_at if previous is not None else now - timedelta(hours=24)
+    approved = session.scalars(
+        select(Content)
+        .where(
+            Content.type == "news",
+            Content.source_name == SOURCE,
+            Content.status == "published",
+            Content.deleted_at.is_(None),
+            Content.published_at > since,
+        )
+        .order_by(Content.published_at)
+    ).all()
+    if not approved:
+        return 0
+    lines = [f"{n}. {c.title}\n{c.summary}\n原文：{c.canonical_url}" for n, c in enumerate(approved, start=1)]
+    lines.append("本文由 AI 根据 GOV.UK 公开信息（Open Government Licence v3.0）整理成中文，各条均经编辑审核；一切以原文为准。")
+    digest = Content(
+        type="post",
+        status="published",
+        title=title,
+        summary="；".join(c.title for c in approved[:3])[:200],
+        body="\n\n".join(lines),
+        source_name=SOURCE,
+        licence_ref=LICENCE,
+        published_at=now,
+        ai_status="ok",
+    )
+    session.add(digest)
+    session.flush()
+    session.add(ChannelItem(channel_id=channel.id, content_id=digest.id))
+    session.commit()
+    return 1
+
+
 def run_daily_news(session: Session, fetch=None, write=None) -> dict[str, int]:
     fetch = fetch or fetch_govuk
     write = write or write_drafts
+    digest = publish_digest(session)  # 先汇总已通过的，再抓新的；后面 AI 出错也不影响这一篇
     since = utcnow() - timedelta(hours=36)
     fresh: list[dict[str, str]] = []
     for item in fetch():
-        digest = hashlib.sha256(item["url"].strip().lower().encode()).hexdigest()
+        url_hash = hashlib.sha256(item["url"].strip().lower().encode()).hexdigest()
         published = _parse_time(item["published"])
         # shortcut: 判为不相关的不落库，36 小时内重跑会再让 AI 判一次；量大或费用敏感时再记下已判过的链接。
         if published and published < since:
             continue
-        if session.scalar(select(Content.id).where(Content.content_hash == digest)) is not None:
+        if session.scalar(select(Content.id).where(Content.content_hash == url_hash)) is not None:
             continue
-        fresh.append({**item, "hash": digest})
+        fresh.append({**item, "hash": url_hash})
     if not fresh:
-        return {"fetched": 0, "drafted": 0, "skipped": 0, "to_check": 0}
+        return {"fetched": 0, "drafted": 0, "skipped": 0, "to_check": 0, "digest": digest}
 
-    drafts = {draft.index: draft for draft in write(fresh)}
-    news_channel = _uk_channel(session, ())
-    created: list[tuple[Content, dict[str, str]]] = []
+    written = write(fresh)
+    # 每条输入必须恰好对应一条稿子；编号漏了或重了，摘要就可能配到别的文章的链接上，整批作废
+    if sorted(draft.index for draft in written) != list(range(len(fresh))):
+        raise NewsUnavailable("AI 返回的条目和输入对不上，这次不生成")
+    drafts = {draft.index: draft for draft in written}
+    created: list[Content] = []
     to_check = 0
     for index, item in enumerate(fresh):
         draft = drafts.get(index)
@@ -207,27 +266,15 @@ def run_daily_news(session: Session, fetch=None, write=None) -> dict[str, int]:
         session.add(content)
         session.flush()
         session.add(ChannelItem(channel_id=channel.id, content_id=content.id))
-        created.append((content, item))
-
-    if created and news_channel is not None:
-        today = utcnow()
-        lines = [f"{n}. {c.title}\n{c.summary}\n原文：{item['url']}" for n, (c, item) in enumerate(created, start=1)]
-        lines.append("本文由 AI 根据 GOV.UK 公开信息（Open Government Licence v3.0）整理成中文，发布前经编辑审核；一切以原文为准。")
-        digest_post = Content(
-            type="post",
-            status="pending",
-            title=f"今日英国要闻 · {today.month}月{today.day}日",
-            summary="；".join(c.title for c, _ in created[:3])[:200],
-            body="\n\n".join(lines),
-            source_name=SOURCE,
-            licence_ref=LICENCE,
-            ai_status="ok" if all(c.ai_status == "ok" for c, _ in created) else "check",
-        )
-        session.add(digest_post)
-        session.flush()
-        session.add(ChannelItem(channel_id=news_channel.id, content_id=digest_post.id))
+        created.append(content)
     session.commit()
-    return {"fetched": len(fresh), "drafted": len(created), "skipped": len(fresh) - len(created), "to_check": to_check}
+    return {
+        "fetched": len(fresh),
+        "drafted": len(created),
+        "skipped": len(fresh) - len(created),
+        "to_check": to_check,
+        "digest": digest,
+    }
 
 
 def _parse_time(value: str) -> datetime | None:
@@ -247,7 +294,8 @@ def seconds_until_next_run(now: datetime) -> float:
     target = local.replace(hour=RUN_HOUR, minute=0, second=0, microsecond=0)
     if target <= local:
         target = (local + timedelta(days=1)).replace(hour=RUN_HOUR, minute=0, second=0, microsecond=0)
-    return (target - local).total_seconds()
+    # 换成 UTC 再相减：同一时区的两个时间直接相减会忽略中间的冬夏令时切换，改时那天差一小时
+    return (target.astimezone(timezone.utc) - now.astimezone(timezone.utc)).total_seconds()
 
 
 def run_once() -> int:
