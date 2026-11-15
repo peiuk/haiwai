@@ -255,6 +255,7 @@ export type FeedItem = {
   added_at: string;
   author_id?: string | null;
   author_name: string;
+  author_avatar?: string;
   author_handle: string;
   keywords: string[];
   type: string;
@@ -329,6 +330,7 @@ export type RoomComment = {
   id: string;
   author_id: string;
   author_name: string;
+  author_avatar?: string;
   author_handle: string;
   body: string;
   image_key: string | null;
@@ -357,6 +359,8 @@ export type RoomDetail = {
   room_type: string;
   /** 房间类型的中文名（通用 / 剧集 / 电影 / 视频），由后端下发 */
   room_type_label?: string;
+  /** 房间封面图的上传 key（剧集房间页顶部） */
+  cover_key?: string | null;
   review_status?: string;
   is_private?: boolean;
   join_request_pending?: boolean;
@@ -398,6 +402,7 @@ export type RoomItem = {
   rights_confirmed: boolean;
   author_id: string | null;
   author_name: string;
+  author_avatar?: string;
   author_handle: string;
   city_topic: string;
   liked: boolean;
@@ -450,6 +455,7 @@ export type DiscoverItem = {
   added_at: string;
   author_id?: string | null;
   author_name: string;
+  author_avatar?: string;
   author_handle: string;
   keywords: string[];
   image_keys?: string[];
@@ -495,6 +501,7 @@ export type ContentDetail = {
   type: string;
   author_id: string | null;
   author_name: string | null;
+  author_avatar?: string;
   author_handle: string;
   channel_id: string | null;
   channel_name: string;
@@ -627,6 +634,7 @@ export type DmThreadItem = {
   peer_name: string;
   peer_handle: string;
   peer_tone: string;
+  peer_avatar: string;
   status: "request" | "active";
   listing_inquiry: boolean;
   listing_ref: ListingRef | null;
@@ -733,6 +741,7 @@ export type SearchContent = {
   canonical_url: string | null;
   author_id?: string | null;
   author_name: string;
+  author_avatar?: string;
   author_handle: string;
   channel_id: string | null;
   channel_name: string;
@@ -750,6 +759,7 @@ export type SearchUser = {
   display_name: string;
   handle: string;
   avatar_tone: string;
+  avatar_key: string;
   city_label: string;
 };
 
@@ -824,6 +834,7 @@ export type UserProfile = {
   display_name: string;
   handle: string;
   avatar_tone: string;
+  avatar_key: string;
   city_label: string;
   joined_at: string;
   post_count: number;
@@ -869,6 +880,7 @@ export type MeProfile = {
   display_name: string;
   handle: string;
   avatar_tone: string;
+  avatar_key: string;
   city_label: string;
   script_pref: string;
   phone: string;

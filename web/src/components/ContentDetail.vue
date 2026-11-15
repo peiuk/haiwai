@@ -322,7 +322,7 @@ watch(detail, async (value) => {
                   :to="{ name: 'user', params: { id: detail.author_id } }"
                   :aria-label="`查看 ${authorLabel} 的主页`"
                   @click="leaveOverlay"
-                ><Avatar :name="authorLabel" :size="44" kind="person" /></RouterLink>
+                ><Avatar :name="authorLabel" :size="44" kind="person" :image="detail.author_avatar" /></RouterLink>
                 <Avatar v-else :name="authorLabel" :size="44" />
                 <div class="cd-author-text">
                   <RouterLink
@@ -429,7 +429,7 @@ watch(detail, async (value) => {
                   :to="{ name: 'user', params: { id: comment.author_id } }"
                   :aria-label="`查看 ${comment.author_name || comment.author_handle || '用户'} 的主页`"
                   @click="leaveOverlay"
-                ><Avatar :name="comment.author_name || comment.author_handle || '用户'" :size="40" kind="person" /></RouterLink>
+                ><Avatar :name="comment.author_name || comment.author_handle || '用户'" :size="40" kind="person" :image="comment.author_avatar" /></RouterLink>
                 <div class="cd-item-main">
                   <div class="cd-item-meta">
                     <RouterLink
@@ -458,7 +458,7 @@ watch(detail, async (value) => {
 
             <!-- 回复框固定在底部：先看正文和回复，再决定要不要回 -->
             <form class="cd-compose" @submit.prevent="postComment">
-              <Avatar :name="auth.displayName || '我'" :size="40" />
+              <Avatar :name="auth.displayName || '我'" :size="40" :image="auth.profile?.avatar_key" />
               <div class="cd-compose-main">
                 <label class="sr-only" for="cd-comment">写回复</label>
                 <textarea

@@ -131,7 +131,7 @@ load();
       :channel-id="item.channel_id"
       :certified="item.channel_certified"
       :author-id="item.author_id" :author-name="item.author_name"
-      :author-handle="item.author_handle"
+      :author-handle="item.author_handle" :author-avatar="item.author_avatar"
       :source-name="item.source_name"
       :licence-ref="item.licence_ref"
       :canonical-url="item.canonical_url"

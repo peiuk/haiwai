@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // 单条房间条目的视觉卡片：按 room_type 分支渲染。
-// series → 集号方块 + 进度；film → 片单卡（衬线标题 + 年份）；video → 缩略卡 + 版权徽章；general → 帖子卡。
+// series → 集号方块 + 进度；film → 片单卡（封面图 + 衬线标题）；video → 缩略卡 + 版权徽章；general → 帖子卡。
+// 各类条目都可带图片（最多 4 张）和一段视频，由 EntryMedia 统一渲染。
 import { computed } from "vue";
 import type { RoomItem } from "../../api";
 import BaseIcon from "../base/BaseIcon.vue";
+import EntryMedia from "./EntryMedia.vue";
 import BaseTag from "../base/BaseTag.vue";
 import SourceBlock from "../common/SourceBlock.vue";
 import ReportButton from "../common/ReportButton.vue";
@@ -26,7 +28,7 @@ const episodeLabel = computed(() => {
   return `S${String(props.item.season).padStart(2, "0")}E${String(props.item.episode).padStart(3, "0")}`;
 });
 
-// 通用房间帖子的图片：新数据用 image_keys，老数据只有 image_key；最多显示 4 张
+// 条目图片：新数据用 image_keys，老数据只有 image_key；最多显示 4 张（电影的第一张作封面）
 const images = computed(() => (props.item.image_keys?.length ? props.item.image_keys : props.item.image_key ? [props.item.image_key] : []).slice(0, 4));
 
 const isWatched = computed(() => props.item.watch_mark === "watched");
@@ -55,6 +57,7 @@ const videoBadge = computed(() => {
         <div class="progress-bar"><span :style="{ width: `${item.progress}%` }"></span></div>
         <span class="progress-pct">{{ item.progress }}%</span>
       </div>
+      <EntryMedia :images="images" :video-key="item.video_key" :title="item.title" />
       <div class="entry-compliance">
         <SourceBlock :source-name="item.source_name" :licence-ref="item.licence_ref" :canonical-url="item.canonical_url" :label="`${item.title} 的来源与许可`" />
         <ReportButton kind="content" :id="item.content_id" compact />
@@ -66,12 +69,16 @@ const videoBadge = computed(() => {
     </div>
   </article>
 
-  <!-- 电影：片单卡（衬线标题 + 年份） -->
+  <!-- 电影：片单卡（封面图 + 衬线标题）；没有封面时用片名首字 -->
   <article v-else-if="roomType === 'film'" class="entry entry--film">
-    <div class="film-cover" aria-hidden="true">{{ item.title.slice(0, 1) }}</div>
+    <div class="film-cover">
+      <img v-if="images[0]" :src="`/api/v1/uploads/${images[0]}`" :alt="`${item.title} 封面`" loading="lazy" />
+      <span v-else aria-hidden="true">{{ item.title.slice(0, 1) }}</span>
+    </div>
     <div class="entry-body">
       <h3 class="entry-title entry-title--serif" data-ugc>{{ item.title }}</h3>
-      <p class="entry-meta"><template v-if="item.year">{{ item.year }} 年</template><span v-if="item.summary" data-ugc> · {{ item.summary }}</span></p>
+      <p v-if="item.summary" class="entry-meta" data-ugc>{{ item.summary }}</p>
+      <EntryMedia :images="images.slice(1)" :video-key="item.video_key" :title="item.title" />
       <div class="entry-actions">
         <button type="button" class="icon-btn" :aria-pressed="isWant" :title="isWant ? '取消想看' : '想看'" @click="emit('toggle-watch', 'want')"><BaseIcon name="i-heart" :size="20" /></button>
         <button v-if="!isWatched" type="button" class="btn btn--ghost btn--sm" @click="emit('watched')">看过</button>
@@ -100,7 +107,8 @@ const videoBadge = computed(() => {
       :display-name="item.source_name"
     />
     <article v-else class="entry entry--video">
-      <div class="video-thumb" aria-hidden="true">
+      <!-- 有上传的视频就直接播放（第一张图作海报），没有才显示缩略图 -->
+      <div v-if="!item.video_key" class="video-thumb" aria-hidden="true">
         <img v-if="item.image_key" :src="`/api/v1/uploads/${item.image_key}`" :alt="item.title" />
         <BaseIcon v-else name="i-play" :size="26" class="video-thumb-fallback" />
       </div>
@@ -108,6 +116,12 @@ const videoBadge = computed(() => {
         <h3 class="entry-title" data-ugc>{{ item.title }}</h3>
         <BaseTag :variant="videoBadge.variant">{{ videoBadge.text }}</BaseTag>
         <p v-if="item.summary" class="entry-meta" data-ugc>{{ item.summary }}</p>
+        <EntryMedia
+          :images="item.video_key ? images.slice(1) : []"
+          :video-key="item.video_key"
+          :poster="images[0]"
+          :title="item.title"
+        />
         <a v-if="item.canonical_url" :href="item.canonical_url" target="_blank" rel="noopener" class="entry-link">去原站看</a>
         <div class="entry-compliance">
           <SourceBlock :source-name="item.source_name" :licence-ref="item.licence_ref" :canonical-url="item.canonical_url" :label="`${item.title} 的来源与许可`" />
@@ -126,18 +140,7 @@ const videoBadge = computed(() => {
     <div class="entry-body">
       <h3 class="entry-title" data-ugc>{{ item.title }}</h3>
       <p v-if="item.summary" class="entry-meta" data-ugc>{{ item.summary }}</p>
-      <div v-if="images.length" class="entry-media" :class="`entry-media--n${images.length}`">
-        <img v-for="(key, i) in images" :key="key" :src="`/api/v1/uploads/${key}`" :alt="`${item.title} 图片 ${i + 1}`" loading="lazy" />
-      </div>
-      <video
-        v-else-if="item.video_key"
-        class="entry-video"
-        :src="`/api/v1/uploads/${item.video_key}`"
-        controls
-        playsinline
-        preload="metadata"
-        :aria-label="`${item.title} 视频`"
-      ></video>
+      <EntryMedia :images="images" :video-key="item.video_key" :title="item.title" />
       <div class="entry-meta-row">
         <span v-if="item.author_name || item.author_handle" data-ugc>{{ item.author_name || item.author_handle }}</span>
         <span v-if="item.comment_count > 0">{{ item.comment_count }} 条留言</span>
@@ -152,35 +155,6 @@ const videoBadge = computed(() => {
 </template>
 
 <style scoped>
-.entry-media {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 4px;
-  margin-top: var(--sp-2);
-  border-radius: var(--r-md);
-  overflow: hidden;
-}
-.entry-media--n1 {
-  grid-template-columns: 1fr;
-}
-.entry-media img {
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  object-fit: cover;
-  display: block;
-  background: var(--accent-soft);
-}
-.entry-media--n1 img {
-  aspect-ratio: auto;
-  max-height: 420px;
-}
-.entry-video {
-  width: 100%;
-  max-height: 420px;
-  margin-top: var(--sp-2);
-  border-radius: var(--r-md);
-  background: #000;
-}
 .entry {
   display: flex;
   gap: var(--sp-3);
@@ -301,6 +275,12 @@ const videoBadge = computed(() => {
   font-family: var(--font-serif);
   font-size: 28px;
   color: var(--accent-ink);
+  overflow: hidden;
+}
+.film-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .video-thumb {
   flex: 0 0 96px;

@@ -40,6 +40,7 @@ def public_profile(
         "display_name": profile.display_name,
         "handle": profile.handle or "",
         "avatar_tone": profile.avatar_tone,
+        "avatar_key": profile.avatar_key or "",
         "city_label": profile.city_label or "",
         "joined_at": profile.created_at.isoformat(),
         "post_count": _count(session, select(func.count()).select_from(Content).where(*_published(profile.id))),

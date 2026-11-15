@@ -204,7 +204,7 @@ watch(
           </RouterLink>
         </nav>
         <RouterLink to="/profile" class="left-footer">
-          <Avatar :name="auth.displayName || '我'" :size="38" />
+          <Avatar :name="auth.displayName || '我'" :size="38" :image="auth.profile?.avatar_key" />
           <span v-if="auth.isLoggedIn">
             <strong>{{ auth.displayName || "我的" }}</strong>
             <small v-if="auth.handle">@{{ auth.handle }}</small>

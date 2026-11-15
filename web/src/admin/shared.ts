@@ -64,6 +64,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin.login": "登录后台",
   "admin.user.suspend": "封禁用户",
   "admin.user.activate": "解封用户",
+  "admin.user.avatar_remove": "移除头像",
   "admin.content.remove": "下架内容",
   "admin.content.restore": "恢复内容",
   "admin.content.delete": "彻底删除内容",

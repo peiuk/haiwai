@@ -269,7 +269,7 @@ watch(
         <div v-if="suggestUsers.length" class="gsearch-group">
           <p class="gsearch-group-title">用户</p>
           <button v-for="u in suggestUsers" :key="u.user_id" type="button" class="gsearch-item" @click="goUser(u.user_id)">
-            <Avatar :name="u.display_name" :size="38" :tone="u.avatar_tone" />
+            <Avatar :name="u.display_name" :size="38" :tone="u.avatar_tone" :image="u.avatar_key" />
             <span class="gsearch-label gsearch-label--stack">
               <strong data-ugc>{{ u.display_name }}</strong>
               <small v-if="u.handle">@{{ u.handle }}</small>

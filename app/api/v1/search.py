@@ -129,6 +129,7 @@ def search(
                 "author_id": row.author_id,
                 "author_name": author.display_name if author else "",
                 "author_handle": author.handle or "" if author else "",
+                "author_avatar": author.avatar_key or "" if author else "",
                 "channel_id": channel.id if channel else None,
                 "channel_name": channel.name_hans if channel else "",
                 "keywords": load_keywords(row.keywords_json),
@@ -163,6 +164,7 @@ def search(
                 "display_name": row.display_name,
                 "handle": row.handle or "",
                 "avatar_tone": row.avatar_tone,
+                "avatar_key": row.avatar_key or "",
                 "city_label": row.city_label or "",
             }
             for row in matches

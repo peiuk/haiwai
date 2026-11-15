@@ -90,7 +90,7 @@ function setTab(id: TabId): void {
             :channel-name="item.channel_name"
             :channel-id="item.channel_id ?? ''"
             :author-id="item.author_id" :author-name="item.author_name"
-            :author-handle="item.author_handle"
+            :author-handle="item.author_handle" :author-avatar="item.author_avatar"
             :source-name="item.source_name"
             :licence-ref="item.licence_ref"
             :canonical-url="item.canonical_url"
@@ -115,7 +115,7 @@ function setTab(id: TabId): void {
       <ul v-else class="search-list">
         <li v-for="u in results.users" :key="u.user_id">
           <RouterLink class="search-row" :to="{ name: 'user', params: { id: u.user_id } }">
-            <Avatar :name="u.display_name" :size="44" :tone="u.avatar_tone" />
+            <Avatar :name="u.display_name" :size="44" :tone="u.avatar_tone" :image="u.avatar_key" />
             <span class="search-row-main">
               <strong data-ugc>{{ u.display_name }}</strong>
               <small>

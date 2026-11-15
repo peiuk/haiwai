@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { jsonBody, request, toMessage } from "../../api";
+import { jsonBody, request, toMessage, uploadFile } from "../../api";
+import { useAuthStore } from "../../stores/auth";
 import { useToastStore } from "../../stores/toast";
 import { useThemeStore } from "../../stores/theme";
 import Avatar from "../base/Avatar.vue";
@@ -12,9 +13,11 @@ type Profile = {
   display_name: string;
   handle: string;
   avatar_tone: string;
+  avatar_key: string;
   city_label: string;
 };
 
+const auth = useAuthStore();
 const toast = useToastStore();
 const theme = useThemeStore();
 const profile = ref<Profile | null>(null);
@@ -86,6 +89,47 @@ async function save(): Promise<void> {
   }
 }
 
+// ---- 头像：选图即上传并保存，不用再点「保存资料」 ----
+const avatarBusy = ref(false);
+
+async function setAvatar(key: string): Promise<void> {
+  profile.value = await request<Profile>("/api/v1/me", { ...jsonBody({ avatar_key: key }), method: "PATCH" });
+  void auth.refreshProfile(); // 侧栏、发帖框里的头像跟着换
+}
+
+async function onAvatarFile(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || avatarBusy.value) return;
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 5_000_000) {
+    toast.show("头像只接受 jpeg / png / webp，不超过 5MB");
+    return;
+  }
+  avatarBusy.value = true;
+  try {
+    await setAvatar(await uploadFile(file));
+    toast.show("头像已更新");
+  } catch (err) {
+    toast.show(toMessage(err));
+  } finally {
+    avatarBusy.value = false;
+  }
+}
+
+async function removeAvatar(): Promise<void> {
+  if (avatarBusy.value) return;
+  avatarBusy.value = true;
+  try {
+    await setAvatar("");
+    toast.show("头像已移除");
+  } catch (err) {
+    toast.show(toMessage(err));
+  } finally {
+    avatarBusy.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -94,12 +138,19 @@ onMounted(load);
     <p v-if="loading" class="muted">正在加载个人资料…</p>
     <div v-else-if="profile" class="profile-card__body">
       <div class="profile-card__identity">
-        <Avatar :name="profile.display_name" :size="56" :tone="profile.avatar_tone" />
+        <Avatar :name="profile.display_name" :size="56" :tone="profile.avatar_tone" :image="profile.avatar_key" />
         <div class="profile-card__name">
           <strong class="name" data-ugc>{{ profile.display_name }}</strong>
           <span class="sub">{{ profile.handle ? `@${profile.handle}` : "尚未设置账号名" }}<template v-if="profile.city_label"> · {{ profile.city_label }}</template> · {{ theme.lang === 'zh-Hant' ? '繁體' : '简体' }}</span>
         </div>
         <BaseButton v-if="!editing" variant="outline" size="sm" @click="editing = true">编辑资料</BaseButton>
+      </div>
+      <div v-if="editing" class="profile-card__actions">
+        <label class="profile-card__pick" :class="{ 'is-busy': avatarBusy }">
+          {{ avatarBusy ? "正在上传…" : profile.avatar_key ? "更换头像" : "上传头像" }}
+          <input id="profile-avatar" class="sr-only" type="file" accept="image/jpeg,image/png,image/webp" :disabled="avatarBusy" @change="onAvatarFile" />
+        </label>
+        <BaseButton v-if="profile.avatar_key" variant="ghost" size="sm" :disabled="avatarBusy" @click="removeAvatar">移除头像</BaseButton>
       </div>
       <form v-if="editing" class="profile-card__form" @submit.prevent="save">
         <TextField id="profile-name" v-model="name" label="显示名" required />
@@ -133,7 +184,18 @@ onMounted(load);
 .profile-card__name .name { font-size: 19px; font-weight: 800; }
 .profile-card__name .sub { font-size: 13px; color: var(--muted); }
 .profile-card__form { max-width: 30rem; }
-.profile-card__actions { display: flex; gap: var(--sp-2); }
+.profile-card__actions { display: flex; gap: var(--sp-2); align-items: center; }
+.profile-card__pick {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+.profile-card__pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.profile-card__pick.is-busy { opacity: 0.6; cursor: default; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .muted { margin: 0; color: var(--muted); font-size: var(--fs-12); }
 .error { margin: 0; color: var(--danger); font-size: var(--fs-12); }
 </style>

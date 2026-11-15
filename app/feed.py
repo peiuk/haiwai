@@ -43,12 +43,12 @@ def listing_map(session: Session, content_ids: list[str]) -> dict[str, ListingEx
     return {row.content_id: row for row in rows}
 
 
-def author_names(session: Session, author_ids: list[str | None]) -> dict[str, tuple[str, str]]:
+def author_names(session: Session, author_ids: list[str | None]) -> dict[str, tuple[str, str, str]]:
     ids = [item for item in author_ids if item]
     if not ids:
         return {}
     rows = session.scalars(select(User).where(User.id.in_(ids))).all()
-    return {row.id: (row.display_name, row.handle or "") for row in rows}
+    return {row.id: (row.display_name, row.handle or "", row.avatar_key or "") for row in rows}
 
 
 def repost_context(session: Session, user_id: str | None, contents: list[Content]) -> tuple[dict[str, str], set[str]]:
@@ -93,8 +93,8 @@ def _expired(expires_at: datetime | None) -> bool:
     return expires_at < datetime.now(timezone.utc)
 
 
-def card_extras(content: Content, listing: ListingExt | None, author: tuple[str, str] = ("", "")) -> dict[str, object]:
-    author_name, author_handle = author
+def card_extras(content: Content, listing: ListingExt | None, author: tuple[str, ...] = ("", "")) -> dict[str, object]:
+    author_name, author_handle, author_avatar = (*author, "")[:3]  # 调用方的缺省值是两项的 ("", "")
     extra: dict[str, object] = {
         "type": content.type,
         "keywords": load_keywords(content.keywords_json),
@@ -105,6 +105,7 @@ def card_extras(content: Content, listing: ListingExt | None, author: tuple[str,
         "author_id": content.author_id,
         "author_name": author_name,
         "author_handle": author_handle,
+        "author_avatar": author_avatar,
         "city_topic": content.city_topic or "",
         "keyword_source": content.keyword_source or "",
     }

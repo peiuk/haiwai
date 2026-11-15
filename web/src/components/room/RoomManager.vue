@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 房主条目管理：添加条目（series 季集 / film 年份 / video 版权确认）、按集号重排。
+// 房主条目管理：添加条目（series 季集 / film 封面图 / video 版权确认；都可带图片和一段视频）、按集号重排。
 // 上移/下移由 RoomItems 里的卡片按钮触发，事件经 RoomView 转发到本组件处理。
 import { ref } from "vue";
 import { useToastStore } from "../../stores/toast";
@@ -8,6 +8,8 @@ import BaseButton from "../base/BaseButton.vue";
 import TextField from "../base/TextField.vue";
 import TextArea from "../base/TextArea.vue";
 import Checkbox from "../base/Checkbox.vue";
+import MultiUploadField from "../common/MultiUploadField.vue";
+import UploadField from "../common/UploadField.vue";
 
 const props = defineProps<{
   roomId: string;
@@ -24,7 +26,8 @@ const title = ref("");
 const body = ref("");
 const season = ref("");
 const episode = ref("");
-const year = ref("");
+const imageKeys = ref<string[]>([]);
+const videoKey = ref("");
 const rightsConfirmed = ref(false);
 const busy = ref(false);
 
@@ -33,7 +36,8 @@ function resetForm(): void {
   body.value = "";
   season.value = "";
   episode.value = "";
-  year.value = "";
+  imageKeys.value = [];
+  videoKey.value = "";
   rightsConfirmed.value = false;
 }
 
@@ -44,13 +48,8 @@ async function addEntry(): Promise<void> {
   }
   const seasonNum = season.value ? Number(season.value) : null;
   const episodeNum = episode.value ? Number(episode.value) : null;
-  const yearNum = year.value ? Number(year.value) : null;
   if (props.roomType === "series" && (seasonNum == null || episodeNum == null)) {
     toast.show("剧集需要填写季和集");
-    return;
-  }
-  if (props.roomType === "film" && (yearNum == null || yearNum < 1888 || yearNum > 2100)) {
-    toast.show("电影需要填写 1888–2100 之间的年份");
     return;
   }
   if (props.roomType === "video" && !rightsConfirmed.value) {
@@ -66,8 +65,9 @@ async function addEntry(): Promise<void> {
         body: body.value.trim(),
         season: props.roomType === "series" ? seasonNum : null,
         episode: props.roomType === "series" ? episodeNum : null,
-        year: props.roomType === "film" ? yearNum : null,
         rights_confirmed: props.roomType === "video" ? rightsConfirmed.value : false,
+        image_keys: imageKeys.value,
+        video_key: videoKey.value || null,
       }),
     );
     toast.show("条目已添加");
@@ -116,10 +116,24 @@ defineExpose({ moveEntry, reorderByEpisode });
         <TextField id="entry-season" v-model="season" label="季" type="number" inputmode="numeric" />
         <TextField id="entry-episode" v-model="episode" label="集" type="number" inputmode="numeric" />
       </div>
-      <div v-else-if="roomType === 'film'" class="form-row">
-        <TextField id="entry-year" v-model="year" label="年份" type="number" inputmode="numeric" />
-      </div>
       <Checkbox v-else-if="roomType === 'video'" id="entry-rights" v-model="rightsConfirmed" label="确认是本人原创视频，已取得人物同意，且不含未授权音乐或影视片段" />
+
+      <MultiUploadField
+        id="entry-images"
+        v-model="imageKeys"
+        :label="roomType === 'film' ? '封面图片（可选）' : '图片（可选，最多 4 张）'"
+        :max="roomType === 'film' ? 1 : 4"
+        accept="image/jpeg,image/png,image/webp"
+        :max-mb="5"
+      />
+      <UploadField
+        id="entry-video"
+        v-model="videoKey"
+        label="视频（可选，1 段）"
+        accept="video/mp4,video/webm,video/quicktime"
+        :max-mb="100"
+        hint="mp4 / webm / mov，不超过 100MB"
+      />
 
       <div class="form-actions">
         <BaseButton type="submit" :loading="busy" variant="primary">添加条目</BaseButton>

@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user, optional_user
-from app.api.v1.uploads import delete_object
+from app.api.v1.uploads import delete_object, owned_upload
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
@@ -49,6 +49,7 @@ def my_profile(user: User = Depends(current_user)) -> dict[str, object]:
         "display_name": user.display_name,
         "handle": user.handle or "",
         "avatar_tone": user.avatar_tone,
+        "avatar_key": user.avatar_key or "",
         "city_label": user.city_label or "",
         "script_pref": user.script_pref,
         "phone": user.phone or "",
@@ -61,6 +62,7 @@ class ProfilePatch(BaseModel):
     display_name: str | None = None
     handle: str | None = None
     avatar_tone: str | None = None
+    avatar_key: str | None = None  # 已上传图片的 key；空字符串表示去掉头像
     city_label: str | None = None
 
     @field_validator("display_name")
@@ -107,6 +109,15 @@ class SubscriptionPatch(BaseModel):
     is_muted: bool
 
 
+def drop_avatar(session: Session, user: User) -> None:
+    """去掉头像并删掉图片文件（换头像、本人移除、后台移除都走这里）。不提交。"""
+    if not user.avatar_key:
+        return
+    delete_object(user.avatar_key)
+    session.execute(delete(UploadObject).where(UploadObject.key == user.avatar_key))
+    user.avatar_key = None
+
+
 @router.patch("")
 def update_profile(
     body: ProfilePatch,
@@ -122,6 +133,11 @@ def update_profile(
         user.handle = body.handle
     if body.avatar_tone is not None:
         user.avatar_tone = body.avatar_tone
+    if body.avatar_key is not None and body.avatar_key != (user.avatar_key or ""):
+        if body.avatar_key and not owned_upload(session, user, body.avatar_key).content_type.startswith("image/"):
+            raise APIError(400, "AVATAR_NOT_IMAGE", "头像只能用图片")
+        drop_avatar(session, user)
+        user.avatar_key = body.avatar_key or None
     if body.city_label is not None:
         user.city_label = body.city_label or None
     session.commit()
@@ -786,6 +802,7 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
     user.phone = None
     user.display_name = "已注销"
     user.handle = None
+    user.avatar_key = None  # 图片文件在下面和其他上传一起删
     subscriptions = session.scalars(select(ChannelSubscription).where(ChannelSubscription.user_id == user.id)).all()
     for subscription in subscriptions:
         channel = session.get(Channel, subscription.channel_id)

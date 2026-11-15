@@ -176,7 +176,7 @@ async function submit(): Promise<void> {
 
 <template>
   <div class="home-composer">
-    <Avatar name="我" :size="44" class="home-composer-avatar" />
+    <Avatar name="我" :size="44" class="home-composer-avatar" :image="auth.profile?.avatar_key" />
 
     <div class="home-composer-body">
       <div class="home-composer-top">

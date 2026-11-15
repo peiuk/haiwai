@@ -432,6 +432,7 @@ def user_detail(user_id: str, session: Session = Depends(get_db)) -> dict[str, o
         "display_name": target.display_name,
         "handle": target.handle or "",
         "email": target.email,
+        "avatar_key": target.avatar_key or "",
         "city_label": target.city_label or "",
         "phone_verified": target.phone_verified,
         "status": target.status,
@@ -451,6 +452,26 @@ def user_detail(user_id: str, session: Session = Depends(get_db)) -> dict[str, o
         "cases": _cases(session, ModerationCase.reported_user_id == target.id),
         "history": _history(session, "user", target.id),
     }
+
+
+@guarded.post("/users/{user_id}/avatar/remove")
+def remove_user_avatar(
+    user_id: str,
+    body: Reasoned,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    """头像不过审核，上传即公开；违规的由管理员在这里撤掉（图片文件一起删），对方回到首字色块。"""
+    from app.api.v1.me import drop_avatar  # me 模块较重，只在这里用到
+
+    target = session.get(User, user_id)
+    if target is None or not target.avatar_key:
+        raise APIError(409, "NO_CHANGE", "这个用户没有上传头像")
+    drop_avatar(session, target)
+    write_audit(session, admin.id, "admin.user.avatar_remove", "user", target.id, body.note)
+    notify_user(session, target.id, f"你的头像已被管理员移除{_because(body.note)}")
+    session.commit()
+    return {"user_id": target.id, "avatar_key": ""}
 
 
 RESET_LINK_HOURS = 24

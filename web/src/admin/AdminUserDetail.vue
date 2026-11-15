@@ -16,6 +16,7 @@ type Detail = {
   display_name: string;
   handle: string;
   email: string;
+  avatar_key: string;
   city_label: string;
   phone_verified: boolean;
   status: string;
@@ -139,6 +140,21 @@ function erase(): Promise<void> {
     "账号已注销",
   );
 }
+function removeAvatar(): Promise<void> {
+  return ask(
+    {
+      title: `移除「${detail.value?.display_name}」的头像？`,
+      message: "图片会被删除，对方回到首字色块头像，并收到一条通知。对方可以重新上传。",
+      confirmLabel: "移除头像",
+      danger: true,
+      reason: true,
+    },
+    id,
+    `/api/v1/admin/users/${id}/avatar/remove`,
+    (reason) => ({ reason }),
+    "头像已移除",
+  );
+}
 function activate(): Promise<void> {
   return act(id, `/api/v1/admin/users/${id}/status`, { status: "active" }, "已解封");
 }
@@ -202,6 +218,13 @@ function activate(): Promise<void> {
 
       <section class="adm-panel">
         <dl class="adm-facts">
+          <div v-if="detail.avatar_key">
+            <dt>头像</dt>
+            <dd>
+              <a :href="`/api/v1/uploads/${detail.avatar_key}`" target="_blank" rel="noopener"><img class="adm-avatar" :src="`/api/v1/uploads/${detail.avatar_key}`" alt="用户上传的头像" /></a>
+              <button type="button" class="btn btn--danger btn--sm" :disabled="!!busy" @click="removeAvatar">移除头像</button>
+            </dd>
+          </div>
           <div><dt>邮箱</dt><dd>{{ detail.email }}</dd></div>
           <div><dt>账号名</dt><dd>{{ detail.handle ? `@${detail.handle}` : "—" }}</dd></div>
           <div><dt>城市</dt><dd>{{ detail.city_label || "—" }}</dd></div>

@@ -166,6 +166,7 @@ def list_messages(user: User = Depends(current_user), session: Session = Depends
                 "peer_name": peer.display_name if peer else "",
                 "peer_handle": peer.handle or "" if peer else "",
                 "peer_tone": peer.avatar_tone if peer else "a",
+                "peer_avatar": peer.avatar_key or "" if peer else "",
                 "status": thread.status,
                 "listing_inquiry": thread.listing_inquiry,
                 "listing_ref": json.loads(thread.listing_ref) if thread.listing_ref else None,

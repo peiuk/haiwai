@@ -189,7 +189,7 @@ watch(userId, () => {
         <div class="profile-banner" aria-hidden="true"></div>
         <div class="profile-row">
           <div class="profile-avatar">
-            <Avatar :name="displayName" :size="88" kind="person" :tone="profile.avatar_tone" />
+            <Avatar :name="displayName" :size="88" kind="person" :tone="profile.avatar_tone" :image="profile.avatar_key" />
           </div>
           <div v-if="!isSelf" class="profile-actions">
             <ReportButton kind="user" :id="profile.user_id" compact />
@@ -281,7 +281,7 @@ watch(userId, () => {
           :channel-id="post.channel_id || ''"
           :author-id="profile.user_id"
           :author-name="profile.display_name"
-          :author-handle="profile.handle"
+          :author-handle="profile.handle" :author-avatar="profile.avatar_key"
           :author-tone="profile.avatar_tone"
           :source-name="post.source_name"
           :licence-ref="post.licence_ref"

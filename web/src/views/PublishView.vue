@@ -416,7 +416,7 @@ watch(
 
     <!-- 编辑区：以正文为中心，其他设置按需展开 -->
     <section class="compose" aria-label="发布内容">
-      <Avatar v-if="currentType !== 'info'" :name="auth.displayName || '我'" :size="44" class="compose-avatar" />
+      <Avatar v-if="currentType !== 'info'" :name="auth.displayName || '我'" :size="44" class="compose-avatar" :image="auth.profile?.avatar_key" />
       <div class="compose-body">
         <div class="compose-switch">
           <!-- 展开面板（不是 ARIA menu：menu 要求方向键导航，这里用普通按钮 + Tab 更可靠）；Esc / 点外面关闭 -->
@@ -542,7 +542,7 @@ watch(
         <p v-else-if="!feed.length" class="feed-note">还没有发布内容。</p>
         <template v-else>
           <article v-for="item in feed" :key="item.content_id" class="post">
-            <Avatar :name="auth.displayName || '我'" :size="42" />
+            <Avatar :name="auth.displayName || '我'" :size="42" :image="auth.profile?.avatar_key" />
             <div class="post-body">
               <div class="post-head">
                 <span class="name">我</span>

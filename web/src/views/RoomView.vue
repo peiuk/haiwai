@@ -18,6 +18,7 @@ import SelectField from "../components/base/SelectField.vue";
 import BaseTag from "../components/base/BaseTag.vue";
 import ErrorState from "../components/base/ErrorState.vue";
 import ReportButton from "../components/common/ReportButton.vue";
+import UploadField from "../components/common/UploadField.vue";
 
 const route = useRoute();
 const roomId = route.params.id as string;
@@ -138,16 +139,18 @@ async function rejectJoin(requestId: string): Promise<void> {
 // 新建的房间要等管理员审核：房主先发内容，任一条审核通过后房间自动上线
 const pending = computed(() => detail.value?.review_status === "pending");
 
-// ---- 房主改房间（名字、类型）----
+// ---- 房主改房间（名字、类型；剧集房间还有封面图）----
 const editing = ref(false);
 const editName = ref("");
 const editType = ref("general");
+const editCover = ref("");
 const saving = ref(false);
 
 function startEdit(): void {
   if (!detail.value) return;
   editName.value = detail.value.name_hans;
   editType.value = detail.value.room_type;
+  editCover.value = detail.value.cover_key ?? "";
   editing.value = true;
 }
 
@@ -159,7 +162,9 @@ async function saveEdit(): Promise<void> {
   }
   saving.value = true;
   try {
-    await request(`/api/v1/channels/${roomId}`, { ...jsonBody({ name, room_type: editType.value }), method: "PATCH" });
+    // 只有剧集房间提交封面；空字符串表示去掉封面
+    const cover = editType.value === "series" ? { cover_key: editCover.value } : {};
+    await request(`/api/v1/channels/${roomId}`, { ...jsonBody({ name, room_type: editType.value, ...cover }), method: "PATCH" });
     editing.value = false;
     toast.show("房间已更新");
     onChanged();
@@ -192,6 +197,12 @@ onMounted(load);
 
     <template v-else-if="detail">
       <header class="room-head">
+        <img
+          v-if="detail.room_type === 'series' && detail.cover_key"
+          class="room-cover"
+          :src="`/api/v1/uploads/${detail.cover_key}`"
+          :alt="`${detail.name_hans} 封面`"
+        />
         <h1 class="page-title" data-ugc>{{ detail.name_hans }}</h1>
         <div class="room-tags">
           <BaseTag>{{ detail.room_type_label || detail.room_type }}</BaseTag>
@@ -206,10 +217,27 @@ onMounted(load);
         <p v-if="detail.subscriber_count !== undefined" class="room-meta">
           <template v-if="countryName">{{ countryName }} · </template>{{ detail.subscriber_count }} 人订阅<template v-if="detail.sort_basis"> · 排序：{{ detail.sort_basis }}</template>
         </p>
-        <BaseButton v-if="detail.is_owner && !editing" class="room-edit-btn" size="sm" variant="outline" @click="startEdit">编辑房间</BaseButton>
+        <div v-if="canModerate && !editing" class="room-head__actions">
+          <!-- 综合讨论房间：房主 / 协作者发帖走「发布内容」页（图片、视频、话题都有），预选这个房间 -->
+          <RouterLink
+            v-if="detail.room_type === 'general' && !detail.region_blocked"
+            class="btn btn--primary btn--sm"
+            :to="{ name: 'publish', query: { channel: roomId } }"
+          >发帖</RouterLink>
+          <BaseButton v-if="detail.is_owner" class="room-edit-btn" size="sm" variant="outline" @click="startEdit">编辑房间</BaseButton>
+        </div>
         <form v-if="editing" class="room-edit" @submit.prevent="saveEdit">
           <TextField id="room-edit-name" v-model="editName" label="房间名" required />
           <SelectField id="room-edit-type" v-model="editType" label="类型" :options="[...ROOM_TYPES]" />
+          <UploadField
+            v-if="editType === 'series'"
+            id="room-edit-cover"
+            v-model="editCover"
+            label="封面图片（可选）"
+            accept="image/jpeg,image/png,image/webp"
+            :max-mb="5"
+            hint="显示在房间页顶部，建议横图"
+          />
           <div class="room-edit__actions">
             <BaseButton size="sm" variant="outline" type="button" @click="editing = false">取消</BaseButton>
             <BaseButton size="sm" type="submit" :loading="saving">保存</BaseButton>
@@ -274,7 +302,6 @@ onMounted(load);
       <RoomSubmissions
         :room-id="roomId"
         :can-moderate="canModerate"
-        :can-post="detail.room_type === 'general'"
         @changed="onChanged"
       />
 
@@ -306,6 +333,14 @@ onMounted(load);
   padding-bottom: var(--sp-4);
   border-bottom: 1px solid var(--border);
 }
+.room-cover {
+  width: 100%;
+  max-height: 280px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--r-lg);
+  background: var(--surface2);
+}
 .room-tags {
   display: flex;
   gap: var(--sp-2);
@@ -316,9 +351,12 @@ onMounted(load);
   color: var(--muted);
   font-size: var(--fs-12);
 }
+.room-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
 .room-edit-btn {
-  justify-self: start;
-  align-self: flex-start;
   width: auto;
 }
 .room-edit {

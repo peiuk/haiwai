@@ -351,7 +351,13 @@ def test_series_order_and_private_progress(client):
     assert viewer_row["progress"] == 40
 
 
-def test_film_entry_keeps_year(client):
+def upload(client, token: str, content_type: str, data: bytes) -> str:
+    key = client.post("/api/v1/uploads/sign", headers=headers(token), json={"content_type": content_type}).json()["object_key"]
+    assert client.put(f"/api/v1/uploads/{key}", headers=headers(token), content=data).status_code == 200
+    return key
+
+
+def test_film_entry_needs_no_year_and_takes_cover(client):
     owner = register(client, "film-room@example.com")
     verify(client, owner, "+447700900213")
     viewer = register(client, "film-viewer@example.com")
@@ -367,20 +373,23 @@ def test_film_entry_keeps_year(client):
         headers=headers(owner),
         json={"decision": "approve"},
     ).status_code == 200
-    missing = client.post(
+    cover = upload(client, owner, "image/png", b"\x89PNG")
+    clip = upload(client, owner, "video/mp4", b"\x00\x00\x00\x18ftyp")
+    # 图片位不能放视频，反过来也不行
+    wrong = client.post(
         f"/api/v1/channels/{room_id}/entries",
         headers=headers(owner),
-        json={"title": "新闻女王", "body": "想看"},
+        json={"title": "新闻女王", "body": "想看", "image_keys": [clip]},
     )
-    assert missing.status_code == 400
+    assert wrong.status_code == 400
     added = client.post(
         f"/api/v1/channels/{room_id}/entries",
         headers=headers(owner),
-        json={"title": "新闻女王", "body": "想看", "year": 2023},
+        json={"title": "新闻女王", "body": "想看", "image_keys": [cover], "video_key": clip},
     )
-    assert added.status_code == 200, added.text
+    assert added.status_code == 200, added.text  # 不再需要年份
     row = client.get(f"/api/v1/channels/{room_id}/items").json()["items"][0]
-    assert row["year"] == 2023
+    assert row["image_keys"] == [cover] and row["video_key"] == clip
     assert row["sort_key"] == "F0001"
     content_id = added.json()["content_id"]
     saved = client.put(
@@ -393,6 +402,23 @@ def test_film_entry_keeps_year(client):
     viewer_row = next(item for item in client.get(f"/api/v1/channels/{room_id}/items", headers=headers(viewer)).json()["items"] if item["content_id"] == content_id)
     assert owner_row["watch_mark"] is None
     assert viewer_row["watch_mark"] == "watched"
+
+
+def test_room_cover_set_and_cleared_by_owner_only(client):
+    owner = register(client, "cover-owner@example.com")
+    verify(client, owner, "+447700900214")
+    other = register(client, "cover-other@example.com")
+    parent_id = official_channel(client)
+    room_id = client.post(
+        "/api/v1/channels", headers=headers(owner), json={"name": "某剧", "parent_channel_id": parent_id, "room_type": "series"}
+    ).json()["channel_id"]
+    cover = upload(client, owner, "image/png", b"\x89PNG")
+    # 别人的图片用不了；不是房主改不了
+    assert client.patch(f"/api/v1/channels/{room_id}", headers=headers(other), json={"cover_key": cover}).status_code in (403, 404)
+    assert client.patch(f"/api/v1/channels/{room_id}", headers=headers(owner), json={"cover_key": cover}).status_code == 200
+    assert client.get(f"/api/v1/channels/{room_id}", headers=headers(owner)).json()["cover_key"] == cover
+    assert client.patch(f"/api/v1/channels/{room_id}", headers=headers(owner), json={"cover_key": ""}).status_code == 200
+    assert client.get(f"/api/v1/channels/{room_id}", headers=headers(owner)).json()["cover_key"] is None
 
 
 def test_video_entry_requires_rights_confirmation(client):

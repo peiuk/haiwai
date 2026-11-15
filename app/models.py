@@ -26,6 +26,7 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(40))
     handle: Mapped[str | None] = mapped_column(String(20), unique=True)
     avatar_tone: Mapped[str] = mapped_column(String(1), default="a")
+    avatar_key: Mapped[str | None] = mapped_column(String(32))  # 上传的头像图片；为空时显示首字色块
     city_label: Mapped[str | None] = mapped_column(String(12))
     phone: Mapped[str | None] = mapped_column(String(32), unique=True)
     script_pref: Mapped[str] = mapped_column(String(8), default="hans")
@@ -68,6 +69,7 @@ class Channel(Base):
     is_certified: Mapped[bool] = mapped_column(Boolean, default=False)
     category: Mapped[str | None] = mapped_column(String(16))
     subscriber_count: Mapped[int] = mapped_column(Integer, default=0)
+    cover_key: Mapped[str | None] = mapped_column(String(64))  # 房间封面图（剧集房间页顶部），房主上传
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     @property

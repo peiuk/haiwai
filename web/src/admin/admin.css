@@ -98,6 +98,7 @@ a.adm-card:hover { border-color: var(--accent); text-decoration: none; }
 .adm-facts dd { margin: 2px 0 0; font-size: var(--fs-14); overflow-wrap: anywhere; }
 .adm-prose { padding: var(--sp-4); font-size: var(--fs-14); line-height: var(--lh-loose); white-space: pre-wrap; overflow-wrap: anywhere; max-width: var(--measure); }
 .adm-images { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: 0 var(--sp-4) var(--sp-4); }
+.adm-avatar { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 12px; }
 .adm-video { width: 100%; max-width: 640px; max-height: 420px; background: #000; border-radius: var(--r-md); }
 .adm-images img { width: 180px; height: 180px; object-fit: cover; border: 1px solid var(--border); border-radius: var(--r-md); }
 

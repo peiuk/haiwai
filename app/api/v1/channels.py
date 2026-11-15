@@ -1,11 +1,14 @@
+import json
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
 from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
+from app.api.v1.uploads import owned_upload
 from app.core.pagination import decode_cursor, encode_cursor
-from app.feed import author_names, card_extras, content_titles, listing_map, reaction_flags, repost_context
+from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, content_titles, listing_map, reaction_flags, repost_context
 from app.recommend import country_blocked, effective_region
 from app.reports import ReportBody, report_receipt
 from app.core.audit import write_audit
@@ -273,6 +276,7 @@ def channel_detail(
         "kind": channel.kind,
         "room_type": channel.room_type,
         "room_type_label": ROOM_TYPE_LABELS.get(channel.room_type, channel.room_type),
+        "cover_key": channel.cover_key,
         "review_status": channel.review_status,
         "is_private": channel.is_private,
         "is_owner": user is not None and channel.owner_id == user.id,
@@ -558,6 +562,7 @@ class RoomEditBody(BaseModel):
 
     room_type: str | None = None
     name: str | None = None
+    cover_key: str | None = None  # 房间封面图；传空字符串表示去掉封面
 
     @field_validator("room_type")
     @classmethod
@@ -591,6 +596,10 @@ def update_room(
         write_audit(session, user.id, "channel.rename", "channel", channel.id, body.name)
     if body.room_type is not None:
         channel.room_type = body.room_type
+    if body.cover_key is not None:
+        if body.cover_key:
+            _owned_media(session, user, body.cover_key, "image/", "图片")
+        channel.cover_key = body.cover_key or None
     session.commit()
     return {"channel_id": channel.id, "room_type": channel.room_type, "name_hans": channel.name_hans}
 
@@ -634,8 +643,17 @@ class EntryBody(BaseModel):
     body: str
     season: int | None = None
     episode: int | None = None
-    year: int | None = None
     rights_confirmed: bool = False
+    image_keys: list[str] = []  # 最多 4 张，第一张作封面（电影卡片左侧）
+    video_key: str | None = None
+
+    @field_validator("image_keys")
+    @classmethod
+    def bounded_images(cls, value: list[str]) -> list[str]:
+        keys = [key for key in dict.fromkeys(value) if key]
+        if len(keys) > MAX_LISTING_IMAGES:
+            raise ValueError(f"最多上传 {MAX_LISTING_IMAGES} 张图片")
+        return keys
 
     @field_validator("title")
     @classmethod
@@ -733,6 +751,12 @@ def _catalog_rows(session: Session, channel_id: str, season: int | None = None) 
     return list(session.scalars(query.order_by(ChannelItem.sort_key)).all())
 
 
+def _owned_media(session: Session, user: User, key: str, prefix: str, label: str) -> None:
+    """只能用自己上传完成的文件，且类型要对（图片位不能塞视频，反之亦然）。"""
+    if not owned_upload(session, user, key).content_type.startswith(prefix):
+        raise APIError(400, "VALIDATION_FAILED", f"这里需要上传{label}")
+
+
 @router.post("/{channel_id}/entries")
 def add_entry(
     channel_id: str,
@@ -773,10 +797,12 @@ def add_entry(
         count = session.scalar(
             select(func.count()).select_from(ChannelItem).where(ChannelItem.channel_id == channel.id, ChannelItem.sort_key != "")
         )
-        if body.year is None or not 1888 <= body.year <= 2100:
-            raise APIError(400, "VALIDATION_FAILED", "电影需要年份")
         sort_key = film_sort_key(int(count or 0) + 1)
         confirmed = False
+    for key in body.image_keys:
+        _owned_media(session, user, key, "image/", "图片")
+    if body.video_key:
+        _owned_media(session, user, body.video_key, "video/", "视频")
     now = utcnow()
     # 房间还在审核：条目先待审，管理员通过任一条后房间自动上线（同公告）。直接发布会经搜索、主页漏出去
     waiting = not channel.is_active
@@ -789,6 +815,9 @@ def add_entry(
         body=body.body,
         source_name=user.display_name,
         published_at=None if waiting else now,
+        image_key=body.image_keys[0] if body.image_keys else None,
+        image_keys_json=json.dumps(body.image_keys),
+        video_key=body.video_key,
     )
     session.add(content)
     session.flush()
@@ -799,7 +828,6 @@ def add_entry(
             sort_key=sort_key,
             season=season,
             episode=episode,
-            year=body.year if channel.room_type == "film" else None,
             rights_confirmed=confirmed,
             added_at=now,
         )

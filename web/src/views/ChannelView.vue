@@ -206,7 +206,7 @@ watch(channelId, () => void load(), { immediate: true });
               v-else
               :content-id="item.content_id" :title="item.title" :summary="item.summary"
               :channel-name="detail.name_hans" :channel-id="detail.code"
-              :author-id="item.author_id" :author-name="item.author_name" :author-handle="item.author_handle"
+              :author-id="item.author_id" :author-name="item.author_name" :author-handle="item.author_handle" :author-avatar="item.author_avatar"
               :certified="Boolean(detail.certified)" :pinned="item.pinned" :time="item.added_at"
               :source-name="item.source_name" :licence-ref="item.licence_ref" :canonical-url="item.canonical_url"
               :keywords="item.keywords" :image-keys="item.image_keys ?? (item.image_key ? [item.image_key] : [])"

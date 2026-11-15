@@ -12,11 +12,14 @@ const props = withDefaults(
     size?: 38 | 40 | 42 | 44 | 56 | 88;
     kind?: "person" | "channel";
     tone?: string;
+    /** 上传的头像图片 key；有值时显示图片，否则显示首字色块 */
+    image?: string | null;
   }>(),
   {
     size: 42,
     kind: "person",
     tone: "",
+    image: "",
   },
 );
 
@@ -47,7 +50,8 @@ const fontSize = computed(() => {
     :style="{ width: `${size}px`, height: `${size}px`, fontSize: `${fontSize}px` }"
     aria-hidden="true"
   >
-    {{ name.trim().charAt(0) || "·" }}
+    <img v-if="image" :src="`/api/v1/uploads/${image}`" alt="" loading="lazy" />
+    <template v-else>{{ name.trim().charAt(0) || "·" }}</template>
   </span>
 </template>
 
@@ -58,7 +62,9 @@ const fontSize = computed(() => {
   border-radius: 50%;
   font-weight: var(--fw-bold);
   flex-shrink: 0;
+  overflow: hidden;
 }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
 /* 频道头像：12px 圆角；颜色仍走 6 色调（确定性派生），与原型频道彩色头像一致 */
 .avatar--channel {
   border-radius: 12px;

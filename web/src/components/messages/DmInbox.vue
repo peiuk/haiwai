@@ -254,7 +254,7 @@ defineExpose({ reload: () => loadThreads(false) });
               :aria-pressed="thread.thread_id === activeId"
               @click="openThread(thread)"
             >
-              <Avatar :name="thread.peer_name || '?'" :size="38" :tone="thread.peer_tone" />
+              <Avatar :name="thread.peer_name || '?'" :size="38" :tone="thread.peer_tone" :image="thread.peer_avatar" />
               <span class="dm-item-main">
                 <span class="dm-peer">
                   {{ thread.peer_name || "用户" }}

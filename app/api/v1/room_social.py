@@ -196,7 +196,7 @@ def list_comments(
     authors = author_names(session, [row.author_id for row in page])
     items: list[dict[str, object]] = []
     for row in page:
-        author_name, author_handle = authors.get(row.author_id, ("", ""))
+        author_name, author_handle = authors.get(row.author_id, ("", ""))[:2]  # 第三项是头像，这里不显示
         items.append(
             {
                 "id": row.id,
