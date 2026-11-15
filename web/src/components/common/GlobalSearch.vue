@@ -151,6 +151,27 @@ function onKeydown(e: KeyboardEvent): void {
   }
 }
 
+/** 上下方向键在输入框和下拉各行之间移动焦点；聚焦的行按回车即触发它自己的点击。 */
+function onArrow(e: KeyboardEvent): void {
+  if (!open.value || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+  const items = Array.from(boxEl.value?.querySelectorAll<HTMLElement>(".gsearch-item") ?? []);
+  if (!items.length) return;
+  e.preventDefault();
+  const next = items.indexOf(document.activeElement as HTMLElement) + (e.key === "ArrowDown" ? 1 : -1);
+  if (next < 0) inputEl.value?.focus();
+  else items[Math.min(next, items.length - 1)].focus();
+}
+
+// 手机上搜索铺满全屏时，锁住背后页面的滚动（和详情弹窗同样做法）
+const mobile = window.matchMedia("(max-width: 759px)");
+let locked = false;
+function setLock(on: boolean): void {
+  if (on === locked) return;
+  locked = on;
+  document.body.style.overflow = on ? "hidden" : "";
+}
+watch(open, (on) => setLock(on && mobile.matches));
+
 function onClickOutside(e: MouseEvent): void {
   if (boxEl.value && !boxEl.value.contains(e.target as Node)) open.value = false;
 }
@@ -163,6 +184,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKeydown);
   document.removeEventListener("click", onClickOutside);
   window.clearTimeout(debounce);
+  setLock(false);
 });
 
 // 在搜索结果页时，输入框显示当前搜索词；离开结果页后清空
@@ -177,7 +199,14 @@ watch(
 </script>
 
 <template>
-  <div ref="boxEl" class="gsearch" :class="{ 'gsearch--active': open }" role="search" aria-label="全站搜索">
+  <div
+    ref="boxEl"
+    class="gsearch"
+    :class="{ 'gsearch--active': open }"
+    role="search"
+    aria-label="全站搜索"
+    @keydown="onArrow"
+  >
     <div class="gsearch-bar">
       <div class="gsearch-input">
         <BaseIcon name="i-search" :size="18" />
