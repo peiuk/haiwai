@@ -12,6 +12,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.v1 import auth as auth_api  # noqa: E402
 from app.core import security  # noqa: E402
+from app.core.config import Settings, get_settings  # noqa: E402
+
+# 测试不读开发者本机的 .env：那里的临时开关（如 REQUIRE_PHONE_VERIFICATION=false）会让测试结果因人而异。
+Settings.model_config["env_file"] = None
+get_settings.cache_clear()
 from app.core.db import get_db  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models import Base  # noqa: E402
