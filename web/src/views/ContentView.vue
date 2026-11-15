@@ -20,4 +20,8 @@ const contentId = computed(() => (typeof route.params.id === "string" ? route.pa
   max-width: 720px;
   margin: 0 auto;
 }
+/* 手机上应用顶栏已隐藏，抵掉主栏顶部留白，让详情顶栏贴顶 */
+@media (max-width: 759px) {
+  .content-view { margin-top: calc(-1 * var(--sp-4)); }
+}
 </style>

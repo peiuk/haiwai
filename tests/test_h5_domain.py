@@ -235,6 +235,9 @@ def test_publish_keywords_are_capped_and_searchable(client):
     assert detail.json()["keyword_source"] == "ai_auto"
     assert detail.json()["author_handle"] == "tags"
     assert "伦敦" not in detail.json()["keywords"]
+    # 详情页直接展示多图与发布时间
+    assert detail.json()["image_keys"] == []
+    assert "published_at" in detail.json()
     approve(client, owner, content_id)
     assert client.post(f"/api/v1/contents/{content_id}/like", headers=headers(owner)).json()["liked"] is True
     assert client.post(f"/api/v1/contents/{content_id}/favorite", headers=headers(owner)).json()["favorited"] is True

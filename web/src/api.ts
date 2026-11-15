@@ -485,7 +485,9 @@ export type ContentDetail = {
   licence_ref: string;
   canonical_url: string | null;
   image_key: string | null;
+  image_keys: string[];
   video_key: string | null;
+  published_at: string | null;
   type: string;
   author_id: string | null;
   author_name: string | null;

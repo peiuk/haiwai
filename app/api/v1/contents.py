@@ -18,7 +18,7 @@ from app.privacy import can_view_content, is_private_room_content
 from app.reports import ReportBody, report_receipt
 from app.recommend import country_blocked, is_roaming
 from app.rooms import drop_pushes, notify_room_update
-from app.feed import MAX_LISTING_IMAGES
+from app.feed import MAX_LISTING_IMAGES, image_keys_of
 from app.models import (
     Channel,
     ChannelCollaborator,
@@ -283,7 +283,9 @@ def get_content(
         "licence_ref": content.licence_ref or "",
         "canonical_url": content.canonical_url,
         "image_key": content.image_key,
+        "image_keys": image_keys_of(content),
         "video_key": content.video_key,
+        "published_at": content.published_at.isoformat() if content.published_at else None,
         "rights_confirmed": content.rights_confirmed,
         "type": content.type,
         "embed_status": content.embed_status,

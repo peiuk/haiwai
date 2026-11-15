@@ -154,7 +154,8 @@ watch(
   <div class="shell">
     <!-- 顶部栏（移动端） -->
     <!-- 首页 / 发现页的品牌、搜索和工具按钮已合并在 top-head 一行里，这里只给其余页面用 -->
-    <header v-if="route.name !== 'publish' && !pageTitle" class="topbar">
+    <!-- 发布页、帖子详情页有自己的顶栏（带返回），不再叠一层 -->
+    <header v-if="route.name !== 'publish' && route.name !== 'content' && !pageTitle" class="topbar">
       <strong class="brand">海外圈</strong>
       <div class="topbar-actions">
         <button class="icon-btn" type="button" :aria-label="themeLabel()" @click="theme.toggleTheme()">
