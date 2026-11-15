@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.api.v1.admin import PAGE, Reasoned, _count, _delete_files, _like, _names, _paged, _release_uploads, require_admin, require_super
@@ -25,6 +25,7 @@ from app.models import (
     RoomJoinRequest,
     RoomPostPush,
     User,
+    UserRegionPref,
     utcnow,
 )
 from app.rooms import drop_pushes
@@ -208,8 +209,6 @@ def delete_channel(
     items = session.scalars(select(ChannelItem).where(ChannelItem.channel_id == channel.id)).all()
     comments = _count(session, RoomComment, RoomComment.room_id == channel.id)
     rooms = session.scalars(select(Channel).where(Channel.parent_channel_id == channel.id)).all()
-    removed_posts = 0
-    orphaned: list[str] = []
     if items or comments or rooms:
         if not body.with_content:
             raise APIError(
@@ -219,52 +218,13 @@ def delete_channel(
             )
         if body.confirm_name.strip() != channel.name_hans:
             raise APIError(422, "VALIDATION_FAILED", "输入的频道名不一致，没有删除")
-        now = utcnow()
-        elsewhere = set(
-            session.scalars(
-                select(ChannelItem.content_id).where(
-                    ChannelItem.content_id.in_([item.content_id for item in items]), ChannelItem.channel_id != channel.id
-                )
-            ).all()
-        )
-        for item in items:
-            # 还挂在别的频道里的帖子只解除关系，在别处照常显示；只属于这里的才下架
-            content = None if item.content_id in elsewhere else session.get(Content, item.content_id)
-            if content is not None and content.deleted_at is None:
-                content.status = "deleted"
-                content.deleted_at = now
-                drop_pushes(session, content.id)
-                removed_posts += 1
-            session.delete(item)
-        # 留言带的图片：登记记录现在删，文件等提交后删（不删的话知道原链接的人还能打开）
-        doomed = session.execute(select(RoomComment.id, RoomComment.image_key).where(RoomComment.room_id == channel.id)).all()
-        orphaned = _release_uploads(session, [row.image_key for row in doomed])
-        session.execute(delete(CommentLike).where(CommentLike.comment_id.in_([row.id for row in doomed])))
-        session.execute(delete(RoomComment).where(RoomComment.room_id == channel.id))
-        session.execute(delete(RoomPostPush).where((RoomPostPush.room_id == channel.id) | (RoomPostPush.channel_id == channel.id)))
-        for room in rooms:
-            room.parent_channel_id = None
-        # 针对这个频道的未处理举报没有对象可处理了，直接结案
-        for case in session.scalars(
-            select(ModerationCase).where(ModerationCase.reported_channel_id == channel.id, ModerationCase.status == "open")
-        ):
-            case.status = "closed"
-            case.decision = "remove"
-            case.decided_at = now
-    # 成员关系等附属记录一并清掉（SQLite 开发库没开外键级联，这里显式删）
-    for model, column in (
-        (ChannelSubscription, ChannelSubscription.channel_id),
-        (ChannelCollaborator, ChannelCollaborator.channel_id),
-        (RoomJoinRequest, RoomJoinRequest.room_id),
-    ):
-        session.execute(delete(model).where(column == channel.id))
+    removed_posts, orphaned = _purge_channel(session, channel)
     # 频道删了以后日志里只剩 id，所以把名称、代号和删掉的数量写进备注
     detail = f"{channel.name_hans}（{channel.code}）"
     if items or comments or rooms:
         detail += f"，连同 {removed_posts} 条内容、{comments} 条留言，解除 {len(rooms)} 个房间的归属"
     detail += f"：{body.note}" if body.note else ""
     write_audit(session, admin.id, "admin.channel.delete", "channel", channel.id, detail[:300])
-    session.delete(channel)
     session.commit()
     return {
         "deleted": True,
@@ -273,6 +233,59 @@ def delete_channel(
         "detached_rooms": len(rooms),
         "files_left": _delete_files(orphaned),
     }
+
+
+def _purge_channel(session: Session, channel: Channel) -> tuple[int, list[str]]:
+    """删掉频道及其内容（不提交）。返回（下架的帖子数，提交后要删的文件 key）。
+
+    只属于这个频道的帖子下架，也挂在别的频道的只解除关系；留言删掉；下属房间只解除归属。
+    """
+    items = session.scalars(select(ChannelItem).where(ChannelItem.channel_id == channel.id)).all()
+    rooms = session.scalars(select(Channel).where(Channel.parent_channel_id == channel.id)).all()
+    removed_posts = 0
+    orphaned: list[str] = []
+    now = utcnow()
+    elsewhere = set(
+        session.scalars(
+            select(ChannelItem.content_id).where(
+                ChannelItem.content_id.in_([item.content_id for item in items]), ChannelItem.channel_id != channel.id
+            )
+        ).all()
+    )
+    for item in items:
+        # 还挂在别的频道里的帖子只解除关系，在别处照常显示；只属于这里的才下架
+        content = None if item.content_id in elsewhere else session.get(Content, item.content_id)
+        if content is not None and content.deleted_at is None:
+            content.status = "deleted"
+            content.deleted_at = now
+            drop_pushes(session, content.id)
+            removed_posts += 1
+        session.delete(item)
+    # 留言带的图片：登记记录现在删，文件等提交后删（不删的话知道原链接的人还能打开）
+    doomed = session.execute(select(RoomComment.id, RoomComment.image_key).where(RoomComment.room_id == channel.id)).all()
+    orphaned = _release_uploads(session, [row.image_key for row in doomed])
+    session.execute(delete(CommentLike).where(CommentLike.comment_id.in_([row.id for row in doomed])))
+    session.execute(delete(RoomComment).where(RoomComment.room_id == channel.id))
+    session.execute(delete(RoomPostPush).where((RoomPostPush.room_id == channel.id) | (RoomPostPush.channel_id == channel.id)))
+    for room in rooms:
+        room.parent_channel_id = None
+    # 针对这个频道的未处理举报没有对象可处理了，直接结案
+    for case in session.scalars(
+        select(ModerationCase).where(ModerationCase.reported_channel_id == channel.id, ModerationCase.status == "open")
+    ):
+        case.status = "closed"
+        case.decision = "remove"
+        case.decided_at = now
+    # 成员关系等附属记录一并清掉（SQLite 开发库没开外键级联，这里显式删）
+    for model, column in (
+        (ChannelSubscription, ChannelSubscription.channel_id),
+        (ChannelCollaborator, ChannelCollaborator.channel_id),
+        (RoomJoinRequest, RoomJoinRequest.room_id),
+    ):
+        session.execute(delete(model).where(column == channel.id))
+    session.delete(channel)
+    session.flush()
+    return removed_posts, orphaned
 
 
 # ---- 国家开通 ----
@@ -364,6 +377,61 @@ def set_region_open(
     write_audit(session, admin.id, "admin.region.open" if body.open else "admin.region.close", "region", code, body.note)
     session.commit()
     return {"code": code, "is_open": row.is_open}
+
+
+class RegionDeleteBody(Reasoned):
+    confirm_name: str = ""  # 要原样输入国家名才删
+
+
+@router.post("/regions/{code}/delete")
+def delete_region(
+    code: str,
+    body: RegionDeleteBody,
+    admin: User = Depends(require_super),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    """彻底删除一个国家，连同它的全部频道、房间和其中的内容，不能恢复。国际（GLOBAL）各国共享，不能删。
+
+    选了这个国家的用户回到国际。英国是内置国家，删除后保留一条「已关闭」的记录，否则会自动重新出现。
+    """
+    code = code.upper()
+    if code == "GLOBAL":
+        raise APIError(409, "NO_CHANGE", "国际频道各国共享，不能删除")
+    row = session.get(Region, code)
+    name = row.name_hans if row else DEFAULT_REGIONS.get(code, ("", ""))[0]
+    if row is None and code not in DEFAULT_REGIONS:
+        raise APIError(404, "REGION_NOT_FOUND", "没有这个国家")
+    if body.confirm_name.strip() != name:
+        raise APIError(422, "VALIDATION_FAILED", "输入的国家名不一致，没有删除")
+    # 先删房间再删频道：频道删除时会给下属房间解除归属，房间先没了就不用改
+    channels = session.scalars(
+        select(Channel).where(Channel.region_code == code).order_by((Channel.kind == "room").desc())
+    ).all()
+    removed_posts = 0
+    orphaned: list[str] = []
+    for channel in channels:
+        posts, files = _purge_channel(session, channel)
+        removed_posts += posts
+        orphaned += files
+    session.execute(
+        update(UserRegionPref).where(UserRegionPref.region_code == code).values(region_code="GLOBAL", browse_region_code=None)
+    )
+    session.execute(update(UserRegionPref).where(UserRegionPref.browse_region_code == code).values(browse_region_code=None))
+    session.execute(delete(RegionOpenRequest).where(RegionOpenRequest.region_code == code))
+    if code in DEFAULT_REGIONS:
+        _region_row(session, code).is_open = False
+    elif row is not None:
+        session.delete(row)
+    detail = f"{name}（{code}），连同 {len(channels)} 个频道 / 房间、{removed_posts} 条内容"
+    detail += f"：{body.note}" if body.note else ""
+    write_audit(session, admin.id, "admin.region.delete", "region", code, detail[:300])
+    session.commit()
+    return {
+        "deleted": True,
+        "removed_channels": len(channels),
+        "removed_posts": removed_posts,
+        "files_left": _delete_files(orphaned),
+    }
 
 
 @router.post("/regions/{code}/channels")

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 国家管理：开通新国家（自动建默认频道）、关闭 / 重开、补齐默认频道。
+// 国家管理：开通新国家（自动建默认频道）、关闭 / 重开、补齐默认频道、连数据一起删除。
 import { ref } from "vue";
 import { RouterLink } from "vue-router";
 import { jsonBody, toMessage } from "../api";
@@ -62,6 +62,24 @@ function close(item: Region): Promise<void> {
     `/api/v1/admin/regions/${item.code}/open`,
     (reason) => ({ open: false, reason }),
     "已关闭",
+  );
+}
+
+// 彻底删除：频道、房间和里面的内容一起删，要原样输入国家名。国际各国共享，不能删。
+function remove(item: Region): Promise<void> {
+  return ask(
+    {
+      title: `彻底删除「${item.name}」？`,
+      message: `会一并删除这个国家的 ${item.channel_count} 个官方频道、所有房间和其中的帖子、留言、图片，选了这个国家的用户回到国际。不能恢复。只想暂停的话，请用「关闭」。`,
+      confirmLabel: "连数据一起删除",
+      danger: true,
+      reason: true,
+      mustType: item.name,
+    },
+    item.code,
+    `/api/v1/admin/regions/${item.code}/delete`,
+    (reason) => ({ reason, confirm_name: item.name }),
+    "已删除",
   );
 }
 
@@ -144,6 +162,7 @@ async function fill(item: Region): Promise<void> {
                   <!-- 国际频道各国共享，不能关 -->
                   <button v-if="adminMe.is_super && item.is_open && item.code !== 'GLOBAL'" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.code" @click="close(item)">关闭</button>
                   <button v-if="adminMe.is_super && !item.is_open" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.code" @click="reopen(item)">重新开通</button>
+                  <button v-if="adminMe.is_super && item.code !== 'GLOBAL'" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.code" @click="remove(item)">删除</button>
                 </div>
               </td>
             </tr>

@@ -14,6 +14,7 @@ from app.models import (
     RoomComment,
     UploadObject,
     User,
+    UserRegionPref,
     utcnow,
 )
 
@@ -762,3 +763,40 @@ def test_admin_reset_link_lets_user_set_a_new_password(client):
     with client.session_factory() as session:
         stored = session.scalars(select(AuditLog.action).where(AuditLog.target_id == target_id).order_by(AuditLog.created_at)).all()
     assert "admin.user.reset_link" in stored and "account.password_reset" in stored
+
+
+def test_delete_country_with_all_its_data(client):
+    boss = register(client, "boss@example.com", admin=True)
+    fan = register(client, "fan@example.com")
+    assert client.post("/api/v1/admin/regions", headers=headers(boss), json={"code": "US", "name": "美国"}).status_code == 200
+    assert client.post("/api/v1/me/regions", headers=headers(fan), json={"region_code": "US", "source": "manual"}).status_code == 200
+    with client.session_factory() as session:
+        us_channel = session.scalar(select(Channel).where(Channel.region_code == "US"))
+        room = Channel(code="us-room", name_hans="美国房间", name_hant="美國房間", kind="room", region_code="US", parent_channel_id=us_channel.id, is_active=True)
+        post = Content(type="post", status="published", title="美国帖", body="正文", published_at=utcnow())
+        session.add_all([room, post])
+        session.flush()
+        session.add(ChannelItem(channel_id=us_channel.id, content_id=post.id))
+        session.commit()
+        post_id = post.id
+
+    # 国际各国共享不能删；国家名要原样输入
+    assert client.post("/api/v1/admin/regions/GLOBAL/delete", headers=headers(boss), json={"confirm_name": "国际"}).status_code == 409
+    assert client.post("/api/v1/admin/regions/US/delete", headers=headers(boss), json={"confirm_name": "美"}).status_code == 422
+    assert client.post("/api/v1/admin/regions/US/delete", headers=headers(fan), json={"confirm_name": "美国"}).status_code in (401, 403)
+
+    done = client.post("/api/v1/admin/regions/US/delete", headers=headers(boss), json={"confirm_name": "美国", "reason": "不做了"})
+    assert done.status_code == 200, done.text
+    assert done.json()["removed_posts"] == 1
+    with client.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(Channel).where(Channel.region_code == "US")) == 0
+        assert session.get(Content, post_id).deleted_at is not None
+        assert session.get(UserRegionPref, user_id(client, "fan@example.com")).region_code == "GLOBAL"
+    codes = [item["code"] for item in client.get("/api/v1/admin/regions", headers=headers(boss)).json()["items"]]
+    assert "US" not in codes
+    assert "US" not in open_codes(client, fan)  # 选了美国的用户回到国际
+    assert "admin.region.delete" in audit_actions(client)
+
+    # 英国是内置国家：删除后保持关闭，不会自动重新出现
+    assert client.post("/api/v1/admin/regions/UK/delete", headers=headers(boss), json={"confirm_name": "英国"}).status_code == 200
+    assert "UK" not in open_codes(client, fan)

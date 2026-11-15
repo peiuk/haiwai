@@ -8,6 +8,7 @@ import { ADMIN_CHANGED, adminRequest } from "./adminApi";
 import { confirmAction } from "./confirm";
 import { TARGET_LABELS, exact, overdue, when } from "./shared";
 import { useAdminAction } from "./useAdminList";
+import ReviewSwitch from "./ReviewSwitch.vue";
 
 const props = defineProps<{ mode: "reports" | "review" }>();
 
@@ -153,6 +154,13 @@ function targetLink(item: Queue["cases"][number]): string {
       <h1>{{ props.mode === "reports" ? "举报" : "待审核" }}</h1>
       <p>{{ props.mode === "reports" ? "用户举报的帖子、留言、房间和账号" : "新用户的头几条帖子、留言和新建房间需要先审" }}</p>
     </header>
+
+    <!-- 发布前审核开关：三类内容各一个，关掉后新发的直接公开（命中敏感词的仍进这里） -->
+    <section v-if="props.mode !== 'reports'" class="adm-panel review-switches" aria-label="发布前审核开关">
+      <ReviewSwitch kind="post" />
+      <ReviewSwitch kind="listing" />
+      <ReviewSwitch kind="comment" />
+    </section>
 
     <p v-if="error" class="notice notice--danger" role="alert">
       {{ error }}
@@ -305,3 +313,15 @@ function targetLink(item: Queue["cases"][number]): string {
     </template>
   </div>
 </template>
+
+<style scoped>
+.review-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-5);
+}
+/* 开关自带 margin-left: auto（在列表页靠右），这里并排放不需要 */
+.review-switches > * {
+  margin-left: 0;
+}
+</style>

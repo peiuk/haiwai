@@ -97,6 +97,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "auto.hide": "多人举报自动隐藏",
   "account.erase": "注销账号",
   "admin.user.reset_link": "生成重置密码链接",
+  "admin.region.delete": "删除国家",
   "account.password_reset": "重置密码",
   "admin.news.fetch": "抓取 AI 资讯",
   "announcement.create": "发布公告",

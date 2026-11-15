@@ -56,7 +56,7 @@ void load();
 
 <template>
   <span v-if="enabled !== null" class="review-switch">
-    <span class="tag" :class="enabled ? 'tag--good' : 'tag--warn'">{{ enabled ? "发布前审核：开" : "发布前审核：关" }}</span>
+    <span class="tag" :class="enabled ? 'tag--good' : 'tag--warn'">{{ NAMES[kind] }}发布前审核：{{ enabled ? "开" : "关" }}</span>
     <button v-if="adminMe.is_super" type="button" class="btn btn--outline btn--sm" :disabled="busy" @click="toggle">
       {{ enabled ? "关闭审核" : "开启审核" }}
     </button>
