@@ -26,6 +26,9 @@ const episodeLabel = computed(() => {
   return `S${String(props.item.season).padStart(2, "0")}E${String(props.item.episode).padStart(3, "0")}`;
 });
 
+// 通用房间帖子的图片：新数据用 image_keys，老数据只有 image_key；最多显示 4 张
+const images = computed(() => (props.item.image_keys?.length ? props.item.image_keys : props.item.image_key ? [props.item.image_key] : []).slice(0, 4));
+
 const isWatched = computed(() => props.item.watch_mark === "watched");
 const isWant = computed(() => props.item.watch_mark === "want");
 
@@ -123,6 +126,18 @@ const videoBadge = computed(() => {
     <div class="entry-body">
       <h3 class="entry-title" data-ugc>{{ item.title }}</h3>
       <p v-if="item.summary" class="entry-meta" data-ugc>{{ item.summary }}</p>
+      <div v-if="images.length" class="entry-media" :class="`entry-media--n${images.length}`">
+        <img v-for="(key, i) in images" :key="key" :src="`/api/v1/uploads/${key}`" :alt="`${item.title} 图片 ${i + 1}`" loading="lazy" />
+      </div>
+      <video
+        v-else-if="item.video_key"
+        class="entry-video"
+        :src="`/api/v1/uploads/${item.video_key}`"
+        controls
+        playsinline
+        preload="metadata"
+        :aria-label="`${item.title} 视频`"
+      ></video>
       <div class="entry-meta-row">
         <span v-if="item.author_name || item.author_handle" data-ugc>{{ item.author_name || item.author_handle }}</span>
         <span v-if="item.comment_count > 0">{{ item.comment_count }} 条留言</span>
@@ -137,6 +152,35 @@ const videoBadge = computed(() => {
 </template>
 
 <style scoped>
+.entry-media {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  margin-top: var(--sp-2);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.entry-media--n1 {
+  grid-template-columns: 1fr;
+}
+.entry-media img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  display: block;
+  background: var(--accent-soft);
+}
+.entry-media--n1 img {
+  aspect-ratio: auto;
+  max-height: 420px;
+}
+.entry-video {
+  width: 100%;
+  max-height: 420px;
+  margin-top: var(--sp-2);
+  border-radius: var(--r-md);
+  background: #000;
+}
 .entry {
   display: flex;
   gap: var(--sp-3);

@@ -206,7 +206,7 @@ onMounted(load);
         <p v-if="detail.subscriber_count !== undefined" class="room-meta">
           <template v-if="countryName">{{ countryName }} · </template>{{ detail.subscriber_count }} 人订阅<template v-if="detail.sort_basis"> · 排序：{{ detail.sort_basis }}</template>
         </p>
-        <BaseButton v-if="detail.is_owner && !editing" size="sm" variant="outline" @click="startEdit">编辑房间</BaseButton>
+        <BaseButton v-if="detail.is_owner && !editing" class="room-edit-btn" size="sm" variant="outline" @click="startEdit">编辑房间</BaseButton>
         <form v-if="editing" class="room-edit" @submit.prevent="saveEdit">
           <TextField id="room-edit-name" v-model="editName" label="房间名" required />
           <SelectField id="room-edit-type" v-model="editType" label="类型" :options="[...ROOM_TYPES]" />
@@ -235,7 +235,9 @@ onMounted(load);
         <BaseButton v-else :loading="requesting" @click="requestJoin">申请加入</BaseButton>
       </div>
 
-      <section v-else-if="detail.is_private && detail.is_owner" class="join-review" aria-label="加入申请">
+      <!-- 加入申请和下面的内容区各自独立判断：以前它们连在同一串 v-else-if 里，
+           私密房间的房主命中这一段后内容区就不渲染了，看不到帖子，也没有发帖入口。 -->
+      <section v-if="!detail.region_blocked && detail.is_private && detail.is_owner" class="join-review" aria-label="加入申请">
         <h2 class="section-title">加入申请</h2>
         <p v-if="!joinRequests.length" class="room-meta">暂无待审核申请</p>
         <div v-for="item in joinRequests" :key="item.request_id" class="join-review__row">
@@ -247,7 +249,7 @@ onMounted(load);
         </div>
       </section>
 
-      <template v-else-if="!detail.region_blocked && (!detail.is_private || detail.is_owner || detail.is_joined)">
+      <template v-if="!detail.region_blocked && (!detail.is_private || detail.is_owner || detail.is_joined)">
       <!-- 房主工具条（非 general 房间才可编排条目） -->
       <RoomManager
         v-if="detail.is_owner && detail.room_type !== 'general'"
@@ -313,6 +315,11 @@ onMounted(load);
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-12);
+}
+.room-edit-btn {
+  justify-self: start;
+  align-self: flex-start;
+  width: auto;
 }
 .room-edit {
   display: grid;

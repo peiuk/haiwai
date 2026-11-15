@@ -83,29 +83,6 @@ async function submit(): Promise<void> {
   }
 }
 
-// 房主 / 协作者发帖：走普通发帖接口，房间审核中时它会以待审身份进房间，通过后房间随之上线
-async function publish(): Promise<void> {
-  if (!title.value.trim() || !body.value.trim()) {
-    toast.show("标题和正文都需要填写");
-    return;
-  }
-  posting.value = true;
-  try {
-    const result = await request<{ status: string }>(
-      "/api/v1/contents",
-      jsonBody({ channel_id: props.roomId, title: title.value.trim(), body: body.value.trim() }),
-    );
-    title.value = "";
-    body.value = "";
-    toast.show(result.status === "published" ? "已发布到房间" : "已提交，审核通过后公开");
-    emit("changed");
-  } catch (err) {
-    toast.show(toMessage(err));
-  } finally {
-    posting.value = false;
-  }
-}
-
 onMounted(() => {
   if (props.canModerate) void loadSubmissions();
 });
@@ -113,17 +90,12 @@ onMounted(() => {
 
 <template>
   <section class="room-submissions" :aria-label="canModerate ? '待审投稿' : '投稿'">
-    <!-- 房主/协作者：发帖 -->
-    <template v-if="canModerate && canPost">
-      <h2 class="sub-title">发帖到房间</h2>
-      <form class="sub-form" @submit.prevent="publish">
-        <TextField id="room-post-title" v-model="title" label="标题" required />
-        <TextArea id="room-post-body" v-model="body" label="正文" :rows="3" required />
-        <div class="sub-form-actions">
-          <BaseButton type="submit" :loading="posting" variant="primary">发布</BaseButton>
-        </div>
-      </form>
-    </template>
+    <!-- 房主/协作者：发帖走「发布内容」页（图片、视频、话题都有），预选这个房间 -->
+    <RouterLink
+      v-if="canModerate && canPost"
+      class="btn btn--primary sub-post"
+      :to="{ name: 'publish', query: { channel: roomId } }"
+    >发帖到房间（可带图片、视频）</RouterLink>
 
     <!-- 房主/协作者：待审队列 -->
     <template v-if="canModerate">
@@ -241,6 +213,9 @@ onMounted(() => {
 }
 .sub-form-actions {
   display: flex;
+}
+.sub-post {
+  justify-self: start;
 }
 @media (max-width: 480px) {
   .sub-row {

@@ -16,6 +16,7 @@ import {
   type MyPostsResponse,
   type PublishResponse,
   type MyPost,
+  type RoomDetail,
 } from "../api";
 import { useAuthStore } from "../stores/auth";
 import { useToastStore } from "../stores/toast";
@@ -115,6 +116,25 @@ async function loadChannels(): Promise<void> {
     const res = await request<ChannelsResponse>("/api/v1/channels");
     channels.value = res.items;
     const requestedChannel = typeof route.query.channel === "string" ? route.query.channel : "";
+    if (requestedChannel && !channels.value.some((item) => item.id === requestedChannel)) {
+      // 从房间点「发帖」进来：房间不在公开频道列表里（私密 / 审核中 / 还没内容），单独取来当发布目标
+      const room = await request<RoomDetail>(`/api/v1/channels/${requestedChannel}`).catch(() => null);
+      if (room?.kind === "room") {
+        channels.value.push({
+          id: room.id,
+          code: room.code,
+          name_hans: `房间：${room.name_hans}`,
+          name_hant: room.name_hant,
+          kind: room.kind,
+          room_type: room.room_type,
+          region_code: room.region_code ?? "",
+          parent_channel_id: room.parent_channel_id,
+          subscriber_count: room.subscriber_count ?? 0,
+          certified: false,
+          category: null,
+        });
+      }
+    }
     if (requestedChannel && channels.value.some((item) => item.id === requestedChannel)) channelId.value = requestedChannel;
     openListingFormFor(requestedChannel);
   } catch (err) {
@@ -212,6 +232,13 @@ async function submit(): Promise<void> {
     const result = await request<PublishResponse>("/api/v1/contents", jsonBody(payload));
     success.value = result.status === "pending" ? "已提交，审核通过后会公开" : "已发布";
     toast.show(success.value);
+    const target = channels.value.find((item) => item.id === channelId.value);
+    if (target?.kind === "room") {
+      // 从房间来的：发完回房间，刚发的这条在房间里就能看到
+      clearDraft();
+      void router.push({ name: "room", params: { id: target.id } });
+      return;
+    }
     body.value = "";
     title.value = "";
     topics.value = [];
