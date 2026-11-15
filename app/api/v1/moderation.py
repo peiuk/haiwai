@@ -16,8 +16,9 @@ router = APIRouter(prefix="/moderation")
 
 
 def _require_moderator(user: User) -> None:
-    # 开发环境任何登录用户都能审（方便自测）；其余环境必须是管理员（python -m app.make_admin 设置）。
-    if user.is_admin or get_settings().app_env == "dev":
+    # 只有管理员能审（python -m app.make_admin 设置）；单元测试里任何登录用户都能审，免得每个用例都先提权。
+    settings = get_settings()
+    if user.is_admin or (settings.testing and settings.app_env == "dev"):
         return
     raise APIError(403, "FORBIDDEN", "需要管理员权限")
 
@@ -62,6 +63,7 @@ def decide(
     else:
         content.status = "rejected"
         drop_pushes(session, content.id)
+    write_audit(session, user.id, f"moderation.{body.decision}", "content", content.id)
     session.commit()
     return {"content_id": content.id, "status": content.status}
 
@@ -99,6 +101,7 @@ def decide_comment(
     else:
         comment.status = "rejected"
         comment.removed_at = utcnow()
+    write_audit(session, user.id, f"moderation.{body.decision}", "comment", comment.id)
     session.commit()
     return {"comment_id": comment.id, "status": comment.status}
 

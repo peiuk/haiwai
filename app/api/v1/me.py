@@ -43,7 +43,7 @@ router = APIRouter(prefix="/me")
 
 
 @router.get("")
-def my_profile(user: User = Depends(current_user)) -> dict[str, str]:
+def my_profile(user: User = Depends(current_user)) -> dict[str, object]:
     return {
         "user_id": user.id,
         "display_name": user.display_name,
@@ -52,6 +52,7 @@ def my_profile(user: User = Depends(current_user)) -> dict[str, str]:
         "city_label": user.city_label or "",
         "script_pref": user.script_pref,
         "phone": user.phone or "",
+        "is_admin": user.is_admin,  # 前端据此决定是否显示管理后台入口；权限仍由后端校验
     }
 
 
@@ -110,7 +111,7 @@ def update_profile(
     body: ProfilePatch,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
-) -> dict[str, str]:
+) -> dict[str, object]:
     if body.display_name is not None:
         user.display_name = body.display_name
     if body.handle is not None and body.handle != user.handle:

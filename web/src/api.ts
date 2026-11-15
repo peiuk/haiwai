@@ -843,6 +843,7 @@ export type MeProfile = {
   city_label: string;
   script_pref: string;
   phone: string;
+  is_admin?: boolean;
 };
 
 // ---- 房间投稿 / 审核 --------------------------------------------------

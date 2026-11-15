@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from "vue-router";
 import AppShell from "../layouts/AppShell.vue";
 import { setDocumentTitle } from "../i18n/uiLang";
 import { homeCacheKey } from "./homeCache";
+import { useAuthStore } from "../stores/auth";
 
 // 路由结构对齐原型：首页三 Tab（Home 内含「为你推荐/正在关注/频道」）、
 // 发现、消息、我的，以及房间详情、发布页、内容详情、用户主页。
@@ -21,6 +22,18 @@ const routes: RouteRecordRaw[] = [
       { path: "publish", name: "publish", meta: { title: "发布内容" }, component: () => import("../views/PublishView.vue") },
       { path: "content/:id", name: "content", meta: { title: "内容详情" }, component: () => import("../views/ContentView.vue") },
       { path: "user/:id", name: "user", meta: { title: "用户主页" }, component: () => import("../views/UserView.vue") },
+      {
+        path: "admin",
+        name: "admin",
+        meta: { title: "管理后台" },
+        component: () => import("../views/AdminView.vue"),
+        // 只是不让普通用户看到页面；真正的权限在后端 require_admin。
+        beforeEnter: async () => {
+          const auth = useAuthStore();
+          if (!auth.profile) await auth.refreshProfile();
+          return auth.profile?.is_admin ? true : { name: "home" };
+        },
+      },
       { path: "legal/:section", name: "legal", meta: { title: "条款与政策" }, component: () => import("../views/LegalView.vue") },
     ],
   },

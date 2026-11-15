@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.v1.admin import router as admin_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.contents import router as contents_router
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(contents_router, prefix="/api/v1")
     app.include_router(me_router, prefix="/api/v1")
     app.include_router(moderation_router, prefix="/api/v1")
+    app.include_router(admin_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(ingest_router, prefix="/api/v1")
     app.include_router(listings_router, prefix="/api/v1")

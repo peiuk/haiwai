@@ -482,6 +482,13 @@ watch(
       </div>
 
       <!-- 隐私与数据 -->
+      <div v-if="auth.profile?.is_admin" class="me-section">
+        <h3>管理</h3>
+        <RouterLink :to="{ name: 'admin' }" class="me-row">
+          <span class="mr-main"><span class="mr-t">管理后台</span></span>
+          <span class="mr-end">打开</span>
+        </RouterLink>
+      </div>
       <div class="me-section">
         <h3>账号与安全</h3>
         <details class="account-details">
