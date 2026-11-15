@@ -634,6 +634,9 @@ def content_detail(content_id: str, session: Session = Depends(get_db)) -> dict[
         "channel_name": channel.name_hans if channel else "",
         "image_urls": [f"/api/v1/uploads/{key}" for key in image_keys_of(content)],
         "has_video": bool(content.video_key or content.embed_media_id),
+        # 审核员要能看到视频本身：待审的帖子前台不公开，只能在这里看
+        "video_url": f"/api/v1/uploads/{content.video_key}" if content.video_key else "",
+        "embed_url": content.embed_source_url or "",  # 外链视频（如 YouTube）的原链接
         "canonical_url": content.canonical_url or "",
         "view_count": content.view_count or 0,
         "featured": content.featured_at is not None,

@@ -22,6 +22,8 @@ type Detail = {
   channel_name: string;
   image_urls: string[];
   has_video: boolean;
+  video_url: string;
+  embed_url: string;
   canonical_url: string;
   view_count: number;
   comment_count: number;
@@ -140,7 +142,15 @@ function feature(): Promise<void> {
         <div v-if="detail.image_urls.length" class="adm-images">
           <a v-for="url in detail.image_urls" :key="url" :href="url" target="_blank" rel="noopener"><img :src="url" alt="帖子配图" loading="lazy" /></a>
         </div>
-        <p v-if="detail.has_video" class="adm-empty">这条内容带视频，请在前台查看。</p>
+        <!-- 待审的帖子前台不公开，视频只能在这里看；preload=metadata 不点播放不下载整段视频 -->
+        <div v-if="detail.video_url" class="adm-images">
+          <video class="adm-video" :src="detail.video_url" controls preload="metadata" aria-label="帖子视频"></video>
+        </div>
+        <p v-if="detail.embed_url" class="adm-empty">
+          这条内容带外链视频：
+          <a :href="detail.embed_url" target="_blank" rel="noopener noreferrer">{{ detail.embed_url }}</a>
+        </p>
+        <p v-else-if="detail.has_video && !detail.video_url" class="adm-empty">这条内容带视频，但没有可播放的地址。</p>
       </section>
 
       <AdminCaseTable title="举报记录" :cases="detail.cases" empty="没有人举报过这条内容。" removed-label="已下架" />

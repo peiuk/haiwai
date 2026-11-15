@@ -270,3 +270,23 @@ def test_overview_metrics_and_health(client):
 
     health = client.get("/api/v1/admin/health", headers=headers(boss)).json()
     assert (health["storage"], health["storage_ok"]) == ("本地磁盘", True) and health["oldest_pending"] and health["oldest_case"] is None
+
+
+def test_content_detail_gives_the_reviewer_the_video(client):
+    boss = register(client, "boss@example.com", admin=True)
+    register(client, "author@example.com")
+    author_id = user_id(client, "author@example.com")
+    with client.session_factory() as session:
+        uploaded = Content(type="video", status="pending", title="上传的视频", author_id=author_id, video_key="a" * 32)
+        linked = Content(type="post", status="pending", title="外链视频", author_id=author_id, embed_media_id="abc", embed_source_url="https://youtu.be/abc")
+        plain = Content(type="post", status="pending", title="纯文字", author_id=author_id)
+        session.add_all([uploaded, linked, plain])
+        session.commit()
+        ids = [uploaded.id, linked.id, plain.id]
+
+    details = [client.get(f"/api/v1/admin/contents/{item}", headers=headers(boss)).json() for item in ids]
+    assert [(row["has_video"], row["video_url"], row["embed_url"]) for row in details] == [
+        (True, "/api/v1/uploads/" + "a" * 32, ""),
+        (True, "", "https://youtu.be/abc"),
+        (False, "", ""),
+    ]
