@@ -800,3 +800,19 @@ def test_delete_country_with_all_its_data(client):
     # 英国是内置国家：删除后保持关闭，不会自动重新出现
     assert client.post("/api/v1/admin/regions/UK/delete", headers=headers(boss), json={"confirm_name": "英国"}).status_code == 200
     assert "UK" not in open_codes(client, fan)
+
+
+def test_dev_seed_still_runs_after_uk_is_deleted(client):
+    """本地每次启动都会跑种子：英国删掉后不能重复插种子（会撞上还在的国际频道），也不能把英国频道补回来。"""
+    from app.seed import ensure_seed
+
+    boss = register(client, "boss@example.com", admin=True)
+    with client.session_factory() as session:
+        ensure_seed(session)  # 空库：插入种子（含 uk-housing 和 global-chinese）
+        session.commit()
+    assert client.post("/api/v1/admin/regions/UK/delete", headers=headers(boss), json={"confirm_name": "英国"}).status_code == 200
+    with client.session_factory() as session:
+        ensure_seed(session)  # 相当于重启后端
+        session.commit()
+        assert session.scalar(select(func.count()).select_from(Channel).where(Channel.region_code == "UK")) == 0
+        assert session.scalar(select(func.count()).select_from(Channel).where(Channel.code == "global-chinese")) == 1

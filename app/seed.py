@@ -3,6 +3,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.regions import is_open_region
 from app.models import Channel, ChannelItem, Content, utcnow
 
 
@@ -95,15 +96,21 @@ def seed_if_empty() -> None:
 
     session = next(get_db())
     try:
-        exists = session.scalar(select(Channel.id).where(Channel.code == "uk-housing"))
-        if not exists:
-            _insert_seed(session)
-        ensure_channel_categories(session)
-        ensure_region_channels(session, "GLOBAL", "国际")  # 国际频道的分类：新闻、影视、健康、科技、交友、旅游
-        _ensure_global_content(session)
+        ensure_seed(session)
         session.commit()
     finally:
         session.close()
+
+
+def ensure_seed(session: Session) -> None:
+    # 空库 = 一个频道都没有。不能只认 uk-housing：后台删掉英国后它就没了，
+    # 再插一遍种子会撞上还在的 global-chinese（代号唯一），后端起不来。
+    if session.scalar(select(Channel.id).limit(1)) is None:
+        _insert_seed(session)
+    if is_open_region(session, "UK"):  # 英国被后台删除 / 关闭后，不自动把它的频道补回来
+        ensure_channel_categories(session)
+    ensure_region_channels(session, "GLOBAL", "国际")  # 国际频道的分类：新闻、影视、健康、科技、交友、旅游
+    _ensure_global_content(session)
 
 
 def _ensure_global_content(session: Session) -> None:

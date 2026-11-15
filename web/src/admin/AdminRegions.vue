@@ -70,7 +70,7 @@ function remove(item: Region): Promise<void> {
   return ask(
     {
       title: `彻底删除「${item.name}」？`,
-      message: `会一并删除这个国家的 ${item.channel_count} 个官方频道、所有房间和其中的帖子、留言、图片，选了这个国家的用户回到国际。不能恢复。只想暂停的话，请用「关闭」。`,
+      message: `会一并删除这个国家的 ${item.channel_count} 个官方频道、所有房间和其中的留言（含留言图片）；帖子全部下架，帖子的图片和视频文件仍保留。选了这个国家的用户回到国际。不能恢复。只想暂停的话，请用「关闭」。`,
       confirmLabel: "连数据一起删除",
       danger: true,
       reason: true,
