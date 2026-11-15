@@ -448,6 +448,16 @@ class ReviewClaim(Base):
     claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SiteSetting(Base):
+    """全站开关，后台改。目前只有 review.post / review.listing / review.comment（on / off，没有记录等于 on）。"""
+
+    __tablename__ = "site_setting"
+
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    value: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class BlockedTerm(Base):
     """敏感词 / 链接黑名单：标题、正文、留言里出现任意一条，就先进待审核而不是直接发布。"""
 

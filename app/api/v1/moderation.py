@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.admin import _because, notify_user, require_admin
-from app.api.v1.room_social import mention_users
+from app.api.v1.room_social import publish_comment
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
@@ -80,22 +80,7 @@ def decide_comment(
     if comment.status != "pending":
         raise APIError(409, "CONTENT_ALREADY_DECIDED", "这条留言已经审过")
     if body.decision == "approve":
-        comment.status = "published"
-        author = session.get(User, comment.author_id)
-        name = author.display_name if author else "有人"
-        for person in mention_users(session, comment.body):
-            if person.id == comment.author_id:
-                continue
-            if session.get(UserFollow, (person.id, comment.author_id)) is None:
-                continue
-            session.add(
-                Notification(
-                    user_id=person.id,
-                    kind="mention",
-                    body=f"{name} 在留言里提到了你"[:200],
-                    content_id=comment.content_id,
-                )
-            )
+        publish_comment(session, comment)
     else:
         comment.status = "rejected"
         comment.removed_at = utcnow()

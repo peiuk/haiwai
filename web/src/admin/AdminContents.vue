@@ -6,6 +6,7 @@ import { jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
 import { ADMIN_CHANGED, adminDownload, adminMe, adminRequest } from "./adminApi";
 import AdminPager from "./AdminPager.vue";
+import ReviewSwitch from "./ReviewSwitch.vue";
 import { confirmAction } from "./confirm";
 import { STATUS_LABELS, TYPE_LABELS, exact, statusTone, when } from "./shared";
 import { useAdminList } from "./useAdminList";
@@ -144,6 +145,8 @@ async function publish(): Promise<void> {
     <header class="adm-head">
       <h1>{{ props.title }}</h1>
       <p>下架可以恢复，删除不能；精选内容会在「为你推荐」里靠前</p>
+      <!-- 帖子页 / 分类信息页各管各的审核开关；新闻公告由管理员发，不用审 -->
+      <ReviewSwitch v-if="props.types === 'post' || props.types === 'listing'" :key="props.types" :kind="props.types" />
       <button v-if="props.announce && !composing" type="button" class="btn btn--primary btn--sm" @click="openComposer">发布公告</button>
     </header>
 

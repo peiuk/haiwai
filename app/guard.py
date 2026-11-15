@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
-from app.models import BlockedTerm, Content, ModerationCase
+from app.models import BlockedTerm, Content, ModerationCase, SiteSetting
 
 AUTO_HIDE_REPORTS = 3  # 同一条内容有这么多条未处理的举报，就先隐藏等管理员看
 
@@ -20,6 +20,20 @@ def blocked_term_in(session: Session, *texts: str | None) -> str | None:
         if term in haystack:
             return term
     return None
+
+
+REVIEW_KINDS = ("post", "listing", "comment")
+
+
+def review_on(session: Session, kind: str) -> bool:
+    """这类内容发布前要不要人工审核。后台可以关；没设置过就是要审。"""
+    row = session.get(SiteSetting, f"review.{kind}")
+    return row is None or row.value != "off"
+
+
+def first_status(session: Session, kind: str, *texts: str | None) -> str:
+    """留言 / 分类信息刚发出来的状态：开着审核，或命中敏感词，就先待审；否则直接发布。"""
+    return "pending" if review_on(session, kind) or blocked_term_in(session, *texts) else "published"
 
 
 def hide_if_widely_reported(session: Session, content: Content) -> bool:

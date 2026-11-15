@@ -13,6 +13,7 @@ from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.feed import author_names
+from app.guard import first_status
 from app.privacy import is_room_member
 from app.recommend import country_blocked, is_roaming
 from app.reports import ReportBody, report_receipt
@@ -22,9 +23,11 @@ from app.models import (
     ChannelSubscription,
     ModerationCase,
     CommentLike,
+    Notification,
     RoomComment,
     RoomJoinRequest,
     User,
+    UserFollow,
     utcnow,
 )
 
@@ -58,6 +61,26 @@ def mention_users(session: Session, body: str) -> list[User]:
         if person is not None:
             users.append(person)
     return users
+
+
+def publish_comment(session: Session, comment: RoomComment) -> None:
+    """留言公开（审核通过，或关了审核直接发布）：改状态，并通知被 @ 到且关注了作者的人。"""
+    comment.status = "published"
+    author = session.get(User, comment.author_id)
+    name = author.display_name if author else "有人"
+    for person in mention_users(session, comment.body):
+        if person.id == comment.author_id:
+            continue
+        if session.get(UserFollow, (person.id, comment.author_id)) is None:
+            continue
+        session.add(
+            Notification(
+                user_id=person.id,
+                kind="mention",
+                body=f"{name} 在留言里提到了你"[:200],
+                content_id=comment.content_id,
+            )
+        )
 
 
 def apply_comment_like(session: Session, user: User, comment: RoomComment) -> dict[str, object]:
@@ -245,6 +268,8 @@ def create_comment(
     )
     session.add(comment)
     session.flush()
+    if first_status(session, "comment", body.body) == "published":
+        publish_comment(session, comment)
     write_audit(session, user.id, "comment.create", "comment", comment.id)
     session.commit()
     return {"comment_id": comment.id, "status": comment.status}

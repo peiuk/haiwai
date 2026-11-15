@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.uploads import owned_upload
 from app.api.v1.me import active_channel
-from app.api.v1.room_social import apply_comment_like, comment_like_state, mention_count, mention_users
+from app.api.v1.room_social import apply_comment_like, comment_like_state, mention_count, mention_users, publish_comment
 from app.core.audit import write_audit
-from app.guard import blocked_term_in, hide_if_widely_reported
+from app.guard import blocked_term_in, first_status, hide_if_widely_reported, review_on
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.keywords import clean_city_topic, collect_keywords, dump_keywords, load_keywords, resolve_keywords, suggest_keywords
@@ -153,7 +153,8 @@ def create_post(
         select(func.count()).select_from(Content).where(Content.author_id == user.id, Content.deleted_at.is_(None))
     )
     now = utcnow()
-    status = "pending" if (prior or 0) < REVIEW_LIMIT else "published"
+    # 后台关了帖子审核时，新用户的前几条也直接发布；敏感词照样拦
+    status = "pending" if review_on(session, "post") and (prior or 0) < REVIEW_LIMIT else "published"
     if status == "published" and blocked_term_in(session, body.title, body.body):
         status = "pending"  # 命中敏感词 / 链接黑名单：不直接发布，先给管理员看
     if body.post_type == "video":
@@ -504,6 +505,8 @@ def create_reply(
     )
     session.add(comment)
     session.flush()
+    if first_status(session, "comment", body.body) == "published":
+        publish_comment(session, comment)
     if content.author_id and content.author_id != user.id:
         session.add(
             Notification(

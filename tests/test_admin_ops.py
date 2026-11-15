@@ -290,3 +290,53 @@ def test_content_detail_gives_the_reviewer_the_video(client):
         (True, "", "https://youtu.be/abc"),
         (False, "", ""),
     ]
+
+
+def test_review_switches_let_new_content_publish_directly(client):
+    boss = register(client, "boss@example.com", admin=True)
+    mod = moderator(client, "mod@example.com")
+    author = register(client, "author@example.com")
+    assert client.post("/api/v1/auth/verify-phone", headers=headers(author), json={"phone": "+447700902222", "code": "246810"}).status_code == 200
+    channel_id, content_id = seed(client, "author@example.com")
+    with client.session_factory() as session:
+        from app.models import Channel, ChannelItem
+
+        market = Channel(code="g-market-sw", name_hans="市场", name_hant="市场", kind="official_curated", category="市场", region_code="GLOBAL", is_active=True)
+        session.add_all([market, ChannelItem(channel_id=channel_id, content_id=content_id)])
+        session.commit()
+        market_id = market.id
+
+    def post() -> str:
+        return client.post("/api/v1/contents", headers=headers(author), json={"channel_id": channel_id, "title": "新帖", "body": "正文"}).json()["status"]
+
+    def comment(text: str = "不错") -> str:
+        return client.post(f"/api/v1/contents/{content_id}/comments", headers=headers(author), json={"body": text}).json()["status"]
+
+    def listing() -> str:
+        body = {"channel_id": market_id, "title": "书桌", "body": "九成新书桌转让", "category": "市场", "kind": "secondhand",
+                "area": "伦敦", "price_amount": "40", "price_unit": "", "contact": "sms: 1", "attrs": {}}
+        return client.post("/api/v1/listings", headers=headers(author), json=body).json()["status"]
+
+    # 默认都要审
+    assert client.get("/api/v1/admin/review-settings", headers=headers(mod)).json() == {"post": True, "listing": True, "comment": True}
+    assert (post(), comment(), listing()) == ("pending", "pending", "pending")
+
+    # 只有超级管理员能改；改了记审计
+    off = {"kind": "comment", "enabled": False}
+    assert client.post("/api/v1/admin/review-settings", headers=headers(mod), json=off).status_code == 403
+    assert client.post("/api/v1/admin/review-settings", headers=headers(boss), json=off).json()["comment"] is False
+    assert client.post("/api/v1/admin/review-settings", headers=headers(boss), json=off).status_code == 409
+    for kind in ("post", "listing"):
+        assert client.post("/api/v1/admin/review-settings", headers=headers(boss), json={"kind": kind, "enabled": False}).status_code == 200
+    assert (post(), comment(), listing()) == ("published", "published", "published")
+    with client.session_factory() as session:
+        assert session.scalar(select(AuditLog).where(AuditLog.action == "admin.review.off", AuditLog.detail == "comment")) is not None
+        session.add(BlockedTerm(term="casino"))
+        session.commit()
+
+    # 关了审核，敏感词照样拦
+    assert comment("来 Casino 玩") == "pending"
+
+    # 再打开就恢复要审
+    assert client.post("/api/v1/admin/review-settings", headers=headers(boss), json={"kind": "comment", "enabled": True}).json()["comment"] is True
+    assert comment() == "pending"

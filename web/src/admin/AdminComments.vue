@@ -3,6 +3,7 @@
 import { ref } from "vue";
 import { RouterLink } from "vue-router";
 import AdminPager from "./AdminPager.vue";
+import ReviewSwitch from "./ReviewSwitch.vue";
 import { STATUS_LABELS, exact, statusTone, when } from "./shared";
 import { useAdminList } from "./useAdminList";
 
@@ -45,6 +46,7 @@ function restore(item: Row): Promise<void> {
     <header class="adm-head">
       <h1>留言管理</h1>
       <p>只有被管理员删除的留言可以恢复</p>
+      <ReviewSwitch kind="comment" />
     </header>
 
     <form class="adm-filters" @submit.prevent="search">

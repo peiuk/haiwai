@@ -33,7 +33,8 @@ from app.core.audit import recent_server_errors, write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.security import new_totp_secret, verify_totp
-from app.models import AuditLog, BlockedTerm, Content, ModerationCase, ReviewClaim, User, utcnow
+from app.guard import REVIEW_KINDS, review_on
+from app.models import AuditLog, BlockedTerm, Content, ModerationCase, ReviewClaim, SiteSetting, User, utcnow
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 
@@ -175,6 +176,30 @@ def delete_term(body: TermBody, admin: User = Depends(require_super), session: S
     write_audit(session, admin.id, "admin.term.delete", "term", None, row.term)
     session.commit()
     return {"deleted": True}
+
+
+# ---- 审核开关：帖子 / 分类信息 / 留言发布前要不要人工审核 ----
+
+
+class ReviewSwitchBody(BaseModel):
+    kind: Literal["post", "listing", "comment"]
+    enabled: bool
+
+
+@router.get("/review-settings")
+def review_settings(session: Session = Depends(get_db)) -> dict[str, bool]:
+    return {kind: review_on(session, kind) for kind in REVIEW_KINDS}
+
+
+@router.post("/review-settings")
+def set_review(body: ReviewSwitchBody, admin: User = Depends(require_super), session: Session = Depends(get_db)) -> dict[str, bool]:
+    """关掉后新发的直接公开（命中敏感词的仍进待审）；已经在待审里的不动，照常在审核队列处理。"""
+    if review_on(session, body.kind) == body.enabled:
+        raise APIError(409, "NO_CHANGE", "已经是这个状态")
+    session.merge(SiteSetting(key=f"review.{body.kind}", value="on" if body.enabled else "off"))
+    write_audit(session, admin.id, f"admin.review.{'on' if body.enabled else 'off'}", "setting", None, body.kind)
+    session.commit()
+    return review_settings(session)
 
 
 # ---- 导出 ----

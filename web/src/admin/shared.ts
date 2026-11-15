@@ -56,6 +56,7 @@ export const TARGET_LABELS: Record<string, string> = {
   user: "用户",
   region: "国家",
   term: "敏感词",
+  setting: "审核设置",
   table: "数据表",
 };
 
@@ -88,6 +89,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin.user.erase": "代用户注销账号",
   "admin.totp.enable": "开启两步验证",
   "admin.totp.disable": "关闭两步验证",
+  "admin.review.on": "开启发布前审核",
+  "admin.review.off": "关闭发布前审核",
   "admin.term.add": "添加敏感词",
   "admin.term.delete": "删除敏感词",
   "admin.export": "导出数据",

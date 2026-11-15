@@ -14,6 +14,7 @@ from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.core.regions import region_name
+from app.guard import first_status
 from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, image_keys_of, reaction_flags, repost_context
 from app.keywords import clean_city_topic, dump_keywords, resolve_keywords
 from app.models import Channel, ChannelItem, ChannelSubscription, ContactView, Content, ContentReaction, ListingExt, User, new_id, utcnow
@@ -186,9 +187,10 @@ def create_listing(
         owned_upload(session, user, key)
     now = utcnow()
     words, source = resolve_keywords(body.keywords, body.title, body.body, body.keyword_source, body.category)
+    status = first_status(session, "listing", body.title, body.body)
     content = Content(
         type="listing",
-        status="pending",
+        status=status,
         author_id=user.id,
         title=body.title,
         summary=body.body[:500],
@@ -200,6 +202,7 @@ def create_listing(
         image_key=keys[0] if keys else None,
         image_keys_json=json.dumps(keys),
         expires_at=now + timedelta(days=30),
+        published_at=now if status == "published" else None,
     )
     session.add(content)
     session.flush()
