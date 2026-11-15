@@ -32,7 +32,7 @@ from app.models import (
     new_id,
     utcnow,
 )
-from app.privacy import can_view_content, is_room_member
+from app.privacy import is_room_member, viewable
 from app.rooms import (
     ROOM_LIMIT,
     ROOM_TYPE_LABELS,
@@ -342,6 +342,7 @@ def channel_items(
             ChannelItem.channel_id == channel.id,
             visible,
             Content.deleted_at.is_(None),
+            viewable(user.id if user else None),  # 在数据库里过滤，不再每条内容查一次库
             *([ChannelItem.season == season] if season is not None else []),
         )
         .options(joinedload(ChannelItem.content))
@@ -351,7 +352,6 @@ def channel_items(
             ChannelItem.added_at.asc() if channel.room_type in {"series", "film", "video"} else ChannelItem.added_at.desc(),
         )
     ).unique().all()
-    rows = [row for row in rows if can_view_content(session, row.content, user)]
     bounded = min(max(limit, 1), 50)
     start = 0
     if cursor:
@@ -620,6 +620,28 @@ def update_room(
         "name_hans": channel.name_hans,
         "is_private": channel.is_private,
     }
+
+
+@router.delete("/{channel_id}")
+def delete_room(
+    channel_id: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    """房主删除自己的房间，不能恢复：只属于这个房间的帖子下架，留言删掉，成员关系清掉。"""
+    from app.api.v1.admin import _delete_files  # 放在函数里：admin 模块会反过来引用本模块
+    from app.api.v1.admin_channels import _purge_channel
+
+    channel = _owner_channel(session, channel_id, user)
+    if channel.kind != "room":
+        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
+    name = channel.name_hans
+    removed_posts, orphaned = _purge_channel(session, channel)
+    # 房间删了以后日志里只剩 id，所以把名称和下架的数量写进备注
+    write_audit(session, user.id, "channel.delete", "channel", channel_id, f"{name}，连同 {removed_posts} 条内容"[:300])
+    session.commit()
+    _delete_files(orphaned)
+    return {"deleted": True, "removed_posts": removed_posts}
 
 
 @router.put("/{channel_id}/collaborators/{member_id}")

@@ -1,3 +1,4 @@
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 
@@ -12,10 +13,11 @@ from app.api.v1.auth import current_user
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import APIError
-from app.models import UploadObject, User, new_id
+from app.models import UploadObject, User, new_id, utcnow
 
 router = APIRouter(prefix="/uploads")
 MAX_OPEN_SLOTS = 20
+DAILY_SLOTS = 100  # 一个人 24 小时内最多申请这么多次上传：不然循环传 100MB 视频能把磁盘写满
 LIMITS = {
     "image/jpeg": 5_000_000,
     "image/png": 5_000_000,
@@ -130,6 +132,13 @@ def sign_upload(
     )
     if (waiting or 0) >= MAX_OPEN_SLOTS:
         raise APIError(429, "UPLOAD_SLOTS_FULL", "还有太多没传完的上传，请先完成或稍后再试")
+    today = session.scalar(
+        select(func.count())
+        .select_from(UploadObject)
+        .where(UploadObject.owner_id == user.id, UploadObject.created_at >= utcnow() - timedelta(hours=24))
+    )
+    if (today or 0) >= DAILY_SLOTS:
+        raise APIError(429, "UPLOAD_DAILY_LIMIT", "今天上传得太多了，请明天再试")
     key = new_id().replace("-", "")
     session.add(UploadObject(key=key, owner_id=user.id, content_type=body.content_type, stored=False))
     session.commit()

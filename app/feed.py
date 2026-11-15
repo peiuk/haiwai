@@ -7,9 +7,11 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.pagination import decode_cursor, encode_cursor
 from app.keywords import load_keywords
 from app.models import Channel, ChannelItem, ChannelSubscription, Content, ContentReaction, ListingExt, User
-from app.privacy import can_view_content
+from app.privacy import viewable
 
 MAX_LISTING_IMAGES = 4
+# shortcut: 关注流只看最新的这么多条收录（未读数也只在这个范围里数）；要翻到更早的内容时改成按游标在数据库里分页。
+FEED_WINDOW = 500
 
 
 def image_keys_of(content: Content) -> list[str]:
@@ -147,12 +149,12 @@ def build_following_feed(session: Session, user_id: str) -> list[dict[str, objec
             & (ChannelSubscription.is_muted.is_(False)),
         )
         .join(Content, Content.id == ChannelItem.content_id)
-        .where(Content.status == "published", Content.deleted_at.is_(None))
+        # 能不能看在数据库里一次过滤：原来每条内容再查一次库，内容几千条时翻一页就是几千次查询
+        .where(Content.status == "published", Content.deleted_at.is_(None), viewable(user_id))
         .options(joinedload(ChannelItem.channel), joinedload(ChannelItem.content))
         .order_by(ChannelItem.pinned.desc(), ChannelItem.added_at.desc())
+        .limit(FEED_WINDOW)
     ).unique().all()
-    viewer = session.get(User, user_id)
-    rows = [item for item in rows if can_view_content(session, item.content, viewer)]
 
     ordered: list[str] = []
     grouped: dict[str, dict[str, object]] = {}

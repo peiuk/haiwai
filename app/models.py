@@ -403,6 +403,16 @@ class RoomJoinRequest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RoomBan(Base):
+    """房主移出房间并禁止再加入的人。"""
+
+    __tablename__ = "room_ban"
+
+    room_id: Mapped[str] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class UserConsentLog(Base):
     __tablename__ = "user_consent_log"
 

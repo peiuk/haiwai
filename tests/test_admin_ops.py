@@ -2,7 +2,7 @@
 import time
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.security import totp_code
 from app.guard import AUTO_HIDE_REPORTS, blocked_term_in
@@ -211,9 +211,16 @@ def test_blocked_terms_and_auto_hide_after_several_reports(client):
     with client.session_factory() as session:
         assert session.get(BlockedTerm, "casino.example") is None
 
-    # 多人举报：攒够数自动隐藏，等管理员看
+    # 刚注册的小号举报再多也不会自动隐藏（不然三个小号就能让任何帖子下线）
+    for index in range(AUTO_HIDE_REPORTS):
+        fresh = register(client, f"fresh{index}@example.com")
+        assert client.post(f"/api/v1/contents/{content_id}/report", headers=headers(fresh), json={"reason": "scam"}).status_code == 200
+    # 注册满 7 天的账号举报：攒够数自动隐藏，等管理员看
     for index in range(AUTO_HIDE_REPORTS):
         reporter = register(client, f"reporter{index}@example.com")
+        with client.session_factory() as session:
+            session.execute(update(User).where(User.email == f"reporter{index}@example.com").values(created_at=utcnow() - timedelta(days=8)))
+            session.commit()
         assert client.get(f"/api/v1/contents/{content_id}").status_code == 200  # 还没够数，照常显示
         assert client.post(f"/api/v1/contents/{content_id}/report", headers=headers(reporter), json={"reason": "scam"}).status_code == 200
     assert client.get(f"/api/v1/contents/{content_id}").status_code == 404

@@ -592,9 +592,16 @@ def repost_content(
     _check_hourly_limit(session, user.id)
     now = utcnow()
     note = body.body or original.summary or ""
+    # 和发帖同一套规则：新用户前几条要审，附言命中敏感词也先待审（原来转发一律直接公开）
+    prior = session.scalar(
+        select(func.count()).select_from(Content).where(Content.author_id == user.id, Content.deleted_at.is_(None))
+    )
+    status = "pending" if review_on(session, "post") and (prior or 0) < REVIEW_LIMIT else "published"
+    if blocked_term_in(session, body.body):
+        status = "pending"
     content = Content(
         type="repost",
-        status="published",
+        status=status,
         author_id=user.id,
         repost_of_id=original.id,
         title=original.title,
@@ -603,7 +610,7 @@ def repost_content(
         source_name=original.source_name,
         licence_ref=original.licence_ref,
         canonical_url=original.canonical_url,
-        published_at=now,
+        published_at=now if status == "published" else None,
     )
     session.add(content)
     session.flush()

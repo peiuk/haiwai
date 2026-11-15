@@ -21,6 +21,7 @@ from app.models import (
     ModerationCase,
     Region,
     RegionOpenRequest,
+    RoomBan,
     RoomComment,
     RoomJoinRequest,
     RoomPostPush,
@@ -281,6 +282,7 @@ def _purge_channel(session: Session, channel: Channel) -> tuple[int, list[str]]:
         (ChannelSubscription, ChannelSubscription.channel_id),
         (ChannelCollaborator, ChannelCollaborator.channel_id),
         (RoomJoinRequest, RoomJoinRequest.room_id),
+        (RoomBan, RoomBan.room_id),
     ):
         session.execute(delete(model).where(column == channel.id))
     session.delete(channel)

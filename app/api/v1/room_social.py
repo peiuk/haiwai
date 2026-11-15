@@ -3,7 +3,7 @@ from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator, model_validator
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user, optional_user
@@ -19,8 +19,10 @@ from app.recommend import country_blocked, is_roaming
 from app.reports import ReportBody, report_receipt
 from app.models import (
     Channel,
+    ChannelCollaborator,
     ChannelItem,
     ChannelSubscription,
+    RoomBan,
     ModerationCase,
     CommentLike,
     Notification,
@@ -371,6 +373,8 @@ def request_join(
         raise APIError(409, "ROOM_PUBLIC", "公开房间直接加入即可")
     if room.owner_id == user.id or session.get(ChannelSubscription, (user.id, room.id)) is not None:
         raise APIError(409, "ALREADY_MEMBER", "你已经在这个房间里")
+    if session.get(RoomBan, (room.id, user.id)) is not None:
+        raise APIError(403, "ROOM_BANNED", "房主已把你移出这个房间，不能再申请加入")
     existing = session.scalar(
         select(RoomJoinRequest).where(RoomJoinRequest.room_id == room.id, RoomJoinRequest.user_id == user.id)
     )
@@ -442,3 +446,78 @@ def reject_join(
     write_audit(session, user.id, "room.join.reject", "channel", room.id)
     session.commit()
     return {"rejected": True}
+
+
+# ---- 成员管理：房主移出成员并禁止再加入 ----
+
+
+def _owned_room(session: Session, channel_id: str, user: User) -> Channel:
+    room = _room(session, channel_id)
+    if room.owner_id != user.id:
+        raise APIError(403, "FORBIDDEN", "只有房主可以管理成员")
+    return room
+
+
+def _people(session: Session, ids: list[str]) -> list[dict[str, str]]:
+    rows = session.scalars(select(User).where(User.id.in_(ids or [""]), User.deleted_at.is_(None))).all()
+    return [{"user_id": row.id, "display_name": row.display_name, "handle": row.handle or ""} for row in rows]
+
+
+@router.get("/{channel_id}/members")
+def list_members(
+    channel_id: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, list[dict[str, str]]]:
+    # shortcut: 一次返回全部成员，不分页；房间成员上千时改成分页
+    room = _owned_room(session, channel_id, user)
+    members = session.scalars(
+        select(ChannelSubscription.user_id).where(
+            ChannelSubscription.channel_id == room.id, ChannelSubscription.user_id != room.owner_id
+        )
+    ).all()
+    banned = session.scalars(select(RoomBan.user_id).where(RoomBan.room_id == room.id)).all()
+    return {"items": _people(session, list(members)), "banned": _people(session, list(banned))}
+
+
+@router.put("/{channel_id}/bans/{member_id}")
+def ban_member(
+    channel_id: str,
+    member_id: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """移出房间并禁止再加入：成员关系、协作者身份、待审的加入申请一并清掉。"""
+    room = _owned_room(session, channel_id, user)
+    if member_id == room.owner_id or session.get(User, member_id) is None:
+        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    subscription = session.get(ChannelSubscription, (member_id, room.id))
+    if subscription is not None:
+        session.delete(subscription)
+        room.subscriber_count = max(0, room.subscriber_count - 1)
+    session.execute(
+        delete(ChannelCollaborator).where(ChannelCollaborator.channel_id == room.id, ChannelCollaborator.user_id == member_id)
+    )
+    session.execute(delete(RoomJoinRequest).where(RoomJoinRequest.room_id == room.id, RoomJoinRequest.user_id == member_id))
+    if session.get(RoomBan, (room.id, member_id)) is None:
+        session.add(RoomBan(room_id=room.id, user_id=member_id))
+    write_audit(session, user.id, "room.member.ban", "channel", room.id, member_id)
+    session.commit()
+    return {"banned": True}
+
+
+@router.delete("/{channel_id}/bans/{member_id}")
+def unban_member(
+    channel_id: str,
+    member_id: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, bool]:
+    room = _owned_room(session, channel_id, user)
+    ban = session.get(RoomBan, (room.id, member_id))
+    if ban is None:
+        raise APIError(404, "USER_NOT_FOUND", "这个人没有被禁止加入")
+    session.delete(ban)
+    write_audit(session, user.id, "room.member.unban", "channel", room.id, member_id)
+    session.commit()
+    return {"banned": False}

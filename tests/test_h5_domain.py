@@ -144,6 +144,10 @@ def test_repost_keeps_source_and_skips_for_you(client):
         json={"channel_id": channel_id},
     )
     assert again.json()["content_id"] == repost_id
+    # 转发和发帖同一套规则：新用户的前几条要先审
+    assert forwarded.json()["status"] == "pending"
+    assert client.get(f"/api/v1/contents/{repost_id}").status_code == 404
+    approve(client, author, repost_id)
     rows = client.get(f"/api/v1/channels/{channel_id}/items", headers=headers(forwarder)).json()["items"]
     original = next(item for item in rows if item["content_id"] == content_id)
     copy = next(item for item in rows if item["content_id"] == repost_id)
@@ -157,6 +161,11 @@ def test_repost_keeps_source_and_skips_for_you(client):
     assert detail["source_name"] == original["source_name"]
     foryou = client.get("/api/v1/me/feed?tab=foryou", headers=headers(forwarder))
     assert all(item["content_id"] != repost_id for item in foryou.json()["items"])
+    # 原帖删掉后，转发里抄下来的标题和摘要也不再露出
+    assert client.delete(f"/api/v1/contents/{content_id}", headers=headers(author)).status_code == 200
+    assert client.get(f"/api/v1/contents/{repost_id}", headers=headers(forwarder)).status_code == 404
+    rows = client.get(f"/api/v1/channels/{channel_id}/items", headers=headers(forwarder)).json()["items"]
+    assert all(item["content_id"] != repost_id for item in rows)
 
 
 def test_reply_stays_hidden_until_approved(client):

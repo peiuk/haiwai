@@ -1,7 +1,7 @@
 """Server-side visibility rules shared by content endpoints."""
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, exists, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from app.models import Channel, ChannelCollaborator, ChannelItem, ChannelSubscription, Content, User
 
@@ -21,10 +21,30 @@ def can_view_content(session: Session, content: Content, user: User | None) -> b
         if not is_room_member(session, room, user):
             return False
     if content.repost_of_id:
+        # 原帖被下架 / 删除后，转发里抄下来的标题和摘要也不能再露出
         original = session.get(Content, content.repost_of_id)
-        if original is not None and not can_view_content(session, original, user):
+        if original is None or original.deleted_at is not None or original.status != "published":
+            return False
+        if not can_view_content(session, original, user):
             return False
     return True
+
+
+def viewable(user_id: str | None):
+    """can_view_content 的 SQL 版：列表接口放进 where 里一次过滤，不用每条内容再查一次库。两处规则要保持一致。"""
+    not_member = [Channel.kind == "room", Channel.is_private.is_(True)]
+    if user_id:
+        not_member += [
+            or_(Channel.owner_id.is_(None), Channel.owner_id != user_id),
+            ~exists().where(ChannelCollaborator.channel_id == Channel.id, ChannelCollaborator.user_id == user_id),
+            ~exists().where(ChannelSubscription.channel_id == Channel.id, ChannelSubscription.user_id == user_id),
+        ]
+    hidden = select(ChannelItem.content_id).join(Channel, Channel.id == ChannelItem.channel_id).where(*not_member)
+    original = aliased(Content)
+    live_original = select(original.id).where(
+        original.status == "published", original.deleted_at.is_(None), original.id.not_in(hidden)
+    )
+    return and_(Content.id.not_in(hidden), or_(Content.repost_of_id.is_(None), Content.repost_of_id.in_(live_original)))
 
 
 def is_room_member(session: Session, room: Channel, user: User | None) -> bool:

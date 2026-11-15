@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user, optional_user
@@ -31,6 +31,8 @@ from app.models import (
     ModerationCase,
     Notification,
     RefreshSession,
+    RoomBan,
+    RoomComment,
     UploadObject,
     User,
     UserBlock,
@@ -192,6 +194,8 @@ def join_channel(
         raise APIError(403, "ROOM_JOIN_APPROVAL_REQUIRED", "私密房间需要先申请并由房主批准")
     if country_blocked(session, user, channel):
         raise APIError(403, "REGION_BLOCKED", "当前国家看不到这个频道")
+    if session.get(RoomBan, (channel.id, user.id)) is not None:
+        raise APIError(403, "ROOM_BANNED", "房主已把你移出这个房间，不能再加入")
     subscription = session.get(ChannelSubscription, (user.id, channel.id))
     if subscription is None:
         session.add(ChannelSubscription(user_id=user.id, channel_id=channel.id))
@@ -813,6 +817,12 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
     for post in posts:
         post.status = "deleted"
         post.deleted_at = now
+    # 留言也是这个人写的内容：一并移除（和后台「下架全部」同样处理）
+    session.execute(
+        update(RoomComment)
+        .where(RoomComment.author_id == user.id, RoomComment.removed_at.is_(None))
+        .values(status="removed", removed_at=now)
+    )
     # 页面承诺「删除资料、帖子和房间」：自建房间下线，上传的文件连磁盘一起删
     # （不删的话文件仍留在服务器，知道原链接的人还能打开）。
     for room in session.scalars(select(Channel).where(Channel.owner_id == user.id, Channel.kind == "room")).all():

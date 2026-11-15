@@ -992,3 +992,51 @@ def test_entries_and_room_posts_take_video_links(client):
         json={"channel_id": general, "title": "两个都填", "body": "x", "post_type": "video", "rights_confirmed": True, "video_key": clip, "video_url": "https://www.youtube.com/watch?v=abcdefghijk"},
     )
     assert mixed.status_code == 400
+
+
+def test_owner_bans_a_member_and_deletes_the_room(client):
+    parent_id = official_channel(client)
+    owner = register(client, "ban-owner@example.com")
+    verify(client, owner, "+447700900341")
+    member = register(client, "ban-member@example.com")
+    room_id = client.post(
+        "/api/v1/channels", headers=headers(owner), json={"name": "只给熟人", "parent_channel_id": parent_id, "is_private": True}
+    ).json()["channel_id"]
+    client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"})
+    base = f"/api/v1/channels/{room_id}"
+    request_id = client.post(f"{base}/join-requests", headers=headers(member)).json()["request_id"]
+    assert client.post(f"{base}/join-requests/{request_id}/approve", headers=headers(owner)).status_code == 200
+    assert client.get(f"{base}/items", headers=headers(member)).status_code == 200
+
+    # 只有房主能看成员、移出成员
+    assert client.get(f"{base}/members", headers=headers(member)).status_code == 403
+    members = client.get(f"{base}/members", headers=headers(owner)).json()
+    assert len(members["items"]) == 1 and members["banned"] == []
+    member_id = members["items"][0]["user_id"]
+    assert client.put(f"{base}/bans/{member_id}", headers=headers(member)).status_code == 403
+    assert client.put(f"{base}/bans/{member_id}", headers=headers(owner)).status_code == 200
+
+    # 移出后看不到内容，也不能再申请
+    assert client.get(f"{base}/items", headers=headers(member)).status_code == 404
+    again = client.post(f"{base}/join-requests", headers=headers(member))
+    assert again.status_code == 403 and again.json()["code"] == "ROOM_BANNED"
+    members = client.get(f"{base}/members", headers=headers(owner)).json()
+    assert members["items"] == [] and members["banned"][0]["user_id"] == member_id
+    assert client.get(base, headers=headers(owner)).json()["subscriber_count"] == 0
+
+    # 解除后可以重新申请
+    assert client.delete(f"{base}/bans/{member_id}", headers=headers(owner)).status_code == 200
+    assert client.post(f"{base}/join-requests", headers=headers(member)).status_code == 200
+
+    # 删除房间：别人删不了；房主删掉后房间没了，只属于它的帖子下架
+    content_id = client.post(f"{base}/announcements", headers=headers(owner), json={"title": "公告", "body": "大家好"}).json()["content_id"]
+    assert client.delete(base, headers=headers(member)).status_code == 404
+    deleted = client.delete(base, headers=headers(owner))
+    assert deleted.status_code == 200 and deleted.json()["removed_posts"] == 1
+    assert client.get(base, headers=headers(owner)).status_code == 404
+    with client.session_factory() as session:
+        from app.models import RoomJoinRequest
+
+        assert session.get(Channel, room_id) is None
+        assert session.get(Content, content_id).status == "deleted"
+        assert session.scalar(select(RoomJoinRequest).where(RoomJoinRequest.room_id == room_id)) is None
