@@ -70,7 +70,7 @@ def list_channels(
     if q:
         needle = f"%{q.strip()}%"
         query = query.where(Channel.name_hans.ilike(needle) | Channel.code.ilike(needle))
-    rows = session.scalars(query.order_by(Channel.code)).all()
+    rows = session.scalars(query.order_by(Channel.sort_order, Channel.code)).all()
     return {
         "items": [
             {

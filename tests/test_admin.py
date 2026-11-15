@@ -1,7 +1,7 @@
 """管理后台：只有管理员能进，写操作都留审计。"""
 from sqlalchemy import select
 
-from app.models import AuditLog, Channel, ChannelItem, Content, ModerationCase, RoomComment, User
+from app.models import AuditLog, Channel, ChannelItem, Content, ModerationCase, RegionOpenRequest, RoomComment, User
 
 CONSENTS = [
     {"purpose": "tos", "version": "2026-11-08", "granted": True},
@@ -71,6 +71,12 @@ def test_admin_endpoints_reject_non_admin(client):
         ("post", "/api/v1/admin/contents/x/featured", {"featured": True}),
         ("post", "/api/v1/admin/channels/x/certified", {"certified": True}),
         ("post", "/api/v1/admin/announcements", {"title": "公告", "body": "内容内容", "channel_id": "x"}),
+        ("get", "/api/v1/admin/regions", None),
+        ("post", "/api/v1/admin/regions", {"code": "US", "name": "美国"}),
+        ("post", "/api/v1/admin/regions/UK/open", {"open": False}),
+        ("post", "/api/v1/admin/regions/UK/channels", None),
+        ("post", "/api/v1/admin/channels", {"code": "uk-food", "name_hans": "英国美食", "region_code": "UK"}),
+        ("patch", "/api/v1/admin/channels/x", {"name_hans": "改名", "region_code": "UK"}),
         ("get", "/api/v1/admin/audit", None),
         ("post", "/api/v1/admin/users/x/status", {"status": "suspended"}),
         ("post", "/api/v1/admin/contents/x/status", {"action": "remove"}),
@@ -393,3 +399,110 @@ def test_featured_content_ranks_first_for_guests(client):
     feed = client.get("/api/v1/me/feed?tab=foryou").json()["items"]
     assert feed[0]["content_id"] == picked
     assert (feed[0]["featured"], feed[0]["reason"]) == (True, "编辑精选")
+
+
+COUNTRY = ["资讯", "交流", "招聘", "房产", "市场", "商务"]
+
+
+def public_names(client, region: str) -> list[str]:
+    items = client.get(f"/api/v1/channels?region_code={region}").json()["items"]
+    return [item["name_hans"] for item in items]
+
+
+def open_codes(client, token: str) -> list[str]:
+    body = client.get("/api/v1/me/regions", headers=headers(token)).json()
+    return [item["code"] for item in body["open_regions"]]
+
+
+def test_open_country_creates_its_channels_in_order(client):
+    boss = register(client, "boss@example.com", admin=True)
+    with client.session_factory() as session:
+        session.add(RegionOpenRequest(user_id=user_id(client, "boss@example.com"), region_code="US"))
+        session.commit()
+    before = client.get("/api/v1/admin/regions", headers=headers(boss)).json()
+    assert [item["code"] for item in before["items"]] == ["UK", "GLOBAL"]
+    assert before["requests"] == [{"code": "US", "count": 1}]
+
+    opened = client.post("/api/v1/admin/regions", headers=headers(boss), json={"code": "us", "name": "美国", "city": "纽约"})
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["channels"] == ["美国" + name for name in COUNTRY]
+    assert public_names(client, "US") == ["美国" + name for name in COUNTRY]  # 前台按这个顺序排
+    assert open_codes(client, boss) == ["UK", "US", "GLOBAL"]
+    after = client.get("/api/v1/admin/regions", headers=headers(boss)).json()
+    assert after["requests"] == []
+    assert {"code": "US", "name": "美国", "city": "纽约", "is_open": True, "channel_count": 6} in after["items"]
+
+    # 用户可以把浏览国家切到新开通的国家
+    switched = client.post("/api/v1/me/regions", headers=headers(boss), json={"region_code": "US", "source": "manual", "browse_region_code": "US"})
+    assert switched.status_code == 200, switched.text
+
+    assert client.post("/api/v1/admin/regions", headers=headers(boss), json={"code": "US", "name": "美国"}).status_code == 409
+    assert client.post("/api/v1/admin/regions/US/channels", headers=headers(boss)).json()["channels"] == []  # 不重复建
+
+    # 关闭后前台不再列出；重新开通不会多出频道
+    assert client.post("/api/v1/admin/regions/US/open", headers=headers(boss), json={"open": False, "reason": "暂停运营"}).status_code == 200
+    assert open_codes(client, boss) == ["UK", "GLOBAL"]
+    assert client.post("/api/v1/admin/regions/US/open", headers=headers(boss), json={"open": False}).status_code == 409
+    assert client.post("/api/v1/admin/regions/US/open", headers=headers(boss), json={"open": True}).status_code == 200
+    assert len(public_names(client, "US")) == 6
+    assert audit_actions(client) == ["admin.region.open", "region.set", "admin.region.close", "admin.region.open"]
+
+
+def test_builtin_regions_fill_and_close(client):
+    boss = register(client, "boss@example.com", admin=True)
+    with client.session_factory() as session:
+        session.add(Channel(code="uk-housing", name_hans="英国租房", name_hant="英國租房", kind="official_curated", region_code="UK", category="房产", is_active=True))
+        session.commit()
+
+    # 英国已有房产频道：保留原名，只补其余五个
+    filled = client.post("/api/v1/admin/regions/UK/channels", headers=headers(boss)).json()["channels"]
+    assert filled == ["英国资讯", "英国交流", "英国招聘", "英国市场", "英国商务"]
+    assert public_names(client, "UK") == ["英国资讯", "英国交流", "英国招聘", "英国租房", "英国市场", "英国商务"]
+
+    # 国际频道各国共享：不加国家名，不能关闭
+    shared = client.post("/api/v1/admin/regions/GLOBAL/channels", headers=headers(boss)).json()["channels"]
+    assert shared == ["新闻", "影视", "健康", "科技", "交友", "旅游"]
+    assert client.post("/api/v1/admin/regions/GLOBAL/open", headers=headers(boss), json={"open": False}).status_code == 409
+
+    # 内置的英国也可以关闭和重开
+    assert client.post("/api/v1/admin/regions/UK/open", headers=headers(boss), json={"open": False}).status_code == 200
+    assert open_codes(client, boss) == ["GLOBAL"]
+    assert client.post("/api/v1/admin/regions/UK/open", headers=headers(boss), json={"open": True}).status_code == 200
+    assert open_codes(client, boss) == ["UK", "GLOBAL"]
+    assert client.post("/api/v1/admin/regions/JP/channels", headers=headers(boss)).status_code == 404  # 没开通的国家不能补频道
+
+
+def test_create_and_edit_channel(client):
+    boss = register(client, "boss@example.com", admin=True)
+    url = "/api/v1/admin/channels"
+    body = {"code": "uk-food", "name_hans": "英国美食", "region_code": "uk", "category": "美食", "sort_order": 7}
+
+    assert client.post(url, headers=headers(boss), json={**body, "region_code": "JP"}).status_code == 422  # 国家没开通
+    assert client.post(url, headers=headers(boss), json={**body, "code": "UK Food"}).status_code == 422  # 代号格式不对
+    made = client.post(url, headers=headers(boss), json=body)
+    assert made.status_code == 200, made.text
+    channel_id = made.json()["channel_id"]
+    assert client.post(url, headers=headers(boss), json=body).status_code == 409  # 代号重复
+
+    row = client.get("/api/v1/admin/channels?region=UK", headers=headers(boss)).json()["items"][0]
+    assert (row["code"], row["name"], row["name_hant"], row["region_code"], row["category"], row["sort_order"], row["is_active"]) == (
+        "uk-food",
+        "英国美食",
+        "英国美食",
+        "UK",
+        "美食",
+        7,
+        True,
+    )
+    assert public_names(client, "UK") == ["英国美食"]
+
+    edited = client.patch(
+        f"{url}/{channel_id}",
+        headers=headers(boss),
+        json={"name_hans": "英国餐饮", "name_hant": "英國餐飲", "region_code": "GLOBAL", "category": "", "sort_order": 2},
+    )
+    assert edited.status_code == 200, edited.text
+    row = client.get("/api/v1/admin/channels?q=uk-food", headers=headers(boss)).json()["items"][0]
+    assert (row["name"], row["name_hant"], row["region_code"], row["category"], row["sort_order"]) == ("英国餐饮", "英國餐飲", "GLOBAL", "", 2)
+    assert client.patch(f"{url}/missing", headers=headers(boss), json={"name_hans": "x", "region_code": "UK"}).status_code == 404
+    assert audit_actions(client) == ["admin.channel.create", "admin.channel.update"]

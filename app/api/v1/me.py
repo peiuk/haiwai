@@ -12,7 +12,7 @@ from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.pagination import decode_cursor, encode_cursor, paginate_rows
-from app.core.regions import OPEN_REGIONS, is_open_region
+from app.core.regions import open_regions
 from app.feed import build_following_feed, paginate_feed
 from app.keywords import clean_city_topic
 from app.privacy import can_view_content
@@ -624,14 +624,7 @@ class RegionBody(BaseModel):
         if value is None:
             return None
         code = value.strip().upper()
-        if code == "":
-            return ""
-        if code not in OPEN_REGIONS:
-            raise ValueError("只能浏览已开通的国家")
-        return code
-
-
-_STATIONS = OPEN_REGIONS
+        return code  # 是否已开通要查库，在 set_region 里校验
 
 
 def _station(session: Session, user: User) -> tuple[str, str]:
@@ -639,14 +632,14 @@ def _station(session: Session, user: User) -> tuple[str, str]:
         return "", ""
     pref = session.get(UserRegionPref, user.id)
     code = pref.browse_region_code if pref is not None and pref.browse_region_code else ""
-    return _STATIONS.get(code, ("", ""))
+    return open_regions(session).get(code, ("", ""))
 
 
 @router.get("/regions")
 def get_region(user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, object]:
     row = session.get(UserRegionPref, user.id)
     station_name, station_city = _station(session, user)
-    open_list = [{"code": code, "name": name, "city": city} for code, (name, city) in OPEN_REGIONS.items()]
+    open_list = [{"code": code, "name": name, "city": city} for code, (name, city) in open_regions(session).items()]
     if row is None:
         return {
             "region_code": "GLOBAL",
@@ -719,6 +712,8 @@ def set_region(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
+    if body.browse_region_code and body.browse_region_code not in open_regions(session):
+        raise APIError(422, "VALIDATION_FAILED", "只能浏览已开通的国家")
     row = session.get(UserRegionPref, user.id)
     now = utcnow()
     if row is not None and row.locked and body.region_code != row.region_code:
@@ -746,7 +741,7 @@ def set_region(
     write_audit(session, user.id, "region.set", "user", user.id)
     session.commit()
     station_name, station_city = _station(session, user)
-    open_list = [{"code": code, "name": name, "city": city} for code, (name, city) in OPEN_REGIONS.items()]
+    open_list = [{"code": code, "name": name, "city": city} for code, (name, city) in open_regions(session).items()]
     return {
         "region_code": row.region_code,
         "source": row.source,

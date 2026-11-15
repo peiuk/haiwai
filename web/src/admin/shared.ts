@@ -40,7 +40,7 @@ export const KIND_LABELS: Record<string, string> = {
   room: "房间",
 };
 
-export const TARGET_LABELS: Record<string, string> = { content: "帖子", comment: "留言", channel: "房间", user: "用户" };
+export const TARGET_LABELS: Record<string, string> = { content: "帖子", comment: "留言", channel: "房间", user: "用户", region: "国家" };
 
 export const ACTION_LABELS: Record<string, string> = {
   "admin.login": "登录后台",
@@ -53,6 +53,11 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin.channel.activate": "上架频道",
   "admin.channel.deactivate": "下架频道",
   "admin.channel.certify": "认证频道",
+  "admin.channel.create": "新增频道",
+  "admin.channel.update": "编辑频道",
+  "admin.region.open": "开通国家",
+  "admin.region.close": "关闭国家",
+  "admin.region.fill": "补齐默认频道",
   "admin.channel.uncertify": "取消认证",
   "admin.content.feature": "设为精选",
   "admin.content.unfeature": "取消精选",

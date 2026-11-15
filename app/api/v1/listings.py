@@ -535,7 +535,7 @@ def discover_items(
         "updated_count": updated_count,
         "categories": categories,
         # 当前浏览国家，供前端渲染「全部地区 / 国际 / 当前国家」筛选 chip。
-        "region": {"code": region, "name": region_name(region)},
+        "region": {"code": region, "name": region_name(session, region)},
         "next_cursor": next_cursor,
     }
 

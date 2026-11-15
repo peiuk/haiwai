@@ -21,6 +21,7 @@ const NAV: { to: string; label: string; badge?: Badge }[] = [
   { to: "/admin/comments", label: "留言" },
   { to: "/admin/users", label: "用户" },
   { to: "/admin/channels", label: "频道 / 房间" },
+  { to: "/admin/regions", label: "国家" },
   { to: "/admin/audit", label: "操作日志" },
 ];
 

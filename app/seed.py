@@ -15,6 +15,62 @@ _CATEGORY_CHANNELS = [
 ]
 
 
+# 开通国家时自动建的频道：(代号后缀, 分类, 分类的繁体)，顺序就是前台的排列顺序；频道名 = 国家名 + 分类。
+COUNTRY_CHANNELS = [
+    ("news", "资讯", "資訊"),
+    ("chat", "交流", "交流"),
+    ("jobs", "招聘", "招聘"),
+    ("housing", "房产", "房產"),
+    ("market", "市场", "市場"),
+    ("business", "商务", "商務"),
+]
+# 国际频道各国共享，不加国家名。
+GLOBAL_CHANNELS = [
+    ("news", "新闻", "新聞"),
+    ("film", "影视", "影視"),
+    ("health", "健康", "健康"),
+    ("tech", "科技", "科技"),
+    ("friends", "交友", "交友"),
+    ("travel", "旅游", "旅遊"),
+]
+
+
+def ensure_region_channels(session: Session, region_code: str, region_label: str) -> list[Channel]:
+    """给一个国家（或国际）补齐默认的官方频道，返回这次新建的。
+
+    幂等：这个国家已有同分类的官方频道就不再建（英国原有的房产 / 市场 / 招聘频道保留原名），只补排序号。
+    """
+    code = region_code.upper()
+    is_global = code == "GLOBAL"
+    created: list[Channel] = []
+    for order, (slug, category, category_hant) in enumerate(GLOBAL_CHANNELS if is_global else COUNTRY_CHANNELS, start=1):
+        channel_code = f"{code.lower()}-{slug}"
+        existing = session.scalar(
+            select(Channel).where(
+                (Channel.code == channel_code)
+                | ((Channel.region_code == code) & (Channel.category == category) & Channel.kind.like("official%"))
+            )
+        )
+        if existing is not None:
+            if not existing.sort_order:
+                existing.sort_order = order
+            continue
+        prefix = "" if is_global else region_label
+        channel = Channel(
+            code=channel_code,
+            name_hans=f"{prefix}{category}",
+            name_hant=f"{prefix}{category_hant}",  # 国家名的繁体可以在后台编辑频道时改
+            kind="official_curated",
+            region_code=code,
+            category=category,
+            sort_order=order,
+            is_active=True,
+        )
+        session.add(channel)
+        created.append(channel)
+    return created
+
+
 def ensure_channel_categories(session: Session) -> None:
     for code, name_hans, name_hant, category in _CATEGORY_CHANNELS:
         row = session.scalar(select(Channel).where(Channel.code == code))
@@ -43,6 +99,7 @@ def seed_if_empty() -> None:
         if not exists:
             _insert_seed(session)
         ensure_channel_categories(session)
+        ensure_region_channels(session, "GLOBAL", "国际")  # 国际频道的分类：新闻、影视、健康、科技、交友、旅游
         _ensure_global_content(session)
         session.commit()
     finally:

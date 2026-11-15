@@ -109,3 +109,8 @@ a.adm-card:hover { border-color: var(--accent); text-decoration: none; }
 
 /* 标签不换行，窄屏下由表格横向滚动 */
 .adm .tag { white-space: nowrap; }
+
+/* 表单里并排的几项；窄屏自动换行 */
+.adm-form { max-width: 860px; }
+.adm-form-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.adm-form-row .field { flex: 1 1 200px; min-width: 0; }

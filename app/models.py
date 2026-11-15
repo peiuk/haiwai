@@ -55,6 +55,8 @@ class Channel(Base):
     review_status: Mapped[str] = mapped_column(String(16), default="approved")
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     is_private: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 同一国家内的排列顺序，小的在前；0 表示没指定（排最前，按代号排）。
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
     # 后台给用户房间 / 频道加的认证；官方频道（kind 以 official 开头）天然认证，见 certified。
     is_certified: Mapped[bool] = mapped_column(Boolean, default=False)
     category: Mapped[str | None] = mapped_column(String(16))
@@ -64,6 +66,18 @@ class Channel(Base):
     @property
     def certified(self) -> bool:
         return (self.kind or "").startswith("official") or bool(self.is_certified)
+
+
+class Region(Base):
+    """后台开通的国家。英国和国际内置在 app/core/regions.py，这里有同代码记录时以这里为准。"""
+
+    __tablename__ = "region"
+
+    code: Mapped[str] = mapped_column(String(8), primary_key=True)
+    name_hans: Mapped[str] = mapped_column(String(32))
+    city: Mapped[str] = mapped_column(String(32), default="")  # 分站城市，漫游提示用
+    is_open: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class ChannelSubscription(Base):

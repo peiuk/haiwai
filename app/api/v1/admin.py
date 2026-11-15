@@ -15,12 +15,25 @@ from app.api.v1.channels import TextBody
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
+from app.core.regions import DEFAULT_REGIONS, open_regions
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.core.security import verify_password
 from app.feed import image_keys_of
-from app.models import AuditLog, Channel, ChannelItem, Content, ModerationCase, RoomComment, User, utcnow
+from app.models import (
+    AuditLog,
+    Channel,
+    ChannelItem,
+    Content,
+    ModerationCase,
+    Region,
+    RegionOpenRequest,
+    RoomComment,
+    User,
+    utcnow,
+)
 from app.reports import REASONS
 from app.rooms import drop_pushes, notify_room_update
+from app.seed import ensure_region_channels
 
 LIMIT = 50  # 队列、日志每次最多条数
 PAGE = 20  # 表格每页条数
@@ -581,12 +594,15 @@ def set_comment_status(
 
 
 @guarded.get("/channels")
-def list_channels(q: str = "", page: int = 1, session: Session = Depends(get_db)) -> dict[str, object]:
+def list_channels(q: str = "", region: str = "", page: int = 1, session: Session = Depends(get_db)) -> dict[str, object]:
     query = select(Channel)
+    if region.strip():
+        query = query.where(Channel.region_code == region.strip().upper())
     if q.strip():
         like = _like(q)
         query = query.where(or_(Channel.name_hans.ilike(like), Channel.code.ilike(like)))
-    rows, total = _paged(session, query, (Channel.created_at.desc(), Channel.id), page)
+    # 官方频道在前、按国家和排序号排，和前台看到的顺序一致；用户房间跟在后面
+    rows, total = _paged(session, query, (Channel.kind == "room", Channel.region_code, Channel.sort_order, Channel.code), page)
     names = _names(session, [row.owner_id for row in rows])
     return {
         "total": total,
@@ -596,7 +612,11 @@ def list_channels(q: str = "", page: int = 1, session: Session = Depends(get_db)
                 "channel_id": row.id,
                 "code": row.code,
                 "name": row.name_hans,
+                "name_hant": row.name_hant,
                 "kind": row.kind,
+                "region_code": row.region_code,
+                "category": row.category or "",
+                "sort_order": row.sort_order,
                 "owner_name": names.get(row.owner_id or "", ""),
                 "is_active": row.is_active,
                 "is_certified": row.is_certified,
@@ -693,6 +713,174 @@ def list_audit(action: str = "", cursor: str = "", session: Session = Depends(ge
         ],
         "next_cursor": encode_cursor(page[-1].created_at.isoformat(), page[-1].id) if len(rows) > LIMIT else None,
     }
+
+
+# ---- 频道新增 / 编辑 ----
+
+
+class ChannelBody(BaseModel):
+    name_hans: str = Field(min_length=1, max_length=64)
+    name_hant: str = Field(default="", max_length=64)  # 留空则和简体名相同
+    region_code: str
+    category: str = Field(default="", max_length=16)
+    sort_order: int = Field(default=0, ge=0, le=999)
+
+    def apply(self, session: Session, channel: Channel) -> None:
+        region = self.region_code.strip().upper()
+        if region not in open_regions(session):
+            raise APIError(422, "VALIDATION_FAILED", "只能选已开通的国家")
+        channel.name_hans = self.name_hans.strip()
+        channel.name_hant = self.name_hant.strip() or channel.name_hans
+        channel.region_code = region
+        channel.category = self.category.strip() or None
+        channel.sort_order = self.sort_order
+
+
+class ChannelCreateBody(ChannelBody):
+    code: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,47}$")  # 频道的英文代号，建好后不能改
+    kind: Literal["official_curated", "official_auto"] = "official_curated"
+
+
+@guarded.post("/channels")
+def create_channel(
+    body: ChannelCreateBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, str]:
+    if session.scalar(select(Channel.id).where(Channel.code == body.code)) is not None:
+        raise APIError(409, "DUPLICATE_CODE", "这个代号已经有频道在用了")
+    channel = Channel(code=body.code, kind=body.kind, is_active=True, name_hans="", name_hant="")
+    body.apply(session, channel)
+    session.add(channel)
+    session.flush()
+    write_audit(session, admin.id, "admin.channel.create", "channel", channel.id)
+    session.commit()
+    return {"channel_id": channel.id}
+
+
+@guarded.patch("/channels/{channel_id}")
+def update_channel(
+    channel_id: str,
+    body: ChannelBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, str]:
+    channel = session.get(Channel, channel_id)
+    if channel is None:
+        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
+    body.apply(session, channel)
+    write_audit(session, admin.id, "admin.channel.update", "channel", channel.id)
+    session.commit()
+    return {"channel_id": channel.id}
+
+
+# ---- 国家开通 ----
+
+
+def _region_row(session: Session, code: str) -> Region:
+    """取这个国家的记录；内置国家（英国 / 国际）还没有记录时按默认值建一条。"""
+    row = session.get(Region, code)
+    if row is None:
+        if code not in DEFAULT_REGIONS:
+            raise APIError(404, "REGION_NOT_FOUND", "没有这个国家")
+        name, city = DEFAULT_REGIONS[code]
+        row = Region(code=code, name_hans=name, city=city, is_open=True)
+        session.add(row)
+    return row
+
+
+@guarded.get("/regions")
+def list_regions(session: Session = Depends(get_db)) -> dict[str, object]:
+    is_open = open_regions(session)
+    closed = {row.code: (row.name_hans, row.city) for row in session.scalars(select(Region).where(Region.is_open.is_(False)))}
+    counts = dict(session.execute(select(Channel.region_code, func.count()).where(Channel.kind != "room").group_by(Channel.region_code)).all())
+    wanted = session.execute(
+        select(RegionOpenRequest.region_code, func.count()).group_by(RegionOpenRequest.region_code).order_by(func.count().desc())
+    ).all()
+    return {
+        "items": [
+            {
+                "code": code,
+                "name": name,
+                "city": city,
+                "is_open": code in is_open,
+                "channel_count": counts.get(code, 0),
+            }
+            for code, (name, city) in {**is_open, **closed}.items()
+        ],
+        # 用户申请开通、但还没开通的国家，按申请人数排
+        "requests": [{"code": code, "count": count} for code, count in wanted if code not in is_open],
+    }
+
+
+class RegionBody(BaseModel):
+    code: str = Field(pattern=r"^[A-Za-z]{2,8}$")  # 国家代码，如 US、CA、AU
+    name: str = Field(min_length=1, max_length=32)
+    city: str = Field(default="", max_length=32)
+
+
+@guarded.post("/regions")
+def open_region(
+    body: RegionBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    """开通一个新国家，并自动建好它的默认频道（资讯、交流、招聘、房产、市场、商务）。"""
+    code = body.code.upper()
+    if code in open_regions(session):
+        raise APIError(409, "NO_CHANGE", "这个国家已经开通")
+    row = session.get(Region, code)
+    if row is None:
+        row = Region(code=code, name_hans="", is_open=True)
+        session.add(row)
+    row.name_hans = body.name.strip()
+    row.city = body.city.strip()
+    row.is_open = True
+    created = ensure_region_channels(session, code, row.name_hans)
+    write_audit(session, admin.id, "admin.region.open", "region", code)
+    session.commit()
+    return {"code": code, "channels": [channel.name_hans for channel in created]}
+
+
+class RegionOpenBody(Reasoned):
+    open: bool
+
+
+@guarded.post("/regions/{code}/open")
+def set_region_open(
+    code: str,
+    body: RegionOpenBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    code = code.upper()
+    if code == "GLOBAL":
+        raise APIError(409, "NO_CHANGE", "国际频道各国共享，不能关闭")
+    if (code in open_regions(session)) == body.open:
+        raise APIError(409, "NO_CHANGE", "已经是这个状态")
+    row = _region_row(session, code)
+    row.is_open = body.open
+    write_audit(session, admin.id, "admin.region.open" if body.open else "admin.region.close", "region", code, body.note)
+    session.commit()
+    return {"code": code, "is_open": row.is_open}
+
+
+@guarded.post("/regions/{code}/channels")
+def fill_region_channels(
+    code: str,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    """给已开通的国家（或国际）补齐默认频道；已有同分类官方频道的不重复建。"""
+    code = code.upper()
+    regions = open_regions(session)
+    if code not in regions:
+        raise APIError(404, "REGION_NOT_FOUND", "这个国家还没开通")
+    created = ensure_region_channels(session, code, regions[code][0])
+    if created:
+        write_audit(session, admin.id, "admin.region.fill", "region", code)
+    session.commit()
+    return {"code": code, "channels": [channel.name_hans for channel in created]}
 
 
 router.include_router(guarded)

@@ -44,6 +44,7 @@ const routes: RouteRecordRaw[] = [
       { path: "comments", meta: { title: "留言管理" }, component: () => import("../admin/AdminComments.vue") },
       { path: "users", meta: { title: "用户管理" }, component: () => import("../admin/AdminUsers.vue") },
       { path: "channels", meta: { title: "频道与房间" }, component: () => import("../admin/AdminChannels.vue") },
+      { path: "regions", meta: { title: "国家" }, component: () => import("../admin/AdminRegions.vue") },
       { path: "audit", meta: { title: "操作日志" }, component: () => import("../admin/AdminAudit.vue") },
     ],
   },

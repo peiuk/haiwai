@@ -28,7 +28,7 @@ def effective_region(session: Session, user: User | None) -> str:
         return pref.browse_region_code
     code = pref.region_code or "GLOBAL"
     # 归属国家未开通 -> 回落到国际频道（GLOBAL），避免空白页。
-    return code if is_open_region(code) else "GLOBAL"
+    return code if is_open_region(session, code) else "GLOBAL"
 
 
 def is_roaming(session: Session, user: User | None) -> bool:
