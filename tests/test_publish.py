@@ -129,3 +129,33 @@ def test_fourth_post_is_public_and_hourly_cap_holds(client):
 
     titles = [item["title"] for item in client.get("/api/v1/me/feed", headers=headers).json()["items"]]
     assert titles == ["帖子4", "帖子3"]
+
+
+def test_phone_requirement_can_be_switched_off_for_testing(client, monkeypatch):
+    """REQUIRE_PHONE_VERIFICATION=false 时没验证手机也能发帖；默认仍然要求验证。"""
+    from app.core.config import get_settings
+
+    registered = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "nophone@example.com",
+            "password": "password-1",
+            "display_name": "没验证手机",
+            "consents": [
+                {"purpose": "tos", "version": "2026-11-08", "granted": True},
+                {"purpose": "privacy", "version": "2026-11-08", "granted": True},
+            ],
+        },
+    )
+    auth = {"Authorization": "Bearer " + registered.json()["access_token"]}
+    post = {"title": "测试帖", "body": "没验证手机也能发的测试帖"}
+
+    assert client.post("/api/v1/contents", headers=auth, json=post).json()["code"] == "PHONE_NOT_VERIFIED"
+    monkeypatch.setenv("REQUIRE_PHONE_VERIFICATION", "false")
+    get_settings.cache_clear()
+    try:
+        allowed = client.post("/api/v1/contents", headers=auth, json=post)
+        assert allowed.status_code == 200, allowed.text
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()

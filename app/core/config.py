@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_days: int = 7
     llm_api_key: str = ""  # Anthropic API 密钥（每日 AI 资讯用）
     news_model: str = "claude-opus-5-5"
+    # 发帖、转发、建房间等是否要求先验证手机。测试期间可在 .env 里写 REQUIRE_PHONE_VERIFICATION=false 临时关掉。
+    require_phone_verification: bool = True
     upload_dir: str = "data/uploads"
     # 对象存储（S3 协议：MinIO、Cloudflare R2、AWS S3 等）。s3_endpoint 留空就用上面的本地磁盘。
     s3_endpoint: str = ""  # 例：https://s3.example.com（MinIO 的 API 地址）

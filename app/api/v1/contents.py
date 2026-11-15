@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import current_user, optional_user
+from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.uploads import owned_upload
 from app.api.v1.me import active_channel
 from app.api.v1.room_social import apply_comment_like, comment_like_state, mention_count, mention_users
@@ -119,8 +119,7 @@ def create_post(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
-    if not user.phone_verified:
-        raise APIError(403, "PHONE_NOT_VERIFIED", "发布前需要先验证手机")
+    require_verified_phone(user, "发布")
     if is_roaming(session, user):
         raise APIError(403, "ROAMING_READONLY", "跨国漫游下仅供浏览，发帖请切换至本地")
     channel = None
@@ -554,8 +553,7 @@ def repost_content(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    if not user.phone_verified:
-        raise APIError(403, "PHONE_NOT_VERIFIED", "转发前需要先验证手机")
+    require_verified_phone(user, "转发")
     original = _visible_content(session, content_id, user)
     if is_private_room_content(session, original):
         raise APIError(403, "ROOM_PRIVATE", "私密房间内容不能转发")

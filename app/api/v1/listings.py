@@ -7,7 +7,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.v1.auth import current_user, optional_user
+from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.uploads import owned_upload
 from app.core.audit import write_audit
 from app.core.db import get_db
@@ -165,8 +165,7 @@ def create_listing(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
-    if not user.phone_verified:
-        raise APIError(403, "PHONE_NOT_VERIFIED", "发布前需要先验证手机")
+    require_verified_phone(user, "发布")
     if is_roaming(session, user):
         raise APIError(403, "ROAMING_READONLY", "跨国漫游下仅供浏览，发帖请切换至本地")
     kind = _kind_for(body)

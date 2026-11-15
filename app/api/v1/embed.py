@@ -3,7 +3,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import current_user
+from app.api.v1.auth import current_user, require_verified_phone
 from app.api.v1.me import active_channel
 from app.core.audit import write_audit
 from app.core.db import get_db
@@ -74,8 +74,7 @@ def create_embed(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    if not user.phone_verified:
-        raise APIError(403, "PHONE_NOT_VERIFIED", "发布前需要先验证手机")
+    require_verified_phone(user, "发布")
     if not body.title:
         raise APIError(400, "VALIDATION_FAILED", "标题不能为空")
     channel = active_channel(session, channel_id)

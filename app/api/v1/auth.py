@@ -185,6 +185,12 @@ def current_user(
     return user
 
 
+def require_verified_phone(user: User, action: str) -> None:
+    """发布类操作前的手机验证门槛；可用 REQUIRE_PHONE_VERIFICATION=false 临时关掉（见 config.py）。"""
+    if get_settings().require_phone_verification and not user.phone_verified:
+        raise APIError(403, "PHONE_NOT_VERIFIED", f"{action}前需要先验证手机")
+
+
 def issue_tokens(session: Session, user_id: str) -> dict[str, str]:
     access = create_access_token(user_id)
     raw_refresh = new_refresh_token()

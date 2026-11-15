@@ -3,7 +3,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.v1.auth import current_user, optional_user
+from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.core.pagination import decode_cursor, encode_cursor
 from app.feed import author_names, card_extras, content_titles, listing_map, reaction_flags, repost_context
 from app.recommend import country_blocked, effective_region
@@ -485,8 +485,7 @@ def create_room(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    if not user.phone_verified:
-        raise APIError(403, "PHONE_NOT_VERIFIED", "创建前需要先验证手机")
+    require_verified_phone(user, "创建")
     parent = _official_parent(session, body.parent_channel_id)
     owned = session.scalar(select(func.count()).select_from(Channel).where(Channel.owner_id == user.id))
     if (owned or 0) >= ROOM_LIMIT:
@@ -940,8 +939,7 @@ def create_submission(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    if not user.phone_verified:
-        raise APIError(403, "PHONE_NOT_VERIFIED", "投稿前需要先验证手机")
+    require_verified_phone(user, "投稿")
     channel = session.get(Channel, channel_id)
     if channel is None or not channel.is_active or channel.visibility != "public":
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
