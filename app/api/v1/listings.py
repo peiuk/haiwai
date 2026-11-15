@@ -520,7 +520,7 @@ def discover_items(
                 "canonical_url": content.canonical_url,
                 "channel_id": channel.id,
                 "channel_name": channel.name_hans,
-                "channel_certified": (channel.kind or "").startswith("official_"),
+                "channel_certified": channel.certified,
                 "is_joined": channel.id in joined,
                 "category": channel.category,
                 "added_at": item.added_at.isoformat(),

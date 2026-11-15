@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // 举报（mode=reports）与待审核（mode=review）共用一份队列数据。
 import { ref } from "vue";
+import { RouterLink } from "vue-router";
 import { toMessage } from "../api";
-import { fmtRelativeTime } from "../utils/time";
 import { adminRequest } from "./adminApi";
-import { TARGET_LABELS } from "./shared";
+import { TARGET_LABELS, exact, when } from "./shared";
 import { useAdminAction } from "./useAdminList";
 
 const props = defineProps<{ mode: "reports" | "review" }>();
@@ -24,6 +24,7 @@ type Queue = {
     created_at: string;
   }[];
 };
+type Kind = "" | "comments/" | "channels/" | "cases/";
 const CASE_REMOVE = { content: "下架", comment: "删除", channel: "下架", user: "封禁" };
 
 const queue = ref<Queue | null>(null);
@@ -37,18 +38,33 @@ async function load(): Promise<void> {
     error.value = toMessage(err);
   }
 }
-const { busy, act } = useAdminAction(load);
+const { busy, act, ask } = useAdminAction(load);
 void load();
 
-function decide(kind: "" | "comments/" | "channels/" | "cases/", id: string, decision: string, done: string): Promise<void> {
-  return act(id, `/api/v1/moderation/${kind}${id}/decision`, { decision }, done);
+function path(kind: Kind, id: string): string {
+  return `/api/v1/moderation/${kind}${id}/decision`;
 }
 
-// 举报对象能在前台打开的才给链接（帖子、用户）
-function targetHref(item: Queue["cases"][number]): string {
+// 通过 / 驳回不改动内容，直接提交；拒绝、下架、封禁先确认并可填理由。
+function approve(kind: Kind, id: string, decision: "approve" | "dismiss", done: string): Promise<void> {
+  return act(id, path(kind, id), { decision }, done);
+}
+
+function reject(kind: Kind, id: string, decision: "reject" | "remove", label: string, what: string): Promise<void> {
+  return ask(
+    { title: `${label}${what}？`, confirmLabel: label, danger: true, reason: true },
+    id,
+    path(kind, id),
+    (note) => ({ decision, note }),
+    `已${label}`,
+  );
+}
+
+// 举报对象在后台有详情页的才给链接（帖子、用户）
+function targetLink(item: Queue["cases"][number]): string {
   if (!item.target_id) return "";
-  if (item.target_type === "content") return `/content/${item.target_id}`;
-  if (item.target_type === "user") return `/user/${item.target_id}`;
+  if (item.target_type === "content") return `/admin/contents/${item.target_id}`;
+  if (item.target_type === "user") return `/admin/users/${item.target_id}`;
   return "";
 }
 </script>
@@ -77,16 +93,16 @@ function targetHref(item: Queue["cases"][number]): string {
               <tr v-for="item in queue.cases" :key="item.case_id">
                 <td class="adm-wide">
                   <span class="tag tag--warn">{{ TARGET_LABELS[item.target_type] }}</span>
-                  <a v-if="targetHref(item)" :href="targetHref(item)" target="_blank" rel="noopener">{{ item.target_label }}</a>
+                  <RouterLink v-if="targetLink(item)" :to="targetLink(item)">{{ item.target_label }}</RouterLink>
                   <template v-else>{{ item.target_label }}</template>
                 </td>
                 <td class="adm-wide">{{ item.reason }}<span v-if="item.detail" class="adm-sub">{{ item.detail }}</span></td>
                 <td class="adm-nowrap">{{ item.reporter_name || "游客" }}</td>
-                <td class="adm-nowrap">{{ fmtRelativeTime(item.created_at) }}</td>
+                <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
                 <td>
                   <div class="adm-actions">
-                    <button type="button" class="btn btn--danger btn--sm" :disabled="busy === item.case_id" @click="decide('cases/', item.case_id, 'remove', `已${CASE_REMOVE[item.target_type]}`)">{{ CASE_REMOVE[item.target_type] }}</button>
-                    <button type="button" class="btn btn--outline btn--sm" :disabled="busy === item.case_id" @click="decide('cases/', item.case_id, 'dismiss', '已驳回举报')">驳回</button>
+                    <button type="button" class="btn btn--danger btn--sm" :disabled="busy === item.case_id" @click="reject('cases/', item.case_id, 'remove', CASE_REMOVE[item.target_type], `这个${TARGET_LABELS[item.target_type]}`)">{{ CASE_REMOVE[item.target_type] }}</button>
+                    <button type="button" class="btn btn--outline btn--sm" :disabled="busy === item.case_id" @click="approve('cases/', item.case_id, 'dismiss', '已驳回举报')">驳回</button>
                   </div>
                 </td>
               </tr>
@@ -107,13 +123,16 @@ function targetHref(item: Queue["cases"][number]): string {
             </thead>
             <tbody>
               <tr v-for="item in queue.contents" :key="item.content_id">
-                <td class="adm-wide"><strong>{{ item.title }}</strong><span v-if="item.summary" class="adm-sub">{{ item.summary }}</span></td>
+                <td class="adm-wide">
+                  <RouterLink :to="`/admin/contents/${item.content_id}`"><strong>{{ item.title }}</strong></RouterLink>
+                  <span v-if="item.summary" class="adm-sub">{{ item.summary }}</span>
+                </td>
                 <td class="adm-nowrap">{{ item.author_name }}</td>
-                <td class="adm-nowrap">{{ fmtRelativeTime(item.created_at) }}</td>
+                <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
                 <td>
                   <div class="adm-actions">
-                    <button type="button" class="btn btn--primary btn--sm" :disabled="busy === item.content_id" @click="decide('', item.content_id, 'approve', '已通过')">通过</button>
-                    <button type="button" class="btn btn--outline btn--sm" :disabled="busy === item.content_id" @click="decide('', item.content_id, 'reject', '已拒绝')">拒绝</button>
+                    <button type="button" class="btn btn--primary btn--sm" :disabled="busy === item.content_id" @click="approve('', item.content_id, 'approve', '已通过')">通过</button>
+                    <button type="button" class="btn btn--outline btn--sm" :disabled="busy === item.content_id" @click="reject('', item.content_id, 'reject', '拒绝', '这条帖子')">拒绝</button>
                   </div>
                 </td>
               </tr>
@@ -134,11 +153,11 @@ function targetHref(item: Queue["cases"][number]): string {
               <tr v-for="item in queue.comments" :key="item.comment_id">
                 <td class="adm-wide">{{ item.body || "（只有图片的留言）" }}</td>
                 <td class="adm-nowrap">{{ item.author_name }}</td>
-                <td class="adm-nowrap">{{ fmtRelativeTime(item.created_at) }}</td>
+                <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
                 <td>
                   <div class="adm-actions">
-                    <button type="button" class="btn btn--primary btn--sm" :disabled="busy === item.comment_id" @click="decide('comments/', item.comment_id, 'approve', '已通过')">通过</button>
-                    <button type="button" class="btn btn--outline btn--sm" :disabled="busy === item.comment_id" @click="decide('comments/', item.comment_id, 'reject', '已拒绝')">拒绝</button>
+                    <button type="button" class="btn btn--primary btn--sm" :disabled="busy === item.comment_id" @click="approve('comments/', item.comment_id, 'approve', '已通过')">通过</button>
+                    <button type="button" class="btn btn--outline btn--sm" :disabled="busy === item.comment_id" @click="reject('comments/', item.comment_id, 'reject', '拒绝', '这条留言')">拒绝</button>
                   </div>
                 </td>
               </tr>
@@ -159,11 +178,11 @@ function targetHref(item: Queue["cases"][number]): string {
               <tr v-for="item in queue.channels" :key="item.channel_id">
                 <td class="adm-wide"><strong>{{ item.name }}</strong></td>
                 <td class="adm-nowrap">{{ item.owner_name }}</td>
-                <td class="adm-nowrap">{{ fmtRelativeTime(item.created_at) }}</td>
+                <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
                 <td>
                   <div class="adm-actions">
-                    <button type="button" class="btn btn--primary btn--sm" :disabled="busy === item.channel_id" @click="decide('channels/', item.channel_id, 'approve', '已通过')">通过</button>
-                    <button type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="decide('channels/', item.channel_id, 'reject', '已拒绝')">拒绝</button>
+                    <button type="button" class="btn btn--primary btn--sm" :disabled="busy === item.channel_id" @click="approve('channels/', item.channel_id, 'approve', '已通过')">通过</button>
+                    <button type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="reject('channels/', item.channel_id, 'reject', '拒绝', '这个房间')">拒绝</button>
                   </div>
                 </td>
               </tr>

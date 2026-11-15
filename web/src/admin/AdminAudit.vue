@@ -2,11 +2,10 @@
 // 操作日志：按动作筛选，往下加载更多。
 import { ref } from "vue";
 import { toMessage } from "../api";
-import { fmtRelativeTime } from "../utils/time";
 import { adminRequest } from "./adminApi";
-import { ACTION_LABELS, TARGET_LABELS } from "./shared";
+import { ACTION_LABELS, TARGET_LABELS, exact, when } from "./shared";
 
-type Row = { id: string; action: string; actor_name: string; target_type: string | null; target_id: string | null; created_at: string };
+type Row = { id: string; action: string; actor_name: string; target_type: string | null; target_id: string | null; detail: string; created_at: string };
 type Page = { items: Row[]; next_cursor: string | null };
 
 const action = ref("");
@@ -62,7 +61,7 @@ void load();
       <div v-else class="adm-scroll">
         <table class="adm-table">
           <thead>
-            <tr><th>动作</th><th>操作人</th><th>对象</th><th>时间</th></tr>
+            <tr><th>动作</th><th>操作人</th><th>对象</th><th>理由</th><th>时间</th></tr>
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.id">
@@ -78,7 +77,8 @@ void load();
                 </template>
                 <template v-else>—</template>
               </td>
-              <td class="adm-nowrap" :title="item.created_at">{{ fmtRelativeTime(item.created_at) }}</td>
+              <td class="adm-wide">{{ item.detail || "—" }}</td>
+              <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
             </tr>
           </tbody>
         </table>

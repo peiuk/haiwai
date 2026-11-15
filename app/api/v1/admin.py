@@ -6,19 +6,21 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import LoginBody, current_user, issue_tokens, throttle
+from app.api.v1.channels import TextBody
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.core.security import verify_password
+from app.feed import image_keys_of
 from app.models import AuditLog, Channel, ChannelItem, Content, ModerationCase, RoomComment, User, utcnow
 from app.reports import REASONS
-from app.rooms import drop_pushes
+from app.rooms import drop_pushes, notify_room_update
 
 LIMIT = 50  # 队列、日志每次最多条数
 PAGE = 20  # 表格每页条数
@@ -86,6 +88,38 @@ def _was_taken_down(session: Session, target_type: str, target_id: str) -> bool:
         )
         is not None
     )
+
+
+def _history(session: Session, target_type: str, target_id: str) -> list[dict[str, object]]:
+    """这个对象上发生过的操作（最近 20 条），详情页用。"""
+    rows = session.scalars(
+        select(AuditLog)
+        .where(AuditLog.target_type == target_type, AuditLog.target_id == target_id)
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(20)
+    ).all()
+    names = _names(session, [row.actor_id for row in rows])
+    return [
+        {"action": row.action, "actor_name": names.get(row.actor_id or "", ""), "detail": row.detail or "", "created_at": row.created_at}
+        for row in rows
+    ]
+
+
+def _cases(session: Session, where) -> list[dict[str, object]]:
+    rows = session.scalars(select(ModerationCase).where(where).order_by(ModerationCase.created_at.desc()).limit(20)).all()
+    names = _names(session, [row.reporter_id for row in rows])
+    return [
+        {
+            "case_id": row.id,
+            "reason": REASONS.get(row.reason, row.reason),
+            "detail": row.detail,
+            "status": row.status,
+            "decision": row.decision or "",
+            "reporter_name": names.get(row.reporter_id or "", ""),
+            "created_at": row.created_at,
+        }
+        for row in rows
+    ]
 
 
 _PENDING_CONTENT = (Content.status == "pending", Content.deleted_at.is_(None))
@@ -234,8 +268,71 @@ def list_users(q: str = "", status: str = "", page: int = 1, session: Session = 
     }
 
 
-class UserStatusBody(BaseModel):
+class Reasoned(BaseModel):
+    reason: str = Field(default="", max_length=300)  # 操作理由，记入审计日志
+
+    @property
+    def note(self) -> str | None:
+        return self.reason.strip() or None
+
+
+class UserStatusBody(Reasoned):
     status: Literal["active", "suspended"]
+
+
+@guarded.get("/users/{user_id}")
+def user_detail(user_id: str, session: Session = Depends(get_db)) -> dict[str, object]:
+    target = session.get(User, user_id)
+    if target is None:
+        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    posts = session.scalars(
+        select(Content).where(Content.author_id == target.id).order_by(Content.created_at.desc()).limit(10)
+    ).all()
+    return {
+        "user_id": target.id,
+        "display_name": target.display_name,
+        "handle": target.handle or "",
+        "email": target.email,
+        "city_label": target.city_label or "",
+        "phone_verified": target.phone_verified,
+        "status": target.status,
+        "is_admin": target.is_admin,
+        "created_at": target.created_at,
+        "post_count": _count(session, Content, Content.author_id == target.id, Content.deleted_at.is_(None)),
+        "comment_count": _count(session, RoomComment, RoomComment.author_id == target.id, RoomComment.removed_at.is_(None)),
+        "posts": [
+            {"content_id": row.id, "title": row.title, "type": row.type, "status": row.status, "created_at": row.created_at}
+            for row in posts
+        ],
+        "cases": _cases(session, ModerationCase.reported_user_id == target.id),
+        "history": _history(session, "user", target.id),
+    }
+
+
+class AdminFlagBody(Reasoned):
+    is_admin: bool
+
+
+@guarded.post("/users/{user_id}/admin")
+def set_user_admin(
+    user_id: str,
+    body: AdminFlagBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    target = session.get(User, user_id)
+    if target is None or target.deleted_at is not None:
+        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    if target.id == admin.id:
+        raise APIError(409, "CANNOT_CHANGE_SELF", "不能修改自己的管理员权限")  # 免得最后一个管理员把自己撤掉
+    if target.is_admin == body.is_admin:
+        raise APIError(409, "NO_CHANGE", "已经是这个状态")
+    if body.is_admin and target.status != "active":
+        raise APIError(409, "NO_CHANGE", "被封禁的账号不能设为管理员")
+    target.is_admin = body.is_admin
+    write_audit(session, admin.id, "admin.user.grant" if body.is_admin else "admin.user.revoke", "user", target.id, body.note)
+    session.commit()
+    return {"user_id": target.id, "is_admin": target.is_admin}
 
 
 @guarded.post("/users/{user_id}/status")
@@ -255,7 +352,7 @@ def set_user_status(
         raise APIError(409, "NO_CHANGE", "已经是这个状态")
     target.status = body.status
     action = "admin.user.suspend" if body.status == "suspended" else "admin.user.activate"
-    write_audit(session, admin.id, action, "user", target.id)
+    write_audit(session, admin.id, action, "user", target.id, body.note)
     session.commit()
     return {"user_id": target.id, "status": target.status}
 
@@ -297,6 +394,7 @@ def list_contents(
                 "author_name": names.get(row.author_id or "", row.source_name or ""),
                 "channel_name": channels.get(row.id, ""),
                 "view_count": row.view_count or 0,
+                "featured": row.featured_at is not None,
                 "created_at": row.created_at,
             }
             for row in rows
@@ -304,7 +402,95 @@ def list_contents(
     }
 
 
-class TakedownBody(BaseModel):
+@guarded.get("/contents/{content_id}")
+def content_detail(content_id: str, session: Session = Depends(get_db)) -> dict[str, object]:
+    content = session.get(Content, content_id)
+    if content is None:
+        raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
+    author = session.get(User, content.author_id) if content.author_id else None
+    channel = session.scalar(
+        select(Channel).join(ChannelItem, ChannelItem.channel_id == Channel.id).where(ChannelItem.content_id == content.id).limit(1)
+    )
+    return {
+        "content_id": content.id,
+        "title": content.title,
+        "body": content.body or content.summary or "",
+        "type": content.type,
+        "status": content.status,
+        "author_id": content.author_id,
+        "author_name": author.display_name if author else content.source_name or "",
+        "channel_name": channel.name_hans if channel else "",
+        "image_urls": [f"/api/v1/uploads/{key}" for key in image_keys_of(content)],
+        "has_video": bool(content.video_key or content.embed_media_id),
+        "canonical_url": content.canonical_url or "",
+        "view_count": content.view_count or 0,
+        "featured": content.featured_at is not None,
+        "created_at": content.created_at,
+        "comment_count": _count(session, RoomComment, RoomComment.content_id == content.id, RoomComment.removed_at.is_(None)),
+        "cases": _cases(session, ModerationCase.content_id == content.id),
+        "history": _history(session, "content", content.id),
+    }
+
+
+class FeaturedBody(BaseModel):
+    featured: bool
+
+
+@guarded.post("/contents/{content_id}/featured")
+def set_content_featured(
+    content_id: str,
+    body: FeaturedBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    content = session.get(Content, content_id)
+    if content is None:
+        raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
+    if body.featured and content.status != "published":
+        raise APIError(409, "NO_CHANGE", "只有已发布的内容可以设为精选")
+    if (content.featured_at is not None) == body.featured:
+        raise APIError(409, "NO_CHANGE", "已经是这个状态")
+    content.featured_at = utcnow() if body.featured else None
+    write_audit(session, admin.id, "admin.content.feature" if body.featured else "admin.content.unfeature", "content", content.id)
+    session.commit()
+    return {"content_id": content.id, "featured": body.featured}
+
+
+class AnnouncementBody(TextBody):
+    channel_id: str
+
+
+@guarded.post("/announcements")
+def publish_announcement(
+    body: AnnouncementBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, str]:
+    """以后台身份在任意上架的频道里发一条置顶公告。"""
+    channel = session.get(Channel, body.channel_id)
+    if channel is None or not channel.is_active:
+        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在或已下架")
+    now = utcnow()
+    content = Content(
+        type="announcement",
+        status="published",
+        author_id=admin.id,
+        title=body.title,
+        summary=body.body[:500],
+        body=body.body,
+        source_name="海外圈官方",
+        published_at=now,
+    )
+    session.add(content)
+    session.flush()
+    session.add(ChannelItem(channel_id=channel.id, content_id=content.id, pinned=True, added_at=now))
+    notify_room_update(session, channel, content)
+    write_audit(session, admin.id, "admin.announcement.create", "content", content.id)
+    session.commit()
+    return {"content_id": content.id, "status": content.status}
+
+
+class TakedownBody(Reasoned):
     action: Literal["remove", "restore"]
 
 
@@ -329,7 +515,7 @@ def set_content_status(
             raise APIError(409, "NO_CHANGE", "这条内容不是被管理员下架的，不能恢复")
         content.status = "published"
         content.deleted_at = None
-    write_audit(session, admin.id, f"admin.content.{body.action}", "content", content.id)
+    write_audit(session, admin.id, f"admin.content.{body.action}", "content", content.id, body.note)
     session.commit()
     return {"content_id": content.id, "status": content.status}
 
@@ -346,6 +532,9 @@ def list_comments(q: str = "", status: str = "", page: int = 1, session: Session
     rooms = dict(
         session.execute(select(Channel.id, Channel.name_hans).where(Channel.id.in_([row.room_id for row in rows]))).all()
     )
+    titles = dict(
+        session.execute(select(Content.id, Content.title).where(Content.id.in_([row.content_id for row in rows if row.content_id]))).all()
+    )
     return {
         "total": total,
         "page_size": PAGE,
@@ -357,6 +546,8 @@ def list_comments(q: str = "", status: str = "", page: int = 1, session: Session
                 "status": row.status,
                 "author_name": names.get(row.author_id, ""),
                 "room_name": rooms.get(row.room_id, ""),
+                "content_id": row.content_id,
+                "content_title": titles.get(row.content_id or "", ""),
                 "created_at": row.created_at,
             }
             for row in rows
@@ -384,7 +575,7 @@ def set_comment_status(
             raise APIError(409, "NO_CHANGE", "这条留言不是被管理员删除的，不能恢复")
         comment.status = "published"
         comment.removed_at = None
-    write_audit(session, admin.id, f"admin.comment.{body.action}", "comment", comment.id)
+    write_audit(session, admin.id, f"admin.comment.{body.action}", "comment", comment.id, body.note)
     session.commit()
     return {"comment_id": comment.id, "status": comment.status}
 
@@ -408,6 +599,8 @@ def list_channels(q: str = "", page: int = 1, session: Session = Depends(get_db)
                 "kind": row.kind,
                 "owner_name": names.get(row.owner_id or "", ""),
                 "is_active": row.is_active,
+                "is_certified": row.is_certified,
+                "certified": row.certified,
                 "review_status": row.review_status,
                 "subscriber_count": row.subscriber_count,
                 "created_at": row.created_at,
@@ -417,7 +610,40 @@ def list_channels(q: str = "", page: int = 1, session: Session = Depends(get_db)
     }
 
 
-class ChannelActiveBody(BaseModel):
+@guarded.get("/channel-options")
+def channel_options(session: Session = Depends(get_db)) -> dict[str, list[dict[str, str]]]:
+    """发公告时选频道用：所有上架的频道。"""
+    rows = session.execute(
+        select(Channel.id, Channel.name_hans).where(Channel.is_active.is_(True)).order_by(Channel.kind, Channel.name_hans).limit(200)
+    ).all()
+    return {"items": [{"channel_id": row.id, "name": row.name_hans} for row in rows]}
+
+
+class CertifiedBody(BaseModel):
+    certified: bool
+
+
+@guarded.post("/channels/{channel_id}/certified")
+def set_channel_certified(
+    channel_id: str,
+    body: CertifiedBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    channel = session.get(Channel, channel_id)
+    if channel is None:
+        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
+    if (channel.kind or "").startswith("official"):
+        raise APIError(409, "NO_CHANGE", "官方频道本来就带认证")
+    if channel.is_certified == body.certified:
+        raise APIError(409, "NO_CHANGE", "已经是这个状态")
+    channel.is_certified = body.certified
+    write_audit(session, admin.id, "admin.channel.certify" if body.certified else "admin.channel.uncertify", "channel", channel.id)
+    session.commit()
+    return {"channel_id": channel.id, "certified": channel.certified}
+
+
+class ChannelActiveBody(Reasoned):
     active: bool
 
 
@@ -435,7 +661,7 @@ def set_channel_active(
         raise APIError(409, "NO_CHANGE", "已经是这个状态")
     channel.is_active = body.active
     action = "admin.channel.activate" if body.active else "admin.channel.deactivate"
-    write_audit(session, admin.id, action, "channel", channel.id)
+    write_audit(session, admin.id, action, "channel", channel.id, body.note)
     session.commit()
     return {"channel_id": channel.id, "is_active": channel.is_active}
 
@@ -460,6 +686,7 @@ def list_audit(action: str = "", cursor: str = "", session: Session = Depends(ge
                 "actor_name": names.get(row.actor_id or "", ""),
                 "target_type": row.target_type,
                 "target_id": row.target_id,
+                "detail": row.detail or "",
                 "created_at": row.created_at,
             }
             for row in page

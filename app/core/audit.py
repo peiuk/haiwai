@@ -9,7 +9,8 @@ def write_audit(
     action: str,
     target_type: str | None = None,
     target_id: str | None = None,
+    detail: str | None = None,
 ) -> None:
     session.add(
-        AuditLog(actor_id=actor_id, action=action, target_type=target_type, target_id=target_id)
+        AuditLog(actor_id=actor_id, action=action, target_type=target_type, target_id=target_id, detail=detail)
     )

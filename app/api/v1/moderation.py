@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,7 @@ def _require_moderator(user: User) -> None:
 
 class DecisionBody(BaseModel):
     decision: str
+    note: str = Field(default="", max_length=300)  # 处理理由，记入审计日志
 
     @field_validator("decision")
     @classmethod
@@ -63,7 +64,7 @@ def decide(
     else:
         content.status = "rejected"
         drop_pushes(session, content.id)
-    write_audit(session, user.id, f"moderation.{body.decision}", "content", content.id)
+    write_audit(session, user.id, f"moderation.{body.decision}", "content", content.id, body.note.strip() or None)
     session.commit()
     return {"content_id": content.id, "status": content.status}
 
@@ -101,13 +102,14 @@ def decide_comment(
     else:
         comment.status = "rejected"
         comment.removed_at = utcnow()
-    write_audit(session, user.id, f"moderation.{body.decision}", "comment", comment.id)
+    write_audit(session, user.id, f"moderation.{body.decision}", "comment", comment.id, body.note.strip() or None)
     session.commit()
     return {"comment_id": comment.id, "status": comment.status}
 
 
 class CaseDecisionBody(BaseModel):
     decision: str
+    note: str = Field(default="", max_length=300)  # 处理理由，记入审计日志
 
     @field_validator("decision")
     @classmethod
@@ -140,10 +142,10 @@ def decide_case(
             comment.removed_at = now
             comment.status = "removed"
             outcome = "已删除"
-            write_audit(session, user.id, "moderation.remove", "comment", comment.id)
+            write_audit(session, user.id, "moderation.remove", "comment", comment.id, body.note.strip() or None)
         else:
             outcome = "未删除"
-            write_audit(session, user.id, "moderation.dismiss", "comment", comment.id)
+            write_audit(session, user.id, "moderation.dismiss", "comment", comment.id, body.note.strip() or None)
         if case.reporter_id is not None:
             session.add(
                 Notification(
@@ -161,10 +163,10 @@ def decide_case(
         if body.decision == "remove":
             channel.is_active = False
             outcome = "已下架"
-            write_audit(session, user.id, "moderation.remove", "channel", channel.id)
+            write_audit(session, user.id, "moderation.remove", "channel", channel.id, body.note.strip() or None)
         else:
             outcome = "未下架"
-            write_audit(session, user.id, "moderation.dismiss", "channel", channel.id)
+            write_audit(session, user.id, "moderation.dismiss", "channel", channel.id, body.note.strip() or None)
         if case.reporter_id is not None:
             session.add(
                 Notification(
@@ -182,10 +184,10 @@ def decide_case(
         if body.decision == "remove":
             reported.status = "suspended"
             outcome = "已限制"
-            write_audit(session, user.id, "moderation.remove", "user", reported.id)
+            write_audit(session, user.id, "moderation.remove", "user", reported.id, body.note.strip() or None)
         else:
             outcome = "未限制"
-            write_audit(session, user.id, "moderation.dismiss", "user", reported.id)
+            write_audit(session, user.id, "moderation.dismiss", "user", reported.id, body.note.strip() or None)
         if case.reporter_id is not None:
             session.add(
                 Notification(
@@ -204,10 +206,10 @@ def decide_case(
         content.deleted_at = now
         drop_pushes(session, content.id)
         outcome = "已下架"
-        write_audit(session, user.id, "moderation.remove", "content", content.id)
+        write_audit(session, user.id, "moderation.remove", "content", content.id, body.note.strip() or None)
     else:
         outcome = "未下架"
-        write_audit(session, user.id, "moderation.dismiss", "content", content.id)
+        write_audit(session, user.id, "moderation.dismiss", "content", content.id, body.note.strip() or None)
     if case.reporter_id is not None:
         session.add(
             Notification(
@@ -237,10 +239,10 @@ def decide_channel(
     if body.decision == "approve":
         channel.review_status = "approved"
         channel.is_active = True
-        write_audit(session, user.id, "channel.approve", "channel", channel.id)
+        write_audit(session, user.id, "channel.approve", "channel", channel.id, body.note.strip() or None)
     else:
         channel.review_status = "rejected"
         channel.is_active = False
-        write_audit(session, user.id, "channel.reject", "channel", channel.id)
+        write_audit(session, user.id, "channel.reject", "channel", channel.id, body.note.strip() or None)
     session.commit()
     return {"channel_id": channel.id, "review_status": channel.review_status}

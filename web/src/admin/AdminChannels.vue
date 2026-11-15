@@ -1,9 +1,8 @@
 <script setup lang="ts">
-// 频道 / 房间管理：搜索、上架 / 下架。
+// 频道 / 房间管理：搜索、认证、上架 / 下架。
 import { ref } from "vue";
-import { fmtRelativeTime } from "../utils/time";
 import AdminPager from "./AdminPager.vue";
-import { KIND_LABELS, STATUS_LABELS } from "./shared";
+import { KIND_LABELS, STATUS_LABELS, exact, when } from "./shared";
 import { useAdminList } from "./useAdminList";
 
 type Row = {
@@ -13,19 +12,35 @@ type Row = {
   kind: string;
   owner_name: string;
   is_active: boolean;
+  is_certified: boolean;
+  certified: boolean;
   review_status: string;
   subscriber_count: number;
   created_at: string;
 };
 
 const q = ref("");
-const { items, total, page, pageSize, loading, error, busy, load, search, go, act } = useAdminList<Row>(
+const { items, total, page, pageSize, loading, error, busy, load, search, go, act, ask } = useAdminList<Row>(
   "/api/v1/admin/channels",
   () => ({ q: q.value }),
 );
 
-function setActive(item: Row, active: boolean): Promise<void> {
-  return act(item.channel_id, `/api/v1/admin/channels/${item.channel_id}/active`, { active }, active ? "已上架" : "已下架");
+function deactivate(item: Row): Promise<void> {
+  return ask(
+    { title: `下架「${item.name}」？`, message: "下架后前台不再显示，成员和内容保留，可以重新上架。", confirmLabel: "下架", danger: true, reason: true },
+    item.channel_id,
+    `/api/v1/admin/channels/${item.channel_id}/active`,
+    (reason) => ({ active: false, reason }),
+    "已下架",
+  );
+}
+
+function activate(item: Row): Promise<void> {
+  return act(item.channel_id, `/api/v1/admin/channels/${item.channel_id}/active`, { active: true }, "已上架");
+}
+
+function certify(item: Row): Promise<void> {
+  return act(item.channel_id, `/api/v1/admin/channels/${item.channel_id}/certified`, { certified: !item.is_certified }, item.is_certified ? "已取消认证" : "已认证");
 }
 </script>
 
@@ -33,7 +48,7 @@ function setActive(item: Row, active: boolean): Promise<void> {
   <div>
     <header class="adm-head">
       <h1>频道 / 房间</h1>
-      <p>下架后前台不再显示，成员和内容保留，可以重新上架</p>
+      <p>官方频道自带认证；用户房间可以在这里加认证标记</p>
     </header>
 
     <form class="adm-filters" @submit.prevent="search">
@@ -57,6 +72,7 @@ function setActive(item: Row, active: boolean): Promise<void> {
             <tr v-for="item in items" :key="item.channel_id">
               <td>
                 <strong>{{ item.name }}</strong>
+                <span v-if="item.certified" class="tag tag--link">已认证</span>
                 <span class="adm-sub adm-mono">{{ item.code }}</span>
               </td>
               <td class="adm-nowrap">{{ KIND_LABELS[item.kind] ?? item.kind }}</td>
@@ -66,11 +82,13 @@ function setActive(item: Row, active: boolean): Promise<void> {
                 <span class="tag" :class="item.is_active ? 'tag--good' : 'tag--danger'">{{ item.is_active ? "已上架" : "已下架" }}</span>
                 <span v-if="item.review_status !== 'approved'" class="tag tag--warn">{{ STATUS_LABELS[item.review_status] ?? item.review_status }}</span>
               </td>
-              <td class="adm-nowrap">{{ fmtRelativeTime(item.created_at) }}</td>
+              <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
               <td>
                 <div class="adm-actions">
-                  <button v-if="item.is_active" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.channel_id" @click="setActive(item, false)">下架</button>
-                  <button v-else type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="setActive(item, true)">上架</button>
+                  <!-- 官方频道天然认证，不需要也不能改 -->
+                  <button v-if="!item.kind.startsWith('official')" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="certify(item)">{{ item.is_certified ? "取消认证" : "认证" }}</button>
+                  <button v-if="item.is_active" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.channel_id" @click="deactivate(item)">下架</button>
+                  <button v-else type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="activate(item)">上架</button>
                 </div>
               </td>
             </tr>

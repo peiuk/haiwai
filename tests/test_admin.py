@@ -1,7 +1,7 @@
 """管理后台：只有管理员能进，写操作都留审计。"""
 from sqlalchemy import select
 
-from app.models import AuditLog, Channel, Content, ModerationCase, RoomComment, User
+from app.models import AuditLog, Channel, ChannelItem, Content, ModerationCase, RoomComment, User
 
 CONSENTS = [
     {"purpose": "tos", "version": "2026-11-08", "granted": True},
@@ -64,6 +64,13 @@ def test_admin_endpoints_reject_non_admin(client):
         ("get", "/api/v1/admin/channels", None),
         ("get", "/api/v1/admin/comments", None),
         ("post", "/api/v1/admin/comments/x/status", {"action": "remove"}),
+        ("get", "/api/v1/admin/users/x", None),
+        ("get", "/api/v1/admin/contents/x", None),
+        ("get", "/api/v1/admin/channel-options", None),
+        ("post", "/api/v1/admin/users/x/admin", {"is_admin": True}),
+        ("post", "/api/v1/admin/contents/x/featured", {"featured": True}),
+        ("post", "/api/v1/admin/channels/x/certified", {"certified": True}),
+        ("post", "/api/v1/admin/announcements", {"title": "公告", "body": "内容内容", "channel_id": "x"}),
         ("get", "/api/v1/admin/audit", None),
         ("post", "/api/v1/admin/users/x/status", {"status": "suspended"}),
         ("post", "/api/v1/admin/contents/x/status", {"action": "remove"}),
@@ -97,6 +104,8 @@ def test_suspend_and_reactivate_user(client):
 
     assert client.post(url, headers=headers(boss), json={"status": "suspended"}).status_code == 200
     assert client.get("/api/v1/me", headers=headers(victim)).status_code == 401  # 旧 token 立刻失效
+    relogin = client.post("/api/v1/auth/login", json={"email": "victim@example.com", "password": "password-1"})
+    assert relogin.status_code == 403 and relogin.json()["code"] == "ACCOUNT_SUSPENDED"  # 也不能重新登录
     assert client.post(url, headers=headers(boss), json={"status": "suspended"}).status_code == 409
     assert client.post(url, headers=headers(boss), json={"status": "active"}).status_code == 200
     assert client.get("/api/v1/me", headers=headers(victim)).status_code == 200
@@ -239,3 +248,148 @@ def test_lists_paginate_and_filter_by_type(client):
     assert [row["title"] for row in other["items"]] == ["公告"]
     users = client.get("/api/v1/admin/users", headers=headers(boss)).json()
     assert users["total"] == 1 and users["items"][0]["post_count"] == 23
+
+
+def test_dev_sqlite_relaxes_stale_not_null(tmp_path):
+    """旧开发库的 moderation_case.content_id 必填，启动时要按模型重建，旧数据保留。"""
+    from sqlalchemy import create_engine, text
+
+    from app.core.db import _relax_stale_not_null
+    from app.models import Base
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE moderation_case"))
+        conn.execute(
+            text(
+                "CREATE TABLE moderation_case (id VARCHAR(36) PRIMARY KEY, content_id VARCHAR(36) NOT NULL,"
+                " reporter_id VARCHAR(36) NOT NULL, reason VARCHAR(32) NOT NULL, status VARCHAR(16) NOT NULL,"
+                " decision VARCHAR(24), created_at DATETIME NOT NULL, decided_at DATETIME, reported_user_id VARCHAR(36),"
+                " reported_channel_id VARCHAR(36), reported_comment_id VARCHAR(36), detail VARCHAR(300) NOT NULL DEFAULT '')"
+            )
+        )
+        conn.execute(text("INSERT INTO moderation_case (id, content_id, reporter_id, reason, status, created_at) VALUES ('c1', 'x', 'u', 'scam', 'open', '2026-11-15 00:00:00')"))
+    _relax_stale_not_null(engine)
+    with engine.begin() as conn:
+        notnull = {row[1]: row[3] for row in conn.execute(text("PRAGMA table_info(moderation_case)"))}
+        assert notnull["content_id"] == 0 and notnull["reporter_id"] == 0
+        assert conn.execute(text("SELECT id, reason FROM moderation_case")).all() == [("c1", "scam")]
+        conn.execute(text("INSERT INTO moderation_case (id, reported_user_id, reason, detail, status, created_at) VALUES ('c2', 'u2', 'scam', '', 'open', '2026-11-15 00:00:00')"))
+    engine.dispose()
+
+
+def test_reason_is_recorded_and_shown_in_detail(client):
+    boss = register(client, "boss@example.com", admin=True)
+    register(client, "author@example.com")
+    _, content_id = seed(client, "author@example.com")
+    author_id = user_id(client, "author@example.com")
+    with client.session_factory() as session:
+        session.add(ModerationCase(content_id=content_id, reason="scam", detail="假房源"))
+        session.commit()
+
+    client.post(f"/api/v1/admin/contents/{content_id}/status", headers=headers(boss), json={"action": "remove", "reason": "虚假房源"})
+    client.post(f"/api/v1/admin/users/{author_id}/status", headers=headers(boss), json={"status": "suspended", "reason": "多次发布虚假信息"})
+
+    content = client.get(f"/api/v1/admin/contents/{content_id}", headers=headers(boss)).json()
+    assert (content["title"], content["body"], content["status"], content["author_name"]) == ("后台测试帖", "正文", "deleted", "author")
+    assert (content["history"][0]["action"], content["history"][0]["actor_name"], content["history"][0]["detail"]) == (
+        "admin.content.remove",
+        "boss",
+        "虚假房源",
+    )
+    assert [case["detail"] for case in content["cases"]] == ["假房源"]
+
+    user = client.get(f"/api/v1/admin/users/{author_id}", headers=headers(boss)).json()
+    assert (user["email"], user["status"], user["post_count"]) == ("author@example.com", "suspended", 0)
+    assert [post["content_id"] for post in user["posts"]] == [content_id]
+    assert user["history"][0]["detail"] == "多次发布虚假信息"
+    audit = client.get("/api/v1/admin/audit?action=admin.user", headers=headers(boss)).json()["items"]
+    assert audit[0]["detail"] == "多次发布虚假信息"
+
+    # 处理举报时填的理由也要进日志
+    with client.session_factory() as session:
+        case_id = session.scalar(select(ModerationCase.id))
+    client.post(f"/api/v1/moderation/cases/{case_id}/decision", headers=headers(boss), json={"decision": "dismiss", "note": "已处理过"})
+    with client.session_factory() as session:
+        assert session.scalar(select(AuditLog.detail).where(AuditLog.action == "moderation.dismiss")) == "已处理过"
+
+
+def test_grant_and_revoke_admin(client):
+    boss = register(client, "boss@example.com", admin=True)
+    helper = register(client, "helper@example.com")
+    helper_id = user_id(client, "helper@example.com")
+    url = f"/api/v1/admin/users/{helper_id}/admin"
+
+    assert client.get("/api/v1/admin/stats", headers=headers(helper)).status_code == 403
+    assert client.post(url, headers=headers(boss), json={"is_admin": True}).status_code == 200
+    assert client.get("/api/v1/admin/stats", headers=headers(helper)).status_code == 200
+    assert client.post(url, headers=headers(boss), json={"is_admin": True}).status_code == 409
+    assert client.post(url, headers=headers(boss), json={"is_admin": False}).status_code == 200
+    assert client.get("/api/v1/admin/stats", headers=headers(helper)).status_code == 403  # 撤销后立刻失效
+    boss_id = user_id(client, "boss@example.com")
+    assert client.post(f"/api/v1/admin/users/{boss_id}/admin", headers=headers(boss), json={"is_admin": False}).status_code == 409  # 不能撤自己
+    assert audit_actions(client) == ["admin.user.grant", "admin.user.revoke"]
+
+
+def test_certify_feature_and_announce(client):
+    boss = register(client, "boss@example.com", admin=True)
+    channel_id, content_id = seed(client, "boss@example.com")
+    with client.session_factory() as session:
+        room = Channel(code="room-x", name_hans="用户房间", name_hant="用戶房間", kind="room", is_active=True, owner_id=user_id(client, "boss@example.com"))
+        session.add(room)
+        session.commit()
+        room_id = room.id
+
+    # 认证：官方频道天然认证，不能改；用户房间可以加 / 取消
+    assert client.post(f"/api/v1/admin/channels/{channel_id}/certified", headers=headers(boss), json={"certified": True}).status_code == 409
+    assert client.post(f"/api/v1/admin/channels/{room_id}/certified", headers=headers(boss), json={"certified": True}).status_code == 200
+    listed = client.get("/api/v1/admin/channels?q=room-x", headers=headers(boss)).json()["items"][0]
+    assert (listed["is_certified"], listed["certified"]) == (True, True)
+    with client.session_factory() as session:
+        assert session.get(Channel, room_id).certified is True and session.get(Channel, channel_id).certified is True
+
+    # 精选
+    url = f"/api/v1/admin/contents/{content_id}/featured"
+    assert client.post(url, headers=headers(boss), json={"featured": True}).status_code == 200
+    assert client.post(url, headers=headers(boss), json={"featured": True}).status_code == 409
+    assert client.get("/api/v1/admin/contents?q=后台", headers=headers(boss)).json()["items"][0]["featured"] is True
+    assert client.post(url, headers=headers(boss), json={"featured": False}).status_code == 200
+
+    # 公告
+    options = client.get("/api/v1/admin/channel-options", headers=headers(boss)).json()["items"]
+    assert {"channel_id": channel_id, "name": "后台测试"} in options
+    made = client.post("/api/v1/admin/announcements", headers=headers(boss), json={"title": "维护通知", "body": "今晚十点维护。", "channel_id": channel_id})
+    assert made.status_code == 200, made.text
+    public = client.get(f"/api/v1/contents/{made.json()['content_id']}").json()
+    assert (public["title"], public["status"]) == ("维护通知", "published")
+    missing = client.post("/api/v1/admin/announcements", headers=headers(boss), json={"title": "x", "body": "内容内容", "channel_id": "missing"})
+    assert missing.status_code == 404
+    assert audit_actions(client) == [
+        "admin.channel.certify",
+        "admin.content.feature",
+        "admin.content.unfeature",
+        "admin.announcement.create",
+    ]
+
+
+def test_featured_content_ranks_first_for_guests(client):
+    boss = register(client, "boss@example.com", admin=True)
+    boss_id = user_id(client, "boss@example.com")  # 测试库共用一个连接：别在下面的会话里再开会话
+    with client.session_factory() as session:
+        channel = Channel(code="uk-feat", name_hans="精选测试", name_hant="精選測試", kind="official_auto", is_active=True, region_code="GLOBAL")
+        session.add(channel)
+        session.flush()
+        ids = []
+        for index in range(3):
+            content = Content(type="post", status="published", title=f"普通 {index}", author_id=boss_id)
+            session.add(content)
+            session.flush()
+            session.add(ChannelItem(channel_id=channel.id, content_id=content.id))
+            ids.append(content.id)
+        session.commit()
+    picked = ids[0]
+    client.post(f"/api/v1/admin/contents/{picked}/featured", headers=headers(boss), json={"featured": True})
+    feed = client.get("/api/v1/me/feed?tab=foryou").json()["items"]
+    assert feed[0]["content_id"] == picked
+    assert (feed[0]["featured"], feed[0]["reason"]) == (True, "编辑精选")

@@ -58,9 +58,38 @@ def prepare_database() -> None:
     # 老的开发库按模型补齐缺的列（只加列，不改不删）；新库 create_all 已经完整。
     if engine.dialect.name == "sqlite":
         _ensure_remaining_columns(engine)
+        _relax_stale_not_null(engine)
     from app.seed import seed_if_empty
 
     seed_if_empty()
+
+
+def _relax_stale_not_null(engine: Engine) -> None:
+    """旧开发库里还是 NOT NULL、模型已改成可空的列：SQLite 改不了约束，只能按模型重建整张表。
+
+    例：moderation_case.content_id 旧库必填，导致举报用户 / 房间 / 留言时插入失败。
+    线上库由 alembic 迁移处理，不走这里。
+    """
+    with engine.begin() as conn:
+        tables = {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
+        for table_name, table in Base.metadata.tables.items():
+            if table_name not in tables:
+                continue
+            info = conn.execute(text(f'PRAGMA table_info("{table_name}")')).all()  # (cid, name, type, notnull, default, pk)
+            stale = [row[1] for row in info if row[3] and row[1] in table.columns and table.columns[row[1]].nullable]
+            if not stale:
+                continue
+            shared = [row[1] for row in info if row[1] in table.columns]
+            names = ", ".join(f'"{name}"' for name in shared)
+            rows = conn.execute(text(f'SELECT {names} FROM "{table_name}"')).all()
+            conn.execute(text(f'DROP TABLE "{table_name}"'))
+            table.create(conn)
+            if rows:
+                marks = ", ".join(f":{name}" for name in shared)
+                conn.execute(
+                    text(f'INSERT INTO "{table_name}" ({names}) VALUES ({marks})'),
+                    [dict(zip(shared, row)) for row in rows],
+                )
 
 
 def _sqlite_literal(value: object) -> str | None:

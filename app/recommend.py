@@ -14,6 +14,7 @@ _REASONS = {
     "region": "和你当前的国家一致",
     "activity": "这个频道最近有更新",
     "curated": "来自官方精选频道",
+    "featured": "编辑精选",
 }
 
 
@@ -124,17 +125,21 @@ def for_you(session: Session, user: User | None, limit: int | None = 12, order: 
         activity = min(recent.get(channel.id, 0), 5) / 5
         curated = 1.0 if channel.kind == "official_curated" else 0.0
         cooccur = together.get(channel.id, 0.0)
+        featured = item.content.featured_at is not None
+        if featured:
+            freshness = max(freshness, 0.5)  # 精选内容不随时间很快沉底
         parts = {
             "cooccur": 0.40 * cooccur,
             "region": 0.30 * region_match,
             "activity": 0.20 * activity,
             "curated": 0.10 * curated,
+            "featured": 0.50 if featured else 0.0,
         }
         reason_code = max(parts, key=parts.get)
         reason = _REASONS[reason_code]
         if user is None:
             # 游客没有「你的国家 / 你加入的频道」，理由只能说内容本身的情况。
-            reason_code = "activity" if activity >= curated else "curated"
+            reason_code = "featured" if featured else "activity" if activity >= curated else "curated"
             reason = _REASONS[reason_code] if parts[reason_code] > 0 else "最近发布的公开内容"
         penalty = 0.88 if channel.id in subscribed else 1.0
         score = sum(parts.values()) * freshness * penalty
@@ -154,6 +159,7 @@ def for_you(session: Session, user: User | None, limit: int | None = 12, order: 
             "is_joined": channel.id in subscribed,
             "reason_code": reason_code,
             "reason": reason,
+            "featured": featured,
             "added_at": item.added_at.isoformat(),
             **card_extras(item.content, None, authors.get(item.content.author_id or "", ("", ""))),
             "liked": flags.get(item.content_id, (False, False))[0],

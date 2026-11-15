@@ -55,9 +55,15 @@ class Channel(Base):
     review_status: Mapped[str] = mapped_column(String(16), default="approved")
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     is_private: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 后台给用户房间 / 频道加的认证；官方频道（kind 以 official 开头）天然认证，见 certified。
+    is_certified: Mapped[bool] = mapped_column(Boolean, default=False)
     category: Mapped[str | None] = mapped_column(String(16))
     subscriber_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    @property
+    def certified(self) -> bool:
+        return (self.kind or "").startswith("official") or bool(self.is_certified)
 
 
 class ChannelSubscription(Base):
@@ -119,6 +125,8 @@ class Content(Base):
     ai_status: Mapped[str] = mapped_column(String(16), default="pending")
     event_cluster_id: Mapped[str | None] = mapped_column(String(36))
     view_count: Mapped[int] = mapped_column(Integer, default=0)
+    # 后台设为精选的时间；为空表示不是精选。精选内容在「为你推荐」里加权。
+    featured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -381,4 +389,5 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(48))
     target_type: Mapped[str | None] = mapped_column(String(24))
     target_id: Mapped[str | None] = mapped_column(String(36))
+    detail: Mapped[str | None] = mapped_column(String(300))  # 操作理由 / 备注
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

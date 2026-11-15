@@ -1,4 +1,5 @@
-// 后台各页面共用的类型和中文标签。
+// 后台各页面共用的类型、中文标签和时间显示。
+import { fmtRelativeTime } from "../utils/time";
 
 export type AdminStats = {
   new_posts_today: number;
@@ -51,6 +52,17 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin.comment.restore": "恢复留言",
   "admin.channel.activate": "上架频道",
   "admin.channel.deactivate": "下架频道",
+  "admin.channel.certify": "认证频道",
+  "admin.channel.uncertify": "取消认证",
+  "admin.content.feature": "设为精选",
+  "admin.content.unfeature": "取消精选",
+  "admin.announcement.create": "发布公告",
+  "admin.user.grant": "设为管理员",
+  "admin.user.revoke": "撤销管理员",
+  "announcement.create": "发布公告",
+  "channel.report": "举报房间",
+  "user.report": "举报用户",
+  "comment.report": "举报留言",
   "moderation.approve": "审核通过",
   "moderation.reject": "审核拒绝",
   "moderation.remove": "举报成立并处理",
@@ -67,3 +79,31 @@ export function statusTone(status: string): string {
   if (status === "pending") return "tag--warn";
   return "tag--danger";
 }
+
+// 后端时间是 UTC；SQLite 下不带时区后缀，浏览器会当成本地时间，这里统一补上。
+function asUtc(iso: string): string {
+  return /(Z|[+-]\d\d:?\d\d)$/.test(iso) ? iso : `${iso}Z`;
+}
+
+/** 相对时间：刚刚 / 3 小时前。 */
+export function when(iso: string | null | undefined): string {
+  return iso ? fmtRelativeTime(asUtc(iso)) : "";
+}
+
+/** 具体时间（本地时区），放在 title 里，鼠标停上去能看到。 */
+export function exact(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(asUtc(iso));
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+export type CaseRow = {
+  case_id: string;
+  reason: string;
+  detail: string;
+  status: string;
+  decision: string;
+  reporter_name: string;
+  created_at: string;
+};
+export type HistoryRow = { action: string; actor_name: string; detail: string; created_at: string };

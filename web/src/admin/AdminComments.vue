@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // 留言管理：搜索、按状态筛选、删除 / 恢复。
 import { ref } from "vue";
-import { fmtRelativeTime } from "../utils/time";
+import { RouterLink } from "vue-router";
 import AdminPager from "./AdminPager.vue";
-import { STATUS_LABELS, statusTone } from "./shared";
+import { STATUS_LABELS, exact, statusTone, when } from "./shared";
 import { useAdminList } from "./useAdminList";
 
 type Row = {
@@ -13,18 +13,30 @@ type Row = {
   status: string;
   author_name: string;
   room_name: string;
+  content_id: string | null;
+  content_title: string;
   created_at: string;
 };
 
 const q = ref("");
 const status = ref("");
-const { items, total, page, pageSize, loading, error, busy, load, search, go, act } = useAdminList<Row>(
+const { items, total, page, pageSize, loading, error, busy, load, search, go, act, ask } = useAdminList<Row>(
   "/api/v1/admin/comments",
   () => ({ q: q.value, status: status.value }),
 );
 
-function setStatus(item: Row, action: "remove" | "restore"): Promise<void> {
-  return act(item.comment_id, `/api/v1/admin/comments/${item.comment_id}/status`, { action }, action === "remove" ? "已删除" : "已恢复");
+function remove(item: Row): Promise<void> {
+  return ask(
+    { title: "删除这条留言？", message: "删除后前台不再显示，之后可以恢复。", confirmLabel: "删除", danger: true, reason: true },
+    item.comment_id,
+    `/api/v1/admin/comments/${item.comment_id}/status`,
+    (reason) => ({ action: "remove", reason }),
+    "已删除",
+  );
+}
+
+function restore(item: Row): Promise<void> {
+  return act(item.comment_id, `/api/v1/admin/comments/${item.comment_id}/status`, { action: "restore" }, "已恢复");
 }
 </script>
 
@@ -57,7 +69,7 @@ function setStatus(item: Row, action: "remove" | "restore"): Promise<void> {
       <div v-else class="adm-scroll">
         <table class="adm-table">
           <thead>
-            <tr><th>留言</th><th>作者</th><th>所在房间</th><th>状态</th><th>时间</th><th></th></tr>
+            <tr><th>留言</th><th>作者</th><th>所在位置</th><th>状态</th><th>时间</th><th></th></tr>
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.comment_id">
@@ -66,13 +78,16 @@ function setStatus(item: Row, action: "remove" | "restore"): Promise<void> {
                 <span v-if="item.has_image && item.body" class="adm-sub">带图片</span>
               </td>
               <td class="adm-nowrap">{{ item.author_name || "—" }}</td>
-              <td class="adm-nowrap">{{ item.room_name || "—" }}</td>
+              <td>
+                {{ item.room_name || "—" }}
+                <RouterLink v-if="item.content_id && item.content_title" class="adm-sub" :to="`/admin/contents/${item.content_id}`">{{ item.content_title }}</RouterLink>
+              </td>
               <td><span class="tag" :class="statusTone(item.status)">{{ STATUS_LABELS[item.status] ?? item.status }}</span></td>
-              <td class="adm-nowrap">{{ fmtRelativeTime(item.created_at) }}</td>
+              <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
               <td>
                 <div class="adm-actions">
-                  <button v-if="item.status === 'removed'" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.comment_id" @click="setStatus(item, 'restore')">恢复</button>
-                  <button v-else-if="item.status !== 'rejected'" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.comment_id" @click="setStatus(item, 'remove')">删除</button>
+                  <button v-if="item.status === 'removed'" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.comment_id" @click="restore(item)">恢复</button>
+                  <button v-else-if="item.status !== 'rejected'" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.comment_id" @click="remove(item)">删除</button>
                 </div>
               </td>
             </tr>

@@ -4,6 +4,8 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import Toast from "../components/base/Toast.vue";
 import type { MeProfile } from "../api";
+import { useThemeStore } from "../stores/theme";
+import AdminConfirm from "./AdminConfirm.vue";
 import { ADMIN_CHANGED, ADMIN_SIGNED_OUT, adminLogout, adminRequest } from "./adminApi";
 import type { AdminStats } from "./shared";
 import "./admin.css";
@@ -24,6 +26,7 @@ const NAV: { to: string; label: string; badge?: Badge }[] = [
 
 const route = useRoute();
 const router = useRouter();
+const theme = useThemeStore();
 const name = ref("");
 const counts = ref<Record<Badge, number>>({ cases: 0, review: 0 });
 
@@ -80,6 +83,7 @@ onBeforeUnmount(() => {
     <div class="adm-body">
       <header class="adm-top">
         <span v-if="name" class="adm-who">{{ name }}</span>
+        <button type="button" class="btn btn--ghost btn--sm" @click="theme.toggleTheme()">切换深浅色</button>
         <a href="/" target="_blank" rel="noopener" class="btn btn--ghost btn--sm">打开前台</a>
         <button type="button" class="btn btn--outline btn--sm" @click="logout">退出</button>
       </header>
@@ -88,6 +92,7 @@ onBeforeUnmount(() => {
         <RouterView :key="route.path" />
       </main>
     </div>
+    <AdminConfirm />
     <Toast />
   </div>
 </template>

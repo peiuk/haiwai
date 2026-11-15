@@ -44,7 +44,7 @@
 
 .adm-pager { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--border); color: var(--muted); font-size: var(--fs-12); }
 
-.adm-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-5); }
+.adm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-5); }
 .adm-card { display: block; padding: var(--sp-4); background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-lg); color: var(--text); text-decoration: none; }
 a.adm-card:hover { border-color: var(--accent); text-decoration: none; }
 .adm-card span { color: var(--muted); font-size: var(--fs-12); }
@@ -80,3 +80,32 @@ a.adm-card:hover { border-color: var(--accent); text-decoration: none; }
   .adm-top { padding: 0 var(--sp-4); }
   .adm-main { padding: var(--sp-4); }
 }
+
+/* ---- 确认弹窗 ---- */
+.adm-overlay { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; padding: var(--sp-4); background: color-mix(in srgb, var(--scrim-base) 45%, transparent); }
+.adm-modal { width: 100%; max-width: 420px; padding: var(--sp-6); background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-xl); box-shadow: var(--shadow); color: var(--text); }
+.adm-modal h2 { font-size: var(--fs-17); font-weight: var(--fw-heavy); }
+.adm-modal > p { margin-top: var(--sp-2); color: var(--muted); font-size: var(--fs-13); line-height: var(--lh-body); }
+.adm-modal .field { margin-top: var(--sp-4); }
+.adm-modal-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-5); }
+
+/* ---- 详情页 ---- */
+.adm-back { display: inline-block; margin-bottom: var(--sp-3); color: var(--muted); font-size: var(--fs-13); }
+.adm-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.adm-detail-head h1 { margin-right: auto; font-size: var(--fs-21); font-weight: var(--fw-heavy); overflow-wrap: anywhere; }
+.adm-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--sp-3) var(--sp-5); margin: 0; padding: var(--sp-4); }
+.adm-facts dt { color: var(--muted); font-size: var(--fs-12); }
+.adm-facts dd { margin: 2px 0 0; font-size: var(--fs-14); overflow-wrap: anywhere; }
+.adm-prose { padding: var(--sp-4); font-size: var(--fs-14); line-height: var(--lh-loose); white-space: pre-wrap; overflow-wrap: anywhere; max-width: var(--measure); }
+.adm-images { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: 0 var(--sp-4) var(--sp-4); }
+.adm-images img { width: 180px; height: 180px; object-fit: cover; border: 1px solid var(--border); border-radius: var(--r-md); }
+
+/* ---- 表单（发公告） ---- */
+.adm-form { display: grid; gap: var(--sp-3); padding: var(--sp-4); max-width: 640px; }
+.adm-form-actions { display: flex; gap: var(--sp-2); }
+.adm-head .btn { margin-left: auto; }
+.adm-table .tag { margin-left: var(--sp-1); }
+.adm-table td:first-child .tag:first-child { margin-left: 0; margin-right: var(--sp-1); }
+
+/* 标签不换行，窄屏下由表格横向滚动 */
+.adm .tag { white-space: nowrap; }

@@ -3,6 +3,7 @@ import { ref, type Ref } from "vue";
 import { jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
 import { ADMIN_CHANGED, adminRequest } from "./adminApi";
+import { confirmAction, type ConfirmOptions } from "./confirm";
 import type { Paged } from "./shared";
 
 /** 写操作：同一时间只提交一个，成功后调用 after 刷新，并通知菜单更新待办数字。 */
@@ -25,7 +26,14 @@ export function useAdminAction(after: () => Promise<void>) {
     }
   }
 
-  return { busy, act };
+  /** 先弹确认框（可填理由），确认后再提交；body 用填写的理由生成。 */
+  async function ask(options: ConfirmOptions, key: string, path: string, body: (reason: string) => unknown, done: string): Promise<void> {
+    const reason = await confirmAction(options);
+    if (reason === null) return;
+    await act(key, path, body(reason), done);
+  }
+
+  return { busy, act, ask };
 }
 
 export function useAdminList<T>(path: string, filters: () => Record<string, string>) {
@@ -66,7 +74,7 @@ export function useAdminList<T>(path: string, filters: () => Record<string, stri
     void load();
   }
 
-  const { busy, act } = useAdminAction(load);
+  const { busy, act, ask } = useAdminAction(load);
   void load();
-  return { items, total, pageSize, page, loading, error, busy, load, search, go, act };
+  return { items, total, pageSize, page, loading, error, busy, load, search, go, act, ask };
 }

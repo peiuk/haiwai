@@ -176,7 +176,7 @@ def build_following_feed(session: Session, user_id: str) -> list[dict[str, objec
                 "channels": [],
                 "channel_id": item.channel_id,
                 "channel_name": item.channel.name_hans,
-                "channel_certified": (item.channel.kind or "").startswith("official_"),
+                "channel_certified": item.channel.certified,
                 "is_joined": True,
                 "source_name": item.content.source_name or "",
                 "licence_ref": item.content.licence_ref or "",

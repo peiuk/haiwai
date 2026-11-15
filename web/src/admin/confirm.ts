@@ -1,0 +1,33 @@
+// 后台的二次确认：页面调用 confirmAction()，由 AdminLayout 里唯一的 AdminConfirm 弹窗显示。
+import { reactive } from "vue";
+
+export type ConfirmOptions = {
+  title: string;
+  message?: string;
+  confirmLabel: string;
+  danger?: boolean;
+  /** 是否让管理员填理由（记入操作日志） */
+  reason?: boolean;
+};
+
+export const confirmState = reactive<{
+  open: boolean;
+  options: ConfirmOptions;
+  resolve: ((value: string | null) => void) | null;
+}>({ open: false, options: { title: "", confirmLabel: "确定" }, resolve: null });
+
+/** 弹出确认框；确认返回填写的理由（可能是空串），取消返回 null。 */
+export function confirmAction(options: ConfirmOptions): Promise<string | null> {
+  confirmState.resolve?.(null); // 上一个还没答就又弹了：按取消处理
+  return new Promise((resolve) => {
+    confirmState.options = options;
+    confirmState.resolve = resolve;
+    confirmState.open = true;
+  });
+}
+
+export function settleConfirm(value: string | null): void {
+  confirmState.open = false;
+  confirmState.resolve?.(value);
+  confirmState.resolve = null;
+}

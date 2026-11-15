@@ -292,6 +292,8 @@ def login(body: LoginBody, session: Session = Depends(get_db)) -> dict[str, str]
     user = session.scalar(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     if user is None or not verify_password(body.password, user.password_hash):
         raise APIError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")
+    if user.status != "active":  # 密码对了才告诉对方账号被限制，不泄露账号是否存在
+        raise APIError(403, "ACCOUNT_SUSPENDED", "这个账号已被限制，无法登录")
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
     tokens = issue_tokens(session, user.id)
