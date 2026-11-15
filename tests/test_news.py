@@ -101,6 +101,48 @@ def test_daily_news_drafts_wait_for_review(client):
     session.close()
 
 
+def test_openai_compatible_provider(monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("LLM_API_BASE", "https://llm.example.com/v1/")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "some-model")
+    get_settings.cache_clear()
+    sent = {}
+
+    class Reply:
+        def __init__(self, content: str):
+            self.content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": self.content}}]}
+
+    def fake_post(url, headers, json, timeout):
+        sent.update(url=url, auth=headers["Authorization"], model=json["model"], fmt=json["response_format"])
+        return Reply('{"items":[{"index":0,"title_zh":"签证费上调","summary_zh":"4月1日起。","relevant":true,"topic":"签证移民"}]}')
+
+    monkeypatch.setattr(news.httpx, "post", fake_post)
+    drafts = news.write_drafts(ITEMS[:1])
+    assert drafts[0].title_zh == "签证费上调" and drafts[0].topic == "签证移民"
+    assert sent == {
+        "url": "https://llm.example.com/v1/chat/completions",
+        "auth": "Bearer test-key",
+        "model": "some-model",
+        "fmt": {"type": "json_object"},
+    }
+    # 返回不是约定的 JSON：报不可用，不写半截数据
+    monkeypatch.setattr(news.httpx, "post", lambda url, headers, json, timeout: Reply("抱歉，我不能"))
+    try:
+        news.write_drafts(ITEMS[:1])
+        raise AssertionError("应当报 NewsUnavailable")
+    except news.NewsUnavailable:
+        pass
+    get_settings.cache_clear()
+
+
 def test_endpoint_needs_admin_and_key(client, monkeypatch):
     channels(client)
     monkeypatch.setattr(news, "fetch_govuk", lambda: ITEMS)

@@ -16,8 +16,11 @@ class Settings(BaseSettings):
     app_secret_key: str = DEFAULT_SECRET_KEY
     jwt_access_ttl_minutes: int = 15
     jwt_refresh_ttl_days: int = 7
-    llm_api_key: str = ""  # Anthropic API 密钥（每日 AI 资讯用）
-    news_model: str = "claude-opus-5-5"
+    # 每日 AI 资讯用的模型（PRD 附录同名变量）。LLM_API_BASE 留空用 Claude；
+    # 填了就走 OpenAI 兼容接口（OpenAI、DeepSeek、通义千问等，填到 /v1 为止），此时 LLM_MODEL 必填。
+    llm_api_base: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""  # 留空且用 Claude 时默认 claude-opus-5-5
     # 发帖、转发、建房间等是否要求先验证手机。测试期间可在 .env 里写 REQUIRE_PHONE_VERIFICATION=false 临时关掉。
     require_phone_verification: bool = True
     upload_dir: str = "data/uploads"

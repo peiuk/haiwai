@@ -81,15 +81,24 @@ def fetch_govuk(limit: int = MAX_ITEMS) -> list[dict[str, str]]:
     ]
 
 
+TOPICS = "、".join(Topic.__args__)
+JSON_SHAPE = (
+    '\n只输出一个 JSON 对象，不要任何其他文字，格式：{"items":[{"index":0,"title_zh":"…","summary_zh":"…",'
+    f'"relevant":true,"topic":"签证移民"}}]}}。每条输入都要有一项；topic 只能是：{TOPICS}。'
+)
+
+
 def write_drafts(items: list[dict[str, str]]) -> list[Draft]:
     settings = get_settings()
     if not settings.llm_api_key:
         raise NewsUnavailable("还没有配置 AI 密钥（.env 里的 LLM_API_KEY）")
     listing = "\n\n".join(f"[{i}] {item['title']}\n{item['description']}" for i, item in enumerate(items))
+    if settings.llm_api_base:
+        return _openai_compatible(settings, listing)
     client = anthropic.Anthropic(api_key=settings.llm_api_key)
     try:
         response = client.beta.messages.parse(
-            model=settings.news_model,
+            model=settings.llm_model or "claude-opus-5-5",
             max_tokens=16000,
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",  # 主模型拒答时由服务端换模型重试
@@ -102,6 +111,29 @@ def write_drafts(items: list[dict[str, str]]) -> list[Draft]:
     if response.stop_reason == "refusal" or response.parsed_output is None:
         raise NewsUnavailable("AI 没有给出结果")
     return response.parsed_output.items
+
+
+def _openai_compatible(settings, listing: str) -> list[Draft]:
+    """OpenAI 兼容的 /chat/completions。用 json_object 模式（各家兼容接口普遍支持），再按 Drafts 校验。"""
+    if not settings.llm_model:
+        raise NewsUnavailable("用 OpenAI 兼容接口时要在 .env 里填 LLM_MODEL")
+    try:
+        response = httpx.post(
+            f"{settings.llm_api_base.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+            json={
+                "model": settings.llm_model,
+                "messages": [{"role": "system", "content": SYSTEM + JSON_SHAPE}, {"role": "user", "content": listing}],
+                "response_format": {"type": "json_object"},
+            },
+            timeout=180,
+        )
+        response.raise_for_status()
+        return Drafts.model_validate_json(response.json()["choices"][0]["message"]["content"]).items
+    except httpx.HTTPError as err:
+        raise NewsUnavailable(f"AI 调用失败：{err}") from err
+    except (KeyError, IndexError, TypeError, ValueError) as err:  # 返回格式不对（含 JSON 校验失败）
+        raise NewsUnavailable(f"AI 返回的内容看不懂：{err}") from err
 
 
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
