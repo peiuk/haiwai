@@ -136,6 +136,10 @@ void load();
   border-bottom: 1px solid var(--border);
 }
 .ch-group h2 span { color: var(--muted); font-size: var(--fs-12); font-weight: 400; }
+.ch-group {
+  /* 按列表本身的宽度切列数（不看窗口宽度）：主栏够宽时一行两个，手机一行一个 */
+  container-type: inline-size;
+}
 .ch-list {
   list-style: none;
   margin: 0;
@@ -147,8 +151,13 @@ void load();
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: var(--sp-3);
+  padding: 10px var(--sp-3);
   border-bottom: 1px solid var(--border);
+}
+@container (min-width: 560px) {
+  .ch-list { grid-template-columns: 1fr 1fr; }
+  .ch-item { padding: var(--sp-3); }
+  .ch-item:nth-child(odd) { border-right: 1px solid var(--border); }
 }
 .ch-main {
   flex: 1;
