@@ -164,12 +164,13 @@ note(
   `缺 ${[...missingSource, ...notUsingPostCard].join(",") || "无"}`,
 );
 note(
-  "⑦ 合规：用户内容标 data-ugc、语言按钮标 data-no-hant、推荐有「为什么推荐」",
+  "⑦ 合规：用户内容标 data-ugc、语言按钮标 data-no-hant、推荐流有「为什么推荐」、发现页不做个性化推荐",
   ugcCount >= 20 &&
     /data-no-hant/.test(src("layouts/AppShell.vue")) &&
     /whyText/.test(postCardSrc) &&
-    /:why-text=/.test(src("views/DiscoverView.vue")) &&
-    /:why-text=/.test(src("components/home/RecommendTab.vue")),
+    /:why-text=/.test(src("components/home/RecommendTab.vue")) &&
+    // 发现页 = 按地区 / 分类浏览、不进画像（PRD §36.11）：不得出现推荐理由与「减少此类内容」
+    !/:why-text=|less-like/.test(src("views/DiscoverView.vue")),
   `${ugcCount} 处 UGC 标记`,
 );
 

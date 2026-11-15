@@ -464,6 +464,8 @@ export type DiscoverResponse = {
   categories: string[];
   /** 当前浏览国家（游客恒为 GLOBAL），用于渲染地区筛选 chip */
   region?: { code: string; name: string };
+  /** 下一页游标；没有更多时为空 */
+  next_cursor?: string | null;
 };
 
 export type LoginResponse = {

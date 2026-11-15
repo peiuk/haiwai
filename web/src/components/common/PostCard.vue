@@ -248,7 +248,14 @@ onBeforeUnmount(() => {
       <!-- card-head -->
       <div class="post-head">
         <div class="post-meta">
-          <span class="post-name" data-ugc>{{ displayChannel }}</span>
+          <!-- 频道名可点进频道（MASTER：每张卡带「进频道」入口）；没有频道时只显示文字 -->
+          <RouterLink
+            v-if="channelId"
+            class="post-name post-name--link"
+            :to="{ name: 'channel', params: { id: channelId } }"
+            data-ugc
+          >{{ displayChannel }}</RouterLink>
+          <span v-else class="post-name" data-ugc>{{ displayChannel }}</span>
           <BaseIcon
             v-if="certified"
             name="i-check"
@@ -472,6 +479,14 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.post-name--link {
+  color: inherit;
+  text-decoration: none;
+}
+.post-name--link:hover,
+.post-name--link:focus-visible {
+  text-decoration: underline;
 }
 .post-verified {
   color: var(--accent-ink);
