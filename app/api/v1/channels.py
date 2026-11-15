@@ -2,7 +2,7 @@ import json
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
@@ -563,6 +563,7 @@ class RoomEditBody(BaseModel):
     room_type: str | None = None
     name: str | None = None
     cover_key: str | None = None  # 房间封面图；传空字符串表示去掉封面
+    is_private: bool | None = None  # 私密 / 公开可以随时互相切换
 
     @field_validator("room_type")
     @classmethod
@@ -583,7 +584,7 @@ def update_room(
     body: RoomEditBody,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
-) -> dict[str, str]:
+) -> dict[str, object]:
     channel = _owner_channel(session, channel_id, user)
     if channel.kind != "room":
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
@@ -600,8 +601,24 @@ def update_room(
         if body.cover_key:
             _owned_media(session, user, body.cover_key, "image/", "图片")
         channel.cover_key = body.cover_key or None
+    if body.is_private is not None and body.is_private != channel.is_private:
+        channel.is_private = body.is_private
+        if body.is_private:
+            # 改成私密：已经推到频道里的帖子撤回，不然私密内容还挂在公开频道里
+            pushed = session.scalars(select(RoomPostPush.content_id).where(RoomPostPush.room_id == channel.id)).all()
+            for content_id in pushed:
+                drop_pushes(session, content_id)
+        else:
+            # 改成公开：任何人都能直接加入，待审的加入申请没用了
+            session.execute(delete(RoomJoinRequest).where(RoomJoinRequest.room_id == channel.id))
+        write_audit(session, user.id, "channel.private" if body.is_private else "channel.public", "channel", channel.id)
     session.commit()
-    return {"channel_id": channel.id, "room_type": channel.room_type, "name_hans": channel.name_hans}
+    return {
+        "channel_id": channel.id,
+        "room_type": channel.room_type,
+        "name_hans": channel.name_hans,
+        "is_private": channel.is_private,
+    }
 
 
 @router.put("/{channel_id}/collaborators/{member_id}")

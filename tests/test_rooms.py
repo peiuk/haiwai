@@ -516,6 +516,37 @@ def test_wrong_country_hides_room_and_author_sees_pending(client):
     assert blocked_comment.json()["code"] == "REGION_BLOCKED"
 
 
+def test_owner_switches_room_between_private_and_public(client):
+    parent_id = official_channel(client)
+    owner = register(client, "switch-owner@example.com")
+    verify(client, owner, "+447700900331")
+    outsider = register(client, "switch-out@example.com")
+    room_id = client.post("/api/v1/channels", headers=headers(owner), json={"name": "可切换", "parent_channel_id": parent_id}).json()["channel_id"]
+    client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"})
+    content_id = client.post(
+        f"/api/v1/channels/{room_id}/announcements", headers=headers(owner), json={"title": "公告", "body": "大家好"}
+    ).json()["content_id"]
+    assert client.post(f"/api/v1/channels/{room_id}/pushes/{content_id}", headers=headers(owner)).status_code == 200
+    assert client.get(f"/api/v1/channels/{parent_id}/items").json()["items"]
+
+    # 改成私密：推到频道的帖子撤回，外人看不到房间内容
+    switched = client.patch(f"/api/v1/channels/{room_id}", headers=headers(owner), json={"is_private": True})
+    assert switched.status_code == 200 and switched.json()["is_private"] is True
+    assert client.get(f"/api/v1/channels/{parent_id}/items").json()["items"] == []
+    assert client.get(f"/api/v1/channels/{room_id}/items", headers=headers(outsider)).status_code == 404
+    assert client.post(f"/api/v1/channels/{room_id}/join-requests", headers=headers(outsider)).status_code == 200
+
+    # 再改回公开：外人能看，待审的加入申请清掉
+    assert client.patch(f"/api/v1/channels/{room_id}", headers=headers(outsider), json={"is_private": False}).status_code in (403, 404)
+    assert client.patch(f"/api/v1/channels/{room_id}", headers=headers(owner), json={"is_private": False}).json()["is_private"] is False
+    assert client.get(f"/api/v1/channels/{room_id}/items", headers=headers(outsider)).status_code == 200
+    assert client.get(f"/api/v1/channels/{room_id}", headers=headers(owner)).json()["is_private"] is False
+    with client.session_factory() as session:
+        from app.models import RoomJoinRequest
+
+        assert session.scalar(select(RoomJoinRequest).where(RoomJoinRequest.room_id == room_id)) is None
+
+
 def test_parent_channel_lists_rooms_and_pushed_posts_name_the_room(client):
     parent_id = official_channel(client)
     owner = register(client, "rooms-owner@example.com")

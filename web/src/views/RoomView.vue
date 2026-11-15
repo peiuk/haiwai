@@ -15,6 +15,7 @@ import { useToastStore } from "../stores/toast";
 import BaseButton from "../components/base/BaseButton.vue";
 import TextField from "../components/base/TextField.vue";
 import SelectField from "../components/base/SelectField.vue";
+import Checkbox from "../components/base/Checkbox.vue";
 import BaseTag from "../components/base/BaseTag.vue";
 import ErrorState from "../components/base/ErrorState.vue";
 import ReportButton from "../components/common/ReportButton.vue";
@@ -144,6 +145,7 @@ const editing = ref(false);
 const editName = ref("");
 const editType = ref("general");
 const editCover = ref("");
+const editPrivate = ref(false);
 const saving = ref(false);
 
 function startEdit(): void {
@@ -151,6 +153,7 @@ function startEdit(): void {
   editName.value = detail.value.name_hans;
   editType.value = detail.value.room_type;
   editCover.value = detail.value.cover_key ?? "";
+  editPrivate.value = Boolean(detail.value.is_private);
   editing.value = true;
 }
 
@@ -164,7 +167,7 @@ async function saveEdit(): Promise<void> {
   try {
     // 只有剧集房间提交封面；空字符串表示去掉封面
     const cover = editType.value === "series" ? { cover_key: editCover.value } : {};
-    await request(`/api/v1/channels/${roomId}`, { ...jsonBody({ name, room_type: editType.value, ...cover }), method: "PATCH" });
+    await request(`/api/v1/channels/${roomId}`, { ...jsonBody({ name, room_type: editType.value, is_private: editPrivate.value, ...cover }), method: "PATCH" });
     editing.value = false;
     toast.show("房间已更新");
     onChanged();
@@ -229,6 +232,13 @@ onMounted(load);
         <form v-if="editing" class="room-edit" @submit.prevent="saveEdit">
           <TextField id="room-edit-name" v-model="editName" label="房间名" required />
           <SelectField id="room-edit-type" v-model="editType" label="类型" :options="[...ROOM_TYPES]" />
+          <Checkbox id="room-edit-private" v-model="editPrivate" label="私密房间（只有成员能看到房间内容，加入要经你同意）" />
+          <p v-if="detail.is_private && !editPrivate" class="room-meta" role="note">
+            改成公开后，房间里已有的帖子和讨论所有人都能看到，任何人都能直接加入；待审的加入申请会清掉。
+          </p>
+          <p v-else-if="!detail.is_private && editPrivate" class="room-meta" role="note">
+            改成私密后，只有现有成员能看到内容；已经推到频道里的帖子会撤回。
+          </p>
           <UploadField
             v-if="editType === 'series'"
             id="room-edit-cover"
