@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.feed import author_names, card_extras, content_titles, reaction_flags, repost_context
 from app.core.regions import is_open_region
-from app.models import ChannelItem, ChannelSubscription, Content, User, UserRegionPref
-from app.privacy import is_private_room_content
+from app.models import Channel, ChannelItem, ChannelSubscription, Content, User, UserRegionPref
+
+CANDIDATES = 500
 
 _REASONS = {
     "cooccur": "和你加入的频道常一起出现",
@@ -78,20 +79,32 @@ def for_you(session: Session, user: User | None, limit: int | None = 12, order: 
         session.scalars(select(ChannelSubscription.channel_id).where(ChannelSubscription.user_id == user_id)).all()
     ) if user_id else set()
     together = _cooccurrence(session, subscribed)
+    private_room_content = (
+        select(ChannelItem.content_id)
+        .join(Channel, Channel.id == ChannelItem.channel_id)
+        .where(Channel.kind == "room", Channel.is_private.is_(True))
+    )
+    regions = ("GLOBAL",) if region == "GLOBAL" else (region, "GLOBAL")
+    # 游客也能调用，所以过滤和取数都在数据库里做，每次只取最新的一批来打分。
+    # shortcut: 只看最新 500 条收录（72 小时后新鲜度已降到底），内容量大到这批不够分时再改成按天窗口 + 索引。
     rows = session.scalars(
         select(ChannelItem)
         .join(Content, Content.id == ChannelItem.content_id)
+        .join(Channel, Channel.id == ChannelItem.channel_id)
         .where(
             Content.status == "published",
             Content.deleted_at.is_(None),
-            Content.type != "listing",
-            Content.type != "embed",
-            Content.type != "repost",
+            Content.type.not_in(("listing", "embed", "repost")),
             ChannelItem.origin_room_id.is_(None),
+            Channel.kind != "room",
+            Channel.is_active.is_(True),
+            Channel.region_code.in_(regions),
+            ChannelItem.content_id.not_in(private_room_content),
         )
+        .order_by(ChannelItem.added_at.desc())
+        .limit(CANDIDATES)
         .options(joinedload(ChannelItem.channel), joinedload(ChannelItem.content))
     ).unique().all()
-    rows = [item for item in rows if not is_private_room_content(session, item.content)]
     now = datetime.now(timezone.utc)
     recent: dict[str, int] = {}
     for item in rows:
@@ -104,12 +117,6 @@ def for_you(session: Session, user: User | None, limit: int | None = 12, order: 
     best: dict[str, tuple[float, dict[str, object]]] = {}
     for item in rows:
         channel = item.channel
-        if channel.kind == "room" or not channel.is_active:
-            continue
-        if region == "GLOBAL" and channel.region_code != "GLOBAL":
-            continue
-        if region != "GLOBAL" and channel.region_code not in {region, "GLOBAL"}:
-            continue
         added = item.added_at if item.added_at.tzinfo else item.added_at.replace(tzinfo=timezone.utc)
         age_hours = max((now - added).total_seconds() / 3600, 0)
         freshness = max(0.05, 1 - age_hours / 72)

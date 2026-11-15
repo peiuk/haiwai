@@ -86,6 +86,16 @@ def test_guest_for_you_is_ranked_and_honest(client):
     assert {item["content_id"] for item in body["items"]} <= set(data["ids"])
     # 关注流仍然要登录
     assert client.get("/api/v1/me/feed").status_code == 401
+    # 同时挂在私密房间里的内容，游客的推荐里不能出现
+    session = client.session_factory()
+    room = Channel(code="secret-room", name_hans="私密", name_hant="私密", kind="room", region_code="GLOBAL", is_active=True, is_private=True)
+    session.add(room)
+    session.flush()
+    session.add(ChannelItem(channel_id=room.id, content_id=data["ids"][1]))
+    session.commit()
+    session.close()
+    everything = client.get("/api/v1/me/feed", params={"tab": "foryou", "limit": 50}).json()["items"]
+    assert {item["content_id"] for item in everything} == set(data["ids"]) - {data["ids"][1]}
 
 
 def test_listings_follow_category_filter(client):
