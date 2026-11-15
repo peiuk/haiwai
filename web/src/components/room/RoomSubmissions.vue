@@ -11,8 +11,6 @@ import TextArea from "../base/TextArea.vue";
 const props = defineProps<{
   roomId: string;
   canModerate: boolean;
-  /** 综合讨论房间的房主 / 协作者直接发帖（其他类型用 RoomManager 加条目） */
-  canPost?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -90,13 +88,6 @@ onMounted(() => {
 
 <template>
   <section class="room-submissions" :aria-label="canModerate ? '待审投稿' : '投稿'">
-    <!-- 房主/协作者：发帖走「发布内容」页（图片、视频、话题都有），预选这个房间 -->
-    <RouterLink
-      v-if="canModerate && canPost"
-      class="btn btn--primary sub-post"
-      :to="{ name: 'publish', query: { channel: roomId } }"
-    >发帖到房间（可带图片、视频）</RouterLink>
-
     <!-- 房主/协作者：待审队列 -->
     <template v-if="canModerate">
       <h2 class="sub-title">待审投稿</h2>
@@ -213,9 +204,6 @@ onMounted(() => {
 }
 .sub-form-actions {
   display: flex;
-}
-.sub-post {
-  justify-self: start;
 }
 @media (max-width: 480px) {
   .sub-row {
