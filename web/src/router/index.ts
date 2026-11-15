@@ -25,6 +25,8 @@ const routes: RouteRecordRaw[] = [
       { path: "legal/:section", name: "legal", meta: { title: "条款与政策" }, component: () => import("../views/LegalView.vue") },
     ],
   },
+  // 重置密码：用户打开管理员给的一次性链接
+  { path: "/reset-password", name: "reset-password", meta: { title: "重置密码" }, component: () => import("../views/ResetPasswordView.vue") },
   // 管理后台：独立登录页 + 独立外壳，登录状态和前台分开（见 admin/adminApi.ts）。
   { path: "/admin/login", name: "admin-login", meta: { title: "后台登录" }, component: () => import("../admin/AdminLogin.vue") },
   {

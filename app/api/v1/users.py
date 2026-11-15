@@ -82,6 +82,7 @@ def public_posts(user_id: str, session: Session = Depends(get_db)) -> dict[str, 
         select(Content)
         .where(Content.author_id == profile.id, Content.deleted_at.is_(None), Content.status == "published")
         .order_by(Content.created_at.desc())
+        .limit(50)  # shortcut: 主页只显示最近 50 条；要看更早的再加游标分页
     ).all()
     rows = [row for row in rows if can_view_content(session, row, None)]
     return {

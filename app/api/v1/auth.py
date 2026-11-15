@@ -6,8 +6,8 @@ from datetime import timezone
 
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, field_validator
-from sqlalchemy import select
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
@@ -27,7 +27,7 @@ from app.core.security import (
     refresh_expiry,
     verify_password,
 )
-from app.models import Channel, ChannelSubscription, ConsentRecord, RefreshSession, User, utcnow
+from app.models import Channel, ChannelSubscription, ConsentRecord, PasswordReset, RefreshSession, User, utcnow
 
 DEV_PHONE_CODE = "246810"
 
@@ -281,7 +281,11 @@ def verify_phone(
     session: Session = Depends(get_db),
 ) -> dict[str, bool]:
     throttle(f"phone:{user.id}", limit=5, window_seconds=15 * 60)
-    if get_settings().app_env != "dev" or not secrets.compare_digest(body.code, DEV_PHONE_CODE):
+    if get_settings().app_env != "dev":
+        # 还没接短信服务商：线上发不出验证码，任何验证码都不可能对。接入前请在 .env 里设
+        # REQUIRE_PHONE_VERIFICATION=false，否则没有人能发帖。
+        raise APIError(503, "SMS_UNAVAILABLE", "手机验证暂未开通")
+    if not secrets.compare_digest(body.code, DEV_PHONE_CODE):
         raise APIError(400, "INVALID_CODE", "验证码不正确")
     taken = session.scalar(select(User.id).where(User.phone == body.phone, User.id != user.id))
     if taken:
@@ -305,6 +309,30 @@ def login(body: LoginBody, session: Session = Depends(get_db)) -> dict[str, str]
     tokens = issue_tokens(session, user.id)
     session.commit()
     return tokens
+
+
+class ResetPasswordBody(BaseModel):
+    token: str
+    password: str = Field(min_length=8, max_length=200)
+
+
+@router.post("/reset-password")
+def reset_password(body: ResetPasswordBody, session: Session = Depends(get_db)) -> dict[str, bool]:
+    """用管理员生成的一次性链接设置新密码。成功后所有设备上的登录都失效，要用新密码重新登录。"""
+    digest = hash_refresh_token(body.token.strip())
+    throttle(f"reset:{digest[:16]}", limit=10, window_seconds=15 * 60)
+    row = session.scalar(select(PasswordReset).where(PasswordReset.token_hash == digest))
+    if row is None or row.used_at is not None or _aware_datetime(row.expires_at) < utcnow():
+        raise APIError(400, "INVALID_RESET_TOKEN", "这个重置链接已经失效，请重新获取")
+    user = session.get(User, row.user_id)
+    if user is None or user.deleted_at is not None:
+        raise APIError(400, "INVALID_RESET_TOKEN", "这个重置链接已经失效，请重新获取")
+    user.password_hash = hash_password(body.password)
+    row.used_at = utcnow()
+    session.execute(delete(RefreshSession).where(RefreshSession.user_id == user.id))
+    write_audit(session, user.id, "account.password_reset", "user", user.id)
+    session.commit()
+    return {"reset": True}
 
 
 class RefreshBody(BaseModel):

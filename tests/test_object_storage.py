@@ -19,7 +19,7 @@ class FakeS3:
     def put_object(self, Bucket, Key, Body, ContentType, CacheControl):
         if self.fail:
             raise ConnectionError("storage down")
-        self.objects[(Bucket, Key)] = (Body, ContentType)
+        self.objects[(Bucket, Key)] = (Body.read(), ContentType)  # Body 是打开的文件，流式上传
 
     def delete_object(self, Bucket, Key):
         self.objects.pop((Bucket, Key), None)
@@ -58,7 +58,7 @@ def test_upload_goes_to_object_storage_and_reads_redirect(client, s3, tmp_path, 
 
     assert client.put(f"/api/v1/uploads/{key}", headers=auth, content=b"\x89PNGdata").status_code == 200
     assert s3.objects == {("media", key): (b"\x89PNGdata", "image/png")}
-    assert list(tmp_path.iterdir()) == []  # 没有落到本地磁盘
+    assert list(tmp_path.iterdir()) == []  # 没有落到本地磁盘，临时文件也清掉了
 
     read = client.get(f"/api/v1/uploads/{key}", follow_redirects=False)
     assert read.status_code == 302
@@ -76,6 +76,7 @@ def test_storage_failure_is_not_reported_as_success(client, s3):
     with client.session_factory() as session:
         assert session.get(UploadObject, key).stored is False
     assert client.get(f"/api/v1/uploads/{key}", follow_redirects=False).status_code == 404
+    assert not list(uploads.upload_root().glob("*.part"))  # 失败后不留临时文件
     s3.fail = False  # 存储恢复后同一个名额可以重传
     assert client.put(f"/api/v1/uploads/{key}", headers=auth, content=b"\x89PNGdata").status_code == 200
 

@@ -22,6 +22,9 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
+    # 用户上传的图片 / 视频（没配对象存储时存在这里）。不挂卷的话重建容器就全丢了。
+    volumes:
+      - uploads:/srv/data/uploads
     restart: unless-stopped
   # 每天伦敦时间 8 点抓 GOV.UK 资讯、AI 写成中文稿进「待审核」。单独一个进程，api 的多个 worker 不会重复调用 AI。
   news:
@@ -39,3 +42,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

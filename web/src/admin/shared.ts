@@ -66,6 +66,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin.announcement.create": "发布公告",
   "admin.user.grant": "设为管理员",
   "admin.user.revoke": "撤销管理员",
+  "admin.user.reset_link": "生成重置密码链接",
+  "account.password_reset": "重置密码",
   "admin.news.fetch": "抓取 AI 资讯",
   "announcement.create": "发布公告",
   "channel.report": "举报房间",

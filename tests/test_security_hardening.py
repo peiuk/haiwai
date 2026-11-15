@@ -60,6 +60,9 @@ def test_outside_dev_only_admins_can_moderate(client, monkeypatch):
     outsider = register(client, "outsider-h@example.com")
     content_id = pending_post(client, author)
 
+    from app.api.v1.moderation import require_moderator
+
+    client.app.dependency_overrides.pop(require_moderator)  # 去掉测试用的放行，测真实权限
     monkeypatch.setenv("APP_ENV", "prod")
     get_settings.cache_clear()
     try:

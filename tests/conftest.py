@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.v1 import auth as auth_api  # noqa: E402
+from app.api.v1.moderation import require_moderator  # noqa: E402
 from app.core import security  # noqa: E402
 from app.core.config import Settings, get_settings  # noqa: E402
 
@@ -52,6 +53,9 @@ def client():
 
     app = create_app()
     app.dependency_overrides[get_db] = override_db
+    # 大多数用例只关心审核之后发生什么，不想每次先建管理员：这里让任何登录用户都能审。
+    # 权限本身由 test_admin.py / test_security_hardening.py 去掉这条替换后单独测。
+    app.dependency_overrides[require_moderator] = auth_api.current_user
     with TestClient(app) as test_client:
         test_client.session_factory = session_factory
         yield test_client

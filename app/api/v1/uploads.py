@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
@@ -73,17 +74,19 @@ def public_url(key: str) -> str:
     return f"{base.rstrip('/')}/{key}"
 
 
-def save_object(key: str, payload: bytes, content_type: str) -> None:
+def save_object(key: str, source: Path, content_type: str) -> None:
+    """把已经收完的临时文件 source 存成 key：本地磁盘直接改名，对象存储则流式上传。会阻塞，异步接口里要放到线程池跑。"""
     remote = _s3()
     if remote is None:
-        (upload_root() / key).write_bytes(payload)
+        source.replace(upload_root() / key)
         return
     client, bucket = remote
     try:
-        # key 随机生成且不可覆盖，内容永远不变，可以让浏览器和 CDN 长期缓存
-        client.put_object(
-            Bucket=bucket, Key=key, Body=payload, ContentType=content_type, CacheControl="public, max-age=31536000, immutable"
-        )
+        with source.open("rb") as body:
+            # key 随机生成且不可覆盖，内容永远不变，可以让浏览器和 CDN 长期缓存
+            client.put_object(
+                Bucket=bucket, Key=key, Body=body, ContentType=content_type, CacheControl="public, max-age=31536000, immutable"
+            )
     except Exception as exc:  # 存储服务器连不上、密钥不对等：让用户稍后再试，不能当成上传成功
         raise APIError(503, "STORAGE_UNAVAILABLE", "存储服务暂时不可用，请稍后再试") from exc
 
@@ -152,17 +155,22 @@ async def store_upload(
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > limit:
         raise too_big
-    chunks: list[bytes] = []
+    # 边收边写到临时文件，内存里只留一个数据块（100MB 的视频不再整个读进内存）。
+    temp = upload_root() / f"{key}.part"
     size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > limit:
+    try:
+        with temp.open("wb") as out:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > limit:
+                    raise too_big
+                out.write(chunk)
+        if size == 0:
             raise too_big
-        chunks.append(chunk)
-    payload = b"".join(chunks)
-    if not payload:
-        raise too_big
-    save_object(key, payload, row.content_type)
+        # 传到对象存储可能要几十秒：放到线程池，不然这个进程在此期间处理不了别的请求。
+        await run_in_threadpool(save_object, key, temp, row.content_type)
+    finally:
+        temp.unlink(missing_ok=True)  # 本地存储时已经改名走了；失败或走对象存储时清掉临时文件
     row.stored = True
     session.commit()
     return {"stored": True}

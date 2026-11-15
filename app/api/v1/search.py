@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import optional_user
 from app.core.db import get_db
+from app.core.regions import open_regions
 from app.feed import image_keys_of, reaction_flags
 from app.keywords import load_keywords
 from app.privacy import can_view_content
@@ -79,6 +80,7 @@ def search(
             Channel.is_active.is_(True),
             Channel.visibility == "public",
             Channel.is_private.is_(False),
+            Channel.region_code.in_(list(open_regions(session))),  # 后台关闭的国家，频道搜不到
             or_(Channel.kind != "room", has_published),
             or_(Channel.name_hans.like(pattern, escape="\\"), Channel.name_hant.like(pattern, escape="\\"), Channel.code.like(pattern, escape="\\")),
         )

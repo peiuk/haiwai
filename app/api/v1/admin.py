@@ -18,7 +18,7 @@ from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.regions import DEFAULT_REGIONS, open_regions
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
-from app.core.security import verify_password
+from app.core.security import hash_refresh_token, new_refresh_token, verify_password
 from app.feed import image_keys_of
 from app.models import (
     AuditLog,
@@ -33,6 +33,7 @@ from app.models import (
     ListingExt,
     ModerationCase,
     Notification,
+    PasswordReset,
     Region,
     RegionOpenRequest,
     RoomComment,
@@ -338,6 +339,29 @@ def user_detail(user_id: str, session: Session = Depends(get_db)) -> dict[str, o
     }
 
 
+RESET_LINK_HOURS = 24
+
+
+@guarded.post("/users/{user_id}/reset-link")
+def create_reset_link(
+    user_id: str,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    """给忘记密码的用户生成一次性的重置凭证（24 小时内有效）。凭证只在这次响应里出现一次，库里只存哈希。"""
+    target = session.get(User, user_id)
+    if target is None or target.deleted_at is not None:
+        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    # 之前没用掉的链接作废：同一时间只有最新的一个有效
+    session.execute(delete(PasswordReset).where(PasswordReset.user_id == target.id, PasswordReset.used_at.is_(None)))
+    token = new_refresh_token()
+    expires_at = utcnow() + timedelta(hours=RESET_LINK_HOURS)
+    session.add(PasswordReset(user_id=target.id, token_hash=hash_refresh_token(token), expires_at=expires_at))
+    write_audit(session, admin.id, "admin.user.reset_link", "user", target.id)
+    session.commit()
+    return {"token": token, "expires_at": expires_at, "hours": RESET_LINK_HOURS}
+
+
 class AdminFlagBody(Reasoned):
     is_admin: bool
 
@@ -519,13 +543,43 @@ def publish_announcement(
     return {"content_id": content.id, "status": content.status}
 
 
+def _release_uploads(session: Session, keys, content_id: str | None = None) -> list[str]:
+    """彻底删除内容 / 留言时处理它们的图片视频：没有别的内容在用的，删掉上传登记并返回这些 key。
+
+    文件本身要等数据库提交成功后再用 _delete_files 删（反过来的话，提交失败会留下图片打不开的帖子）。
+    content_id 是正在删除的那条内容，判断"别处是否在用"时不算它。
+    """
+    orphaned: list[str] = []
+    for key in set(keys) - {None, ""}:
+        users = select(Content.id).where(
+            (Content.image_key == key) | (Content.video_key == key) | Content.image_keys_json.contains(key)
+        )
+        if content_id is not None:  # 不能写成 id != None：SQL 里和 NULL 比较恒为假，会把在用的文件也当成没人用
+            users = users.where(Content.id != content_id)
+        if session.scalar(users.limit(1)) is None:
+            orphaned.append(key)
+            session.execute(delete(UploadObject).where(UploadObject.key == key))
+    return orphaned
+
+
+def _delete_files(keys: list[str]) -> int:
+    """删掉这些上传文件，返回没删成的个数（存储暂时不可用时：记录已删，文件留着没人引用，稍后可清理）。"""
+    left = 0
+    for key in keys:
+        try:
+            delete_object(key)
+        except APIError:
+            left += 1
+    return left
+
+
 @guarded.post("/contents/{content_id}/delete")
 def delete_content(
     content_id: str,
     body: Reasoned,
     admin: User = Depends(require_admin),
     session: Session = Depends(get_db),
-) -> dict[str, bool]:
+) -> dict[str, object]:
     """彻底删除一条内容，连同它的留言、点赞收藏、举报记录和图片视频文件；不能恢复。只想让它不显示请用下架。"""
     content = session.get(Content, content_id)
     if content is None:
@@ -533,18 +587,7 @@ def delete_content(
     comments = session.scalars(select(RoomComment).where(RoomComment.content_id == content.id)).all()
     # 图片 / 视频文件一并删掉（不删的话知道原链接的人还能打开）；别的内容还在用的文件不动
     keys = set(image_keys_of(content)) | {content.video_key} | {comment.image_key for comment in comments}
-    for key in keys - {None, ""}:
-        used_elsewhere = session.scalar(
-            select(Content.id)
-            .where(
-                Content.id != content.id,
-                (Content.image_key == key) | (Content.video_key == key) | Content.image_keys_json.contains(key),
-            )
-            .limit(1)
-        )
-        if used_elsewhere is None:
-            delete_object(key)
-            session.execute(delete(UploadObject).where(UploadObject.key == key))
+    orphaned = _release_uploads(session, keys, content.id)
     # 附属记录显式删（SQLite 开发库没开外键级联）
     comment_ids = [comment.id for comment in comments]
     session.execute(delete(CommentLike).where(CommentLike.comment_id.in_(comment_ids)))
@@ -556,7 +599,7 @@ def delete_content(
     write_audit(session, admin.id, "admin.content.delete", "content", content.id, detail[:300])
     session.delete(content)
     session.commit()
-    return {"deleted": True}
+    return {"deleted": True, "files_left": _delete_files(orphaned)}
 
 
 class TakedownBody(Reasoned):
@@ -582,7 +625,8 @@ def set_content_status(
     else:
         if content.status != "deleted" or not _was_taken_down(session, "content", content.id):
             raise APIError(409, "NO_CHANGE", "这条内容不是被管理员下架的，不能恢复")
-        content.status = "published"
+        # 待审时被下架的帖子恢复后仍是待审，不能借「下架再恢复」绕过审核
+        content.status = "published" if content.published_at is not None else "pending"
         content.deleted_at = None
     write_audit(session, admin.id, f"admin.content.{body.action}", "content", content.id, body.note)
     session.commit()
@@ -854,6 +898,7 @@ def delete_channel(
     comments = _count(session, RoomComment, RoomComment.room_id == channel.id)
     rooms = session.scalars(select(Channel).where(Channel.parent_channel_id == channel.id)).all()
     removed_posts = 0
+    orphaned: list[str] = []
     if items or comments or rooms:
         if not body.with_content:
             raise APIError(
@@ -880,6 +925,10 @@ def delete_channel(
                 drop_pushes(session, content.id)
                 removed_posts += 1
             session.delete(item)
+        # 留言带的图片：登记记录现在删，文件等提交后删（不删的话知道原链接的人还能打开）
+        doomed = session.execute(select(RoomComment.id, RoomComment.image_key).where(RoomComment.room_id == channel.id)).all()
+        orphaned = _release_uploads(session, [row.image_key for row in doomed])
+        session.execute(delete(CommentLike).where(CommentLike.comment_id.in_([row.id for row in doomed])))
         session.execute(delete(RoomComment).where(RoomComment.room_id == channel.id))
         session.execute(delete(RoomPostPush).where((RoomPostPush.room_id == channel.id) | (RoomPostPush.channel_id == channel.id)))
         for room in rooms:
@@ -906,7 +955,13 @@ def delete_channel(
     write_audit(session, admin.id, "admin.channel.delete", "channel", channel.id, detail[:300])
     session.delete(channel)
     session.commit()
-    return {"deleted": True, "removed_posts": removed_posts, "removed_comments": comments, "detached_rooms": len(rooms)}
+    return {
+        "deleted": True,
+        "removed_posts": removed_posts,
+        "removed_comments": comments,
+        "detached_rooms": len(rooms),
+        "files_left": _delete_files(orphaned),
+    }
 
 
 # ---- 国家开通 ----

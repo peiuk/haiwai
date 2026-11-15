@@ -11,6 +11,7 @@ from app.reports import ReportBody, report_receipt
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
+from app.core.regions import open_regions
 from app.models import (
     Channel,
     ChannelCollaborator,
@@ -61,6 +62,7 @@ def list_channels(
         Channel.is_active.is_(True),
         Channel.visibility == "public",
         Channel.is_private.is_(False),
+        Channel.region_code.in_(list(open_regions(session))),  # 后台关闭的国家，频道不再列出
         or_(Channel.kind != "room", has_published),
     )
     if region_code:

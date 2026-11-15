@@ -3,10 +3,9 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import current_user
+from app.api.v1.admin import require_admin
 from app.api.v1.room_social import mention_users
 from app.core.audit import write_audit
-from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.models import Channel, ChannelItem, Content, ModerationCase, Notification, RoomComment, User, UserFollow, utcnow
@@ -15,12 +14,9 @@ from app.rooms import drop_pushes, notify_room_update
 router = APIRouter(prefix="/moderation")
 
 
-def _require_moderator(user: User) -> None:
-    # 只有管理员能审（python -m app.make_admin 设置）；单元测试里任何登录用户都能审，免得每个用例都先提权。
-    settings = get_settings()
-    if user.is_admin or (settings.testing and settings.app_env == "dev"):
-        return
-    raise APIError(403, "FORBIDDEN", "需要管理员权限")
+def require_moderator(admin: User = Depends(require_admin)) -> User:
+    """审核权限就是管理员权限。单独成一个依赖，只是为了让测试能替换它（见 tests/conftest.py）。"""
+    return admin
 
 
 class DecisionBody(BaseModel):
@@ -39,10 +35,9 @@ class DecisionBody(BaseModel):
 def decide(
     content_id: str,
     body: DecisionBody,
-    user: User = Depends(current_user),
+    user: User = Depends(require_moderator),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    _require_moderator(user)
     content = session.get(Content, content_id)
     if content is None or content.deleted_at is not None:
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
@@ -73,10 +68,9 @@ def decide(
 def decide_comment(
     comment_id: str,
     body: DecisionBody,
-    user: User = Depends(current_user),
+    user: User = Depends(require_moderator),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    _require_moderator(user)
     comment = session.get(RoomComment, comment_id)
     if comment is None or comment.removed_at is not None:
         raise APIError(404, "COMMENT_NOT_FOUND", "留言不存在")
@@ -123,10 +117,9 @@ class CaseDecisionBody(BaseModel):
 def decide_case(
     case_id: str,
     body: CaseDecisionBody,
-    user: User = Depends(current_user),
+    user: User = Depends(require_moderator),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    _require_moderator(user)
     case = session.get(ModerationCase, case_id)
     if case is None or case.status != "open":
         raise APIError(404, "CASE_NOT_FOUND", "举报不存在")
@@ -182,6 +175,9 @@ def decide_case(
         if reported is None:
             raise APIError(404, "USER_NOT_FOUND", "用户不存在")
         if body.decision == "remove":
+            # 和后台「封禁用户」同一条规则：不能封管理员（包括自己），免得后台被锁死
+            if reported.is_admin:
+                raise APIError(409, "CANNOT_SUSPEND_ADMIN", "不能封禁管理员；要处理请先撤销对方的管理员权限")
             reported.status = "suspended"
             outcome = "已限制"
             write_audit(session, user.id, "moderation.remove", "user", reported.id, body.note.strip() or None)
@@ -227,10 +223,9 @@ def decide_case(
 def decide_channel(
     channel_id: str,
     body: DecisionBody,
-    user: User = Depends(current_user),
+    user: User = Depends(require_moderator),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
-    _require_moderator(user)
     channel = session.get(Channel, channel_id)
     if channel is None or channel.owner_id is None:
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")

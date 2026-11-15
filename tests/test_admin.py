@@ -14,6 +14,7 @@ from app.models import (
     RoomComment,
     UploadObject,
     User,
+    utcnow,
 )
 
 CONSENTS = [
@@ -48,7 +49,14 @@ def seed(client, author_email: str, status: str = "published") -> tuple[str, str
     """一个频道 + 一条帖子，返回 (channel_id, content_id)。"""
     with client.session_factory() as session:
         channel = Channel(code="uk-admin", name_hans="后台测试", name_hant="後台測試", kind="official_curated", is_active=True)
-        content = Content(type="post", status=status, title="后台测试帖", body="正文", author_id=user_id(client, author_email))
+        content = Content(
+            type="post",
+            status=status,
+            title="后台测试帖",
+            body="正文",
+            author_id=user_id(client, author_email),
+            published_at=utcnow() if status == "published" else None,  # 和真实发布路径一致：发布时一定带发布时间
+        )
         session.add_all([channel, content])
         session.commit()
         return channel.id, content.id
@@ -92,6 +100,7 @@ def test_admin_endpoints_reject_non_admin(client):
         ("patch", "/api/v1/admin/channels/x", {"name_hans": "改名", "region_code": "UK"}),
         ("post", "/api/v1/admin/channels/x/delete", {"reason": ""}),
         ("post", "/api/v1/admin/contents/x/delete", {"reason": ""}),
+        ("post", "/api/v1/admin/users/x/reset-link", None),
         ("get", "/api/v1/admin/audit", None),
         ("post", "/api/v1/admin/users/x/status", {"status": "suspended"}),
         ("post", "/api/v1/admin/contents/x/status", {"action": "remove"}),
@@ -457,6 +466,9 @@ def test_open_country_creates_its_channels_in_order(client):
     # 关闭后前台不再列出；重新开通不会多出频道
     assert client.post("/api/v1/admin/regions/US/open", headers=headers(boss), json={"open": False, "reason": "暂停运营"}).status_code == 200
     assert open_codes(client, boss) == ["UK", "GLOBAL"]
+    assert public_names(client, "US") == []  # 关闭后它的频道不再列出，也搜不到
+    assert [item for item in client.get("/api/v1/channels").json()["items"] if item["region_code"] == "US"] == []
+    assert client.get("/api/v1/search?q=美国资讯").json()["channels"] == []
     assert client.post("/api/v1/admin/regions/US/open", headers=headers(boss), json={"open": False}).status_code == 409
     assert client.post("/api/v1/admin/regions/US/open", headers=headers(boss), json={"open": True}).status_code == 200
     assert len(public_names(client, "US")) == 6
@@ -554,9 +566,15 @@ def test_delete_channel_only_when_empty(client):
     assert audit_actions(client) == ["admin.channel.delete"]  # 被拒绝的那次不记日志
 
 
-def test_delete_channel_with_its_content(client):
+def test_delete_channel_with_its_content(client, tmp_path, monkeypatch):
+    from app.api.v1 import uploads
+
+    monkeypatch.setattr(uploads, "upload_root", lambda: tmp_path)
     boss = register(client, "boss@example.com", admin=True)
     boss_id = user_id(client, "boss@example.com")
+    comment_image, post_image = "c" * 32, "d" * 32  # 一张只在留言里，一张留言和别的帖子都在用
+    for name in (comment_image, post_image):
+        (tmp_path / name).write_bytes(b"img")
     with client.session_factory() as session:
         doomed = Channel(code="uk-doomed", name_hans="要删的频道", name_hant="要刪的頻道", kind="official_curated", region_code="UK", is_active=True)
         other = Channel(code="uk-other", name_hans="别的频道", name_hant="別的頻道", kind="official_curated", region_code="UK", is_active=True)
@@ -564,7 +582,7 @@ def test_delete_channel_with_its_content(client):
         session.flush()
         room = Channel(code="room-kid", name_hans="下属房间", name_hant="下屬房間", kind="room", region_code="UK", is_active=True, owner_id=boss_id, parent_channel_id=doomed.id)
         only_here = Content(type="post", status="published", title="只在这个频道", author_id=boss_id)
-        shared = Content(type="post", status="published", title="两个频道都有", author_id=boss_id)
+        shared = Content(type="post", status="published", title="两个频道都有", author_id=boss_id, image_key=post_image)
         session.add_all([room, only_here, shared])
         session.flush()
         session.add_all(
@@ -572,7 +590,9 @@ def test_delete_channel_with_its_content(client):
                 ChannelItem(channel_id=doomed.id, content_id=only_here.id),
                 ChannelItem(channel_id=doomed.id, content_id=shared.id),
                 ChannelItem(channel_id=other.id, content_id=shared.id),
-                RoomComment(room_id=doomed.id, content_id=only_here.id, author_id=boss_id, body="一条留言", status="published"),
+                RoomComment(room_id=doomed.id, content_id=only_here.id, author_id=boss_id, body="一条留言", status="published", image_key=comment_image),
+                RoomComment(room_id=doomed.id, author_id=boss_id, body="", status="published", image_key=post_image),
+                UploadObject(key=comment_image, owner_id=boss_id, content_type="image/png", stored=True),
                 ModerationCase(reported_channel_id=doomed.id, reason="scam"),
             ]
         )
@@ -589,7 +609,10 @@ def test_delete_channel_with_its_content(client):
 
     done = client.post(url, headers=headers(boss), json={"with_content": True, "confirm_name": "要删的频道", "reason": "合并频道"})
     assert done.status_code == 200, done.text
-    assert done.json() == {"deleted": True, "removed_posts": 1, "removed_comments": 1, "detached_rooms": 1}
+    assert done.json() == {"deleted": True, "removed_posts": 1, "removed_comments": 2, "detached_rooms": 1, "files_left": 0}
+    assert not (tmp_path / comment_image).exists()  # 留言里的图片连文件一起删，原链接打不开了
+    assert (tmp_path / post_image).exists()  # 还有帖子在用的图片保留
+    assert client.get(f"/api/v1/uploads/{comment_image}").status_code == 404
 
     with client.session_factory() as session:
         assert session.get(Channel, doomed_id) is None
@@ -601,7 +624,7 @@ def test_delete_channel_with_its_content(client):
         assert kept is not None and kept.parent_channel_id is None and kept.is_active  # 下属房间保留，只解除归属
         assert session.scalar(select(ModerationCase.status).where(ModerationCase.reported_channel_id == doomed_id)) == "closed"
         detail = session.scalar(select(AuditLog.detail).where(AuditLog.action == "admin.channel.delete"))
-    assert detail == "要删的频道（uk-doomed），连同 1 条内容、1 条留言，解除 1 个房间的归属：合并频道"
+    assert detail == "要删的频道（uk-doomed），连同 1 条内容、2 条留言，解除 1 个房间的归属：合并频道"
     assert client.get(f"/api/v1/contents/{only_id}").status_code == 404
     assert client.get(f"/api/v1/contents/{shared_id}").status_code == 200
     assert client.get("/api/v1/admin/queue", headers=headers(boss)).json()["cases"] == []
@@ -648,3 +671,81 @@ def test_delete_content_permanently(client, tmp_path, monkeypatch):
     assert client.get(f"/api/v1/contents/{doomed_id}").status_code == 404
     assert client.get("/api/v1/admin/queue", headers=headers(boss)).json()["cases"] == []
     assert client.post(f"/api/v1/admin/contents/{doomed_id}/delete", headers=headers(boss), json={}).status_code == 404
+
+
+def test_moderation_needs_admin_and_cannot_suspend_admins(client):
+    from app.api.v1.moderation import require_moderator
+
+    client.app.dependency_overrides.pop(require_moderator)  # 去掉 conftest 里测试用的放行，测真实权限
+    boss = register(client, "boss@example.com", admin=True)
+    plain = register(client, "plain@example.com")
+    boss_id = user_id(client, "boss@example.com")
+    with client.session_factory() as session:
+        case = ModerationCase(reported_user_id=boss_id, reason="scam")
+        session.add(case)
+        session.commit()
+        case_id = case.id
+
+    for url in (
+        "/api/v1/moderation/x/decision",
+        "/api/v1/moderation/comments/x/decision",
+        "/api/v1/moderation/channels/x/decision",
+        f"/api/v1/moderation/cases/{case_id}/decision",
+    ):
+        assert client.post(url, headers=headers(plain), json={"decision": "approve"}).status_code == 403, url
+
+    # 管理员被举报：处理举报时不能把管理员（包括自己）封掉
+    refused = client.post(f"/api/v1/moderation/cases/{case_id}/decision", headers=headers(boss), json={"decision": "remove"})
+    assert refused.status_code == 409 and refused.json()["code"] == "CANNOT_SUSPEND_ADMIN"
+    assert client.get("/api/v1/me", headers=headers(boss)).status_code == 200
+    with client.session_factory() as session:
+        assert session.get(ModerationCase, case_id).status == "open"  # 被拒绝的处理不结案
+    assert client.post(f"/api/v1/moderation/cases/{case_id}/decision", headers=headers(boss), json={"decision": "dismiss"}).status_code == 200
+
+
+def test_restoring_a_pending_post_keeps_it_pending(client):
+    boss = register(client, "boss@example.com", admin=True)
+    register(client, "author@example.com")
+    _, content_id = seed(client, "author@example.com", status="pending")
+    url = f"/api/v1/admin/contents/{content_id}/status"
+    assert client.post(url, headers=headers(boss), json={"action": "remove"}).status_code == 200
+    assert client.post(url, headers=headers(boss), json={"action": "restore"}).json()["status"] == "pending"
+    assert client.get(f"/api/v1/contents/{content_id}").status_code == 404  # 没审过的内容不会因为下架再恢复而公开
+
+
+def test_user_page_lists_at_most_fifty_posts(client):
+    register(client, "author@example.com")
+    author_id = user_id(client, "author@example.com")
+    with client.session_factory() as session:
+        for index in range(55):
+            session.add(Content(type="post", status="published", title=f"帖子 {index}", author_id=author_id))
+        session.commit()
+    assert len(client.get(f"/api/v1/users/{author_id}/posts").json()["items"]) == 50
+
+
+def test_admin_reset_link_lets_user_set_a_new_password(client):
+    boss = register(client, "boss@example.com", admin=True)
+    old_token = register(client, "forgot@example.com")
+    target_id = user_id(client, "forgot@example.com")
+    login = lambda password: client.post("/api/v1/auth/login", json={"email": "forgot@example.com", "password": password})
+    refresh = login("password-1").json()["refresh_token"]
+
+    first = client.post(f"/api/v1/admin/users/{target_id}/reset-link", headers=headers(boss)).json()
+    second = client.post(f"/api/v1/admin/users/{target_id}/reset-link", headers=headers(boss)).json()
+    assert first["token"] != second["token"] and second["hours"] == 24
+    reset = lambda token, password: client.post("/api/v1/auth/reset-password", json={"token": token, "password": password})
+
+    assert reset(first["token"], "brand-new-pass").status_code == 400  # 新链接生成后旧链接作废
+    assert reset("not-a-token", "brand-new-pass").status_code == 400
+    assert reset(second["token"], "short").status_code == 422  # 新密码至少 8 位
+    assert reset(second["token"], "brand-new-pass").status_code == 200
+    assert reset(second["token"], "another-pass-1").status_code == 400  # 只能用一次
+
+    assert login("password-1").status_code == 401
+    assert login("brand-new-pass").status_code == 200
+    # 其他设备上的登录全部失效：旧的续期令牌不能再用
+    assert client.post("/api/v1/auth/refresh", json={"refresh_token": refresh}).status_code == 401
+    assert old_token  # 旧 access token 最多再活 15 分钟（JWT 无法撤销），到期后续不上
+    with client.session_factory() as session:
+        stored = session.scalars(select(AuditLog.action).where(AuditLog.target_id == target_id).order_by(AuditLog.created_at)).all()
+    assert "admin.user.reset_link" in stored and "account.password_reset" in stored

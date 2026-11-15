@@ -6,7 +6,9 @@ import { jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
 import { confirmAction } from "./confirm";
 import { adminRequest } from "./adminApi";
-import { ACTION_LABELS, STATUS_LABELS, TYPE_LABELS, exact, statusTone, when, type CaseRow, type HistoryRow } from "./shared";
+import AdminCaseTable from "./AdminCaseTable.vue";
+import AdminHistoryTable from "./AdminHistoryTable.vue";
+import { STATUS_LABELS, TYPE_LABELS, exact, statusTone, when, type CaseRow, type HistoryRow } from "./shared";
 import { useAdminAction } from "./useAdminList";
 
 type Detail = {
@@ -141,41 +143,8 @@ function feature(): Promise<void> {
         <p v-if="detail.has_video" class="adm-empty">这条内容带视频，请在前台查看。</p>
       </section>
 
-      <section class="adm-panel">
-        <h2>举报记录（{{ detail.cases.length }}）</h2>
-        <p v-if="!detail.cases.length" class="adm-empty">没有人举报过这条内容。</p>
-        <div v-else class="adm-scroll">
-          <table class="adm-table">
-            <thead><tr><th>理由</th><th>举报人</th><th>处理结果</th><th>时间</th></tr></thead>
-            <tbody>
-              <tr v-for="item in detail.cases" :key="item.case_id">
-                <td class="adm-wide">{{ item.reason }}<span v-if="item.detail" class="adm-sub">{{ item.detail }}</span></td>
-                <td class="adm-nowrap">{{ item.reporter_name || "游客" }}</td>
-                <td class="adm-nowrap">{{ item.status === "open" ? "未处理" : item.decision === "remove" ? "已下架" : "已驳回" }}</td>
-                <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="adm-panel">
-        <h2>处理记录</h2>
-        <p v-if="!detail.history.length" class="adm-empty">还没有人处理过这条内容。</p>
-        <div v-else class="adm-scroll">
-          <table class="adm-table">
-            <thead><tr><th>动作</th><th>操作人</th><th>理由</th><th>时间</th></tr></thead>
-            <tbody>
-              <tr v-for="(item, index) in detail.history" :key="index">
-                <td class="adm-nowrap">{{ ACTION_LABELS[item.action] ?? item.action }}</td>
-                <td class="adm-nowrap">{{ item.actor_name || "系统 / 游客" }}</td>
-                <td class="adm-wide">{{ item.detail || "—" }}</td>
-                <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <AdminCaseTable title="举报记录" :cases="detail.cases" empty="没有人举报过这条内容。" removed-label="已下架" />
+      <AdminHistoryTable :history="detail.history" empty="还没有人处理过这条内容。" />
     </template>
   </div>
 </template>
