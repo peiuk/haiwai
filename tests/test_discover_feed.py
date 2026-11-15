@@ -1,0 +1,117 @@
+"""发现页内容流：同一内容挂多个频道只出现一次；游标翻页不重复不遗漏；分类信息跟随筛选。"""
+from datetime import datetime, timedelta, timezone
+
+from app.models import Channel, ChannelItem, Content
+
+CONSENTS = [
+    {"purpose": "tos", "version": "2026-11-08", "granted": True},
+    {"purpose": "privacy", "version": "2026-11-08", "granted": True},
+]
+
+
+def headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def global_channel(session, code: str, category: str) -> str:
+    channel = Channel(code=code, name_hans=code, name_hant=code, kind="official_curated", category=category, region_code="GLOBAL", is_active=True)
+    session.add(channel)
+    session.flush()
+    return channel.id
+
+
+def seed(client) -> dict[str, object]:
+    """两个国际频道；c0 同时挂在两个频道里（重复收录），c0–c4 按时间从新到旧。"""
+    session = client.session_factory()
+    life = global_channel(session, "g-life", "生活")
+    housing = global_channel(session, "g-housing", "房产")
+    now = datetime.now(timezone.utc)
+    ids = []
+    for index in range(5):
+        content = Content(
+            type="news",
+            status="published",
+            title=f"内容{index}",
+            summary="摘要",
+            source_name="测试",
+            licence_ref="OGL v3.0",
+            canonical_url=f"https://example.com/news/{index}",
+            published_at=now,
+        )
+        session.add(content)
+        session.flush()
+        ids.append(content.id)
+        session.add(ChannelItem(channel_id=life, content_id=content.id, added_at=now - timedelta(minutes=index)))
+    session.add(ChannelItem(channel_id=housing, content_id=ids[0], added_at=now - timedelta(minutes=30)))
+    session.commit()
+    session.close()
+    return {"ids": ids, "housing": housing}
+
+
+def test_same_content_in_two_channels_appears_once(client):
+    data = seed(client)
+    items = client.get("/api/v1/discover/items").json()["items"]
+    content_ids = [item["content_id"] for item in items]
+    assert sorted(content_ids) == sorted(data["ids"])
+    assert len(content_ids) == len(set(content_ids))
+    # 取的是最新那次收录（生活频道），不是较早的房产频道
+    first = next(item for item in items if item["content_id"] == data["ids"][0])
+    assert first["channel_name"] == "g-life"
+    # 只看房产时，这条内容以房产频道的收录出现
+    housing_only = client.get("/api/v1/discover/items", params={"category": "房产"}).json()["items"]
+    assert [item["content_id"] for item in housing_only] == [data["ids"][0]]
+
+
+def test_cursor_pages_cover_everything_once_in_order(client):
+    data = seed(client)
+    seen: list[str] = []
+    cursor = None
+    for _ in range(10):
+        params = {"limit": 2, **({"cursor": cursor} if cursor else {})}
+        body = client.get("/api/v1/discover/items", params=params).json()
+        seen += [item["content_id"] for item in body["items"]]
+        cursor = body.get("next_cursor")
+        if not cursor:
+            break
+    assert seen == data["ids"]  # 从新到旧，每条一次
+    assert client.get("/api/v1/discover/items", params={"cursor": "not-a-cursor"}).status_code == 200
+
+
+def test_listings_follow_category_filter(client):
+    token = client.post(
+        "/api/v1/auth/register",
+        json={"email": "lister-d@example.com", "password": "password-1", "display_name": "房东", "consents": CONSENTS},
+    ).json()["access_token"]
+    client.post("/api/v1/auth/verify-phone", headers=headers(token), json={"phone": "+447700900611", "code": "246810"})
+    session = client.session_factory()
+    housing = global_channel(session, "g-housing-l", "房产")
+    global_channel(session, "g-jobs-l", "招聘")
+    session.commit()
+    session.close()
+    created = client.post(
+        "/api/v1/listings",
+        headers=headers(token),
+        json={
+            "channel_id": housing,
+            "title": "一居出租",
+            "body": "整租一居，可看房",
+            "category": "房产",
+            "kind": "rent",
+            "area": "伦敦",
+            "price_amount": "1500",
+            "price_unit": "月",
+            "contact": "sms: 1",
+            "attrs": {},
+        },
+    )
+    assert created.status_code == 200, created.text
+    content_id = created.json()["content_id"]
+    client.post(f"/api/v1/moderation/{content_id}/decision", headers=headers(token), json={"decision": "approve"})
+
+    def titles(**params):
+        return [item["title"] for item in client.get("/api/v1/discover/listings", params=params).json()["items"]]
+
+    assert titles() == ["一居出租"]
+    assert titles(category="房产") == ["一居出租"]
+    assert titles(category="招聘") == []  # 原来会照样显示房源
+    assert titles(region="GLOBAL") == ["一居出租"]

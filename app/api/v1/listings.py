@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.auth import current_user, optional_user
@@ -12,6 +12,7 @@ from app.api.v1.uploads import owned_upload
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
+from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.core.regions import region_name
 from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, image_keys_of, reaction_flags, repost_context
 from app.keywords import clean_city_topic, dump_keywords, resolve_keywords
@@ -359,35 +360,44 @@ def _owned_listing(session: Session, content_id: str, user: User) -> tuple[Conte
 
 @router.get("/discover/listings")
 def discover_listings(
+    category: str | None = None,
+    region_filter: str | None = Query(default=None, alias="region"),
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, list[dict[str, object]]]:
     region = effective_region(session, user) if user else "GLOBAL"
-    rows = session.scalars(
-        select(Content)
+    # 跟发现页内容流用同一组筛选：选了「招聘」就不该还冒出房源。新发布的排前面。
+    query = (
+        select(Content, Channel, ListingExt)
         .join(ListingExt, ListingExt.content_id == Content.id)
+        .join(ChannelItem, and_(ChannelItem.content_id == Content.id, ChannelItem.origin_room_id.is_(None)))
+        .join(Channel, Channel.id == ChannelItem.channel_id)
         .where(
             Content.type == "listing",
             Content.status == "published",
             Content.deleted_at.is_(None),
             ListingExt.closed_reason.is_(None),
+            Channel.region_code.in_(("GLOBAL", region)),  # 与 _visible 相同
         )
-    ).all()
+        .order_by(Content.created_at.desc())
+    )
+    if category:
+        query = query.where(Channel.category == category)
+    wanted_region = (region_filter or "").upper()
+    if wanted_region:
+        query = query.where(Channel.region_code == wanted_region)
     items: list[dict[str, object]] = []
+    seen: set[str] = set()
     now = utcnow()
-    for content in rows:
+    for content, channel, ext in session.execute(query).all():
+        if content.id in seen:
+            continue
         expires = content.expires_at
         if expires is not None and expires.tzinfo is None:
             expires = expires.replace(tzinfo=now.tzinfo)
         if expires is not None and expires < now:
             continue
-        item = session.scalar(select(ChannelItem).where(ChannelItem.content_id == content.id, ChannelItem.origin_room_id.is_(None)))
-        if item is None:
-            continue
-        channel = session.get(Channel, item.channel_id)
-        ext = session.get(ListingExt, content.id)
-        if channel is None or ext is None or not _visible(channel, region):
-            continue
+        seen.add(content.id)
         card = _public_listing(content, ext, channel)
         card.update(_author_card(session, content))
         items.append(card)
@@ -401,6 +411,7 @@ def discover_items(
     category: str | None = None,
     region_filter: str | None = Query(default=None, alias="region"),
     limit: int = 20,
+    cursor: str | None = None,
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
@@ -435,16 +446,40 @@ def discover_items(
         filtered_where.append(Channel.category == category)
     if wanted_region:
         filtered_where.append(Channel.region_code == wanted_region)
-    updated_count = session.scalar(
-        scoped(func.count()).where(*filtered_where, ChannelItem.added_at >= utcnow() - timedelta(days=7))
-    ) or 0
-    page = session.scalars(
-        scoped(ChannelItem)
+    # 同一条内容可能挂在多个频道：按内容去重，每条取它在筛选范围内最新的那次收录；
+    # 按 (最新收录时间, 内容 id) 做游标分页，翻页不重复、不遗漏。
+    latest = func.max(ChannelItem.added_at).label("latest")
+    grouped = (
+        scoped(ChannelItem.content_id.label("content_id"), latest)
         .where(*filtered_where)
+        .group_by(ChannelItem.content_id)
+        .subquery()
+    )
+    updated_count = session.scalar(
+        select(func.count()).select_from(grouped).where(grouped.c.latest >= utcnow() - timedelta(days=7))
+    ) or 0
+    ordered = select(grouped.c.content_id, grouped.c.latest).order_by(grouped.c.latest.desc(), grouped.c.content_id.desc())
+    parts = decode_cursor(cursor) if cursor else None
+    after_at = parse_added_at(parts[0]) if parts and len(parts) == 2 else None
+    if parts and after_at is not None:
+        ordered = ordered.where(
+            or_(grouped.c.latest < after_at, and_(grouped.c.latest == after_at, grouped.c.content_id < parts[1]))
+        )
+    rows = session.execute(ordered.limit(bounded + 1)).all()
+    next_cursor = (
+        encode_cursor(rows[bounded - 1].latest.isoformat(), rows[bounded - 1].content_id) if len(rows) > bounded else None
+    )
+    ids = [row.content_id for row in rows[:bounded]]
+    newest: dict[str, ChannelItem] = {}
+    for candidate in session.scalars(
+        scoped(ChannelItem)
+        .where(*filtered_where, ChannelItem.content_id.in_(ids))
         .options(joinedload(ChannelItem.channel), joinedload(ChannelItem.content))
-        .order_by(ChannelItem.added_at.desc())
-        .limit(bounded)
-    ).unique().all()
+    ).unique().all():
+        kept = newest.get(candidate.content_id)
+        if kept is None or candidate.added_at > kept.added_at:
+            newest[candidate.content_id] = candidate
+    page = [newest[content_id] for content_id in ids if content_id in newest]
     joined: set[str] = set()
     if user is not None:
         joined = set(
@@ -485,6 +520,7 @@ def discover_items(
         "categories": categories,
         # 当前浏览国家，供前端渲染「全部地区 / 国际 / 当前国家」筛选 chip。
         "region": {"code": region, "name": region_name(region)},
+        "next_cursor": next_cursor,
     }
 
 
