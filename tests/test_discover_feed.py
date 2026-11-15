@@ -136,3 +136,15 @@ def test_listings_follow_category_filter(client):
     assert titles(category="房产") == ["一居出租"]
     assert titles(category="招聘") == []  # 原来会照样显示房源
     assert titles(region="GLOBAL") == ["一居出租"]
+
+    # 分类信息和频道动态合在一个内容流里，带上卡片字段；过期后不再出现
+    def feed():
+        return client.get("/api/v1/discover/items", params={"category": "房产"}).json()["items"]
+
+    assert [item["content_id"] for item in feed()] == [content_id]
+    assert feed()[0]["listing"]["price_amount"] == "1500"
+    session = client.session_factory()
+    session.get(Content, content_id).expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+    session.commit()
+    session.close()
+    assert feed() == []

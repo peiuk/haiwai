@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // 发现页：按地区 / 分类浏览各频道的近期内容（PRD §36.11：不根据浏览记录推荐，不进画像）。
-// 结构：筛选 chip → （窄屏）热门话题 → 分类信息分区（≤4、不含过期）→ 频道新动态（去重、按时间、滚动加载）。
+// 结构：一行筛选（地区下拉 + 分类横滑 + 「全部分类」展开）→（窄屏）热门话题 → 一个内容流
+//（频道动态和分类信息混排，去重、按时间、滚动加载；分类信息用 ListingCard，不含过期 / 已结案）。
 // 合规：每张资讯卡来源名 / 许可徽章 / 原文回链必显（§7.1）；卡片频道名可点进频道。
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useToastStore } from "../stores/toast";
 import { useAuthStore } from "../stores/auth";
@@ -14,7 +15,6 @@ import {
   type DiscoverItem,
   type DiscoverResponse,
   type ListingCardItem,
-  type ListingsResponse,
   type RecommendedChannel,
   type RecommendedResponse,
   type TrendingKeywordsResponse,
@@ -25,6 +25,10 @@ import ContentDetail from "../components/ContentDetail.vue";
 import EmptyState from "../components/base/EmptyState.vue";
 import ErrorState from "../components/base/ErrorState.vue";
 import InfiniteSentinel from "../components/common/InfiniteSentinel.vue";
+import BaseIcon from "../components/base/BaseIcon.vue";
+
+// 内容流里的分类信息带一份卡片数据，用 ListingCard 渲染
+type FeedItem = DiscoverItem & { listing?: ListingCardItem | null };
 
 const PAGE = 20;
 // 推荐频道插在第几条帖子之后
@@ -37,8 +41,10 @@ const auth = useAuthStore();
 const loginPrompt = useLoginPromptStore();
 const activeContentId = ref<string | null>(null);
 
-const listings = ref<ListingCardItem[]>([]);
-const items = ref<DiscoverItem[]>([]);
+const items = ref<FeedItem[]>([]);
+// 「全部分类」展开面板：分类再多，筛选栏也只占一行
+const catsOpen = ref(false);
+const chipScroll = ref<HTMLElement | null>(null);
 const categories = ref<string[]>([]);
 const updatedCount = ref(0);
 const cursor = ref<string | null>(null);
@@ -72,16 +78,17 @@ try {
 }
 
 const hasFilter = computed(() => !!activeCategory.value || !!activeRegion.value);
-const scopeLabel = computed(() => {
-  if (activeRegion.value === "GLOBAL") return "国际";
-  if (activeRegion.value) return region.value.name;
-  return region.value.code === "GLOBAL" ? "国际" : `国际 + ${region.value.name}`;
-});
-// 「查看全部」：选了分类时去该分类的频道（分类信息都挂在同一个频道下时才给入口）
-const listingChannel = computed(() => {
-  const ids = new Set(listings.value.map((item) => item.channel_id));
-  return activeCategory.value && ids.size === 1 ? listings.value[0] : null;
-});
+
+// 选中的分类滚到看得见的位置（从「全部分类」里选的可能在横滑行的屏幕外）
+function revealActiveChip(): void {
+  void nextTick(() => {
+    const active = chipScroll.value?.querySelector<HTMLElement>(".filter-chip.active");
+    const row = chipScroll.value;
+    if (!active || !row) return;
+    const offset = active.getBoundingClientRect().left - row.getBoundingClientRect().left;
+    row.scrollLeft += offset - (row.clientWidth - active.offsetWidth) / 2;
+  });
+}
 
 function filterQuery(): string {
   const query = new URLSearchParams();
@@ -92,18 +99,14 @@ function filterQuery(): string {
 
 async function load(): Promise<void> {
   // 首次加载显示「加载中」；之后（换筛选、登录后刷新）保留旧列表，只把它变淡，页面不跳。
-  loading.value = items.value.length === 0 && listings.value.length === 0;
+  loading.value = items.value.length === 0;
   refreshing.value = !loading.value;
   error.value = "";
   pageError.value = false;
   const qs = filterQuery();
   try {
-    const [listingBody, discoverBody] = await Promise.all([
-      request<ListingsResponse>(`/api/v1/discover/listings${qs ? `?${qs}` : ""}`),
-      request<DiscoverResponse>(`/api/v1/discover/items?limit=${PAGE}${qs ? `&${qs}` : ""}`),
-    ]);
+    const discoverBody = await request<DiscoverResponse>(`/api/v1/discover/items?limit=${PAGE}${qs ? `&${qs}` : ""}`);
     if (qs !== filterQuery()) return; // 期间又换了筛选，丢弃过期结果
-    listings.value = listingBody.items;
     items.value = discoverBody.items;
     categories.value = discoverBody.categories;
     updatedCount.value = discoverBody.updated_count;
@@ -116,6 +119,7 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false;
     refreshing.value = false;
+    revealActiveChip();
   }
 }
 
@@ -151,6 +155,7 @@ function applyFilters(): void {
 
 function selectCategory(category: string): void {
   activeCategory.value = category;
+  catsOpen.value = false;
   applyFilters();
 }
 
@@ -216,23 +221,21 @@ watch(
     <ErrorState v-else-if="error" :message="error" retry-label="重试" @retry="load" />
 
     <template v-else>
-      <!-- DiscoverChipRow（MASTER §22.11）：一行横滑，先地区 chip，竖线分隔，再分类 chip -->
-      <div class="chip-row" role="toolbar" aria-label="按地区和分类筛选">
-        <div class="chip-group" role="group" aria-label="按地区筛选">
-          <button type="button" class="filter-chip" :class="{ active: activeRegion === '' }" :aria-pressed="activeRegion === ''" @click="selectRegion('')">全部地区</button>
-          <button type="button" class="filter-chip" :class="{ active: activeRegion === 'GLOBAL' }" :aria-pressed="activeRegion === 'GLOBAL'" @click="selectRegion('GLOBAL')">国际</button>
-          <button
-            v-if="region.code !== 'GLOBAL'"
-            type="button"
-            class="filter-chip"
-            :class="{ active: activeRegion === region.code }"
-            :aria-pressed="activeRegion === region.code"
-            @click="selectRegion(region.code)"
-          >{{ region.name }}</button>
-        </div>
-        <span v-if="categories.length > 0" class="chip-divider" aria-hidden="true"></span>
-        <div v-if="categories.length > 0" class="chip-group" role="group" aria-label="按分类筛选">
-          <button type="button" class="filter-chip" :class="{ active: activeCategory === '' }" :aria-pressed="activeCategory === ''" @click="selectCategory('')">全部分类</button>
+      <!-- 筛选栏（MASTER §22.11）：永远一行。地区收成一个下拉；分类横滑；末尾「全部分类」展开完整列表 -->
+      <div class="filter-bar">
+        <label class="sr-only" for="discover-region">按地区筛选</label>
+        <select
+          id="discover-region"
+          class="region-select"
+          :value="activeRegion"
+          @change="selectRegion(($event.target as HTMLSelectElement).value)"
+        >
+          <option value="">全部地区</option>
+          <option value="GLOBAL">国际</option>
+          <option v-if="region.code !== 'GLOBAL'" :value="region.code">{{ region.name }}</option>
+        </select>
+        <div v-if="categories.length > 0" ref="chipScroll" class="chip-scroll" role="group" aria-label="按分类筛选">
+          <button type="button" class="filter-chip" :class="{ active: activeCategory === '' }" :aria-pressed="activeCategory === ''" @click="selectCategory('')">全部</button>
           <button
             v-for="category in categories"
             :key="category"
@@ -243,10 +246,34 @@ watch(
             @click="selectCategory(category)"
           >{{ category }}</button>
         </div>
+        <button
+          v-if="categories.length > 0"
+          type="button"
+          class="filter-chip filter-more"
+          :class="{ active: catsOpen }"
+          aria-label="全部分类"
+          aria-controls="discover-all-cats"
+          :aria-expanded="catsOpen"
+          @click="catsOpen = !catsOpen"
+        >
+          <BaseIcon name="i-grid" :size="18" />
+        </button>
+      </div>
+      <div v-if="catsOpen" id="discover-all-cats" class="cat-panel" role="group" aria-label="全部分类" @keydown.esc="catsOpen = false">
+        <button type="button" class="filter-chip" :class="{ active: activeCategory === '' }" :aria-pressed="activeCategory === ''" @click="selectCategory('')">全部</button>
+        <button
+          v-for="category in categories"
+          :key="category"
+          type="button"
+          class="filter-chip"
+          :class="{ active: activeCategory === category }"
+          :aria-pressed="activeCategory === category"
+          @click="selectCategory(category)"
+        >{{ category }}</button>
       </div>
 
       <div v-if="showIntro" class="discover-intro" role="note">
-        <span>这里按时间汇集各频道的近期内容，可以用上面的地区和分类筛选。</span>
+        <span>这里按时间汇集各频道的动态和分类信息，可以用上面的地区和分类筛选。</span>
         <button type="button" class="intro-close" aria-label="关闭说明，不再显示" @click="showIntro = false">知道了</button>
       </div>
 
@@ -259,28 +286,10 @@ watch(
       </section>
 
       <div :class="{ 'is-refreshing': refreshing }" :aria-busy="refreshing">
-        <!-- 分类信息：单独分区，最多 4 条、不含过期，跟随上面的筛选（MASTER §22.7） -->
-        <section v-if="listings.length" class="listing-block" aria-labelledby="discover-listings-title">
-          <header class="block-head">
-            <h2 id="discover-listings-title" class="block-title">分类信息 · {{ scopeLabel }}</h2>
-            <RouterLink
-              v-if="listingChannel"
-              class="block-more"
-              :to="{ name: 'channel', params: { id: listingChannel.channel_id } }"
-            >查看全部</RouterLink>
-          </header>
-          <ul class="listing-list">
-            <li v-for="listing in listings" :key="listing.content_id" class="listing-item">
-              <ListingCard :item="listing" />
-            </li>
-          </ul>
-        </section>
-
+        <!-- 只有一个列表：频道动态和分类信息按时间混排（分类信息用 ListingCard，价格 / 地区一眼可见） -->
         <section class="feed-block" aria-labelledby="discover-feed-title">
-          <header class="block-head block-head--feed">
-            <h2 id="discover-feed-title" class="block-title">频道新动态</h2>
-            <p class="block-meta">按时间排序 · 近 7 天 {{ updatedCount }} 条更新 · 不根据浏览记录推荐</p>
-          </header>
+          <h2 id="discover-feed-title" class="sr-only">最新动态和分类信息</h2>
+          <p class="block-meta">按时间排序 · 近 7 天 {{ updatedCount }} 条更新 · 不根据浏览记录推荐</p>
 
           <EmptyState
             v-if="!items.length"
@@ -291,9 +300,11 @@ watch(
 
           <ul v-else class="content-list">
             <template v-for="(item, index) in items" :key="item.content_id">
-              <li class="content-card">
+              <li class="content-card" :class="{ 'content-card--listing': item.listing }">
+                <ListingCard v-if="item.listing" :item="item.listing" />
                 <!-- 发现页不做个性化推荐：不传推荐理由，也就没有「减少此类内容」 -->
                 <PostCard
+                  v-else
                   :content-id="item.content_id"
                   :title="item.title"
                   :summary="item.summary"
@@ -390,8 +401,29 @@ watch(
   font-weight: var(--fw-bold);
   cursor: pointer;
 }
-/* 一行横滑，绝不撑出页面宽度；隐藏滚动条 */
-.chip-row,
+/* 筛选栏永远一行：地区下拉（固定）+ 分类横滑（占满剩余宽度）+ 「全部分类」按钮（固定） */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.region-select {
+  flex: none;
+  min-height: 44px;
+  max-width: 132px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+/* 横滑行，绝不撑出页面宽度；隐藏滚动条；右边缘渐隐提示还能往右滑 */
+.chip-scroll,
 .topic-row {
   display: flex;
   align-items: center;
@@ -400,20 +432,32 @@ watch(
   white-space: nowrap;
   scrollbar-width: none;
 }
-.chip-row::-webkit-scrollbar,
+.chip-scroll {
+  flex: 1;
+  min-width: 0;
+  padding-right: var(--sp-5);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+.chip-scroll::-webkit-scrollbar,
 .topic-row::-webkit-scrollbar {
   display: none;
 }
-.chip-group {
-  display: flex;
-  gap: var(--sp-2);
-  flex: none;
+.filter-more {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
 }
-.chip-divider {
-  flex: none;
-  width: 1px;
-  height: 24px;
-  background: var(--line);
+/* 「全部分类」：就地展开、自动换行，分类再多也都看得到 */
+.cat-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface2);
 }
 .filter-chip,
 .topic-chip {
@@ -444,21 +488,9 @@ watch(
 
 /* 分区标题 */
 .topics-block,
-.listing-block,
 .feed-block {
   display: grid;
   gap: var(--sp-2);
-}
-.block-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-.block-head--feed {
-  display: grid;
-  gap: 2px;
-  margin-top: var(--sp-2);
 }
 .block-title {
   margin: 0;
@@ -470,27 +502,18 @@ watch(
   color: var(--muted);
   font-size: var(--fs-12);
 }
-.block-more {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--accent-ink);
-  font-size: var(--fs-13);
-  font-weight: var(--fw-semibold);
-}
-
-.listing-list,
 .content-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.listing-list {
-  display: grid;
-  gap: var(--sp-2);
-}
 .content-card {
   display: block;
+}
+/* 分类信息卡自带边框，和上下的帖子卡留出间距 */
+.content-card--listing {
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 /* 推荐频道（窄屏插在内容流里） */

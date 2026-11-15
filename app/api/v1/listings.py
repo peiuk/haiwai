@@ -421,7 +421,15 @@ def discover_items(
     visible_where = [
         Content.status == "published",
         Content.deleted_at.is_(None),
-        Content.type.not_in(("listing", "embed", "repost")),
+        Content.type.not_in(("embed", "repost")),
+        # 分类信息和频道动态合在一个列表里：只收没过期、没结案的。
+        or_(
+            Content.type != "listing",
+            and_(
+                Content.expires_at > utcnow(),
+                Content.id.not_in(select(ListingExt.content_id).where(ListingExt.closed_reason.is_not(None))),
+            ),
+        ),
         ChannelItem.origin_room_id.is_(None),
         Channel.kind != "room",
         Channel.is_active.is_(True),
@@ -490,12 +498,20 @@ def discover_items(
     user_id = user.id if user else None
     flags = reaction_flags(session, user_id, [item.content_id for item in page])
     _, reposted_ids = repost_context(session, user_id, [item.content for item in page])
+    listing_ids = [item.content_id for item in page if item.content.type == "listing"]
+    exts = {
+        row.content_id: row
+        for row in session.scalars(select(ListingExt).where(ListingExt.content_id.in_(listing_ids))).all()
+    } if listing_ids else {}
     items: list[dict[str, object]] = []
     for item in page:
         channel = item.channel
         content = item.content
+        ext = exts.get(content.id)
         items.append(
             {
+                # 分类信息带上卡片所需的全部字段（价格、地区、到期等），前端用分类信息卡渲染。
+                "listing": {**_public_listing(content, ext, channel), **_author_card(session, content)} if ext else None,
                 "content_id": content.id,
                 "title": content.title,
                 "summary": content.summary,
