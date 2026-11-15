@@ -1,7 +1,7 @@
 """管理后台：只有管理员能进，写操作都留审计。"""
 from sqlalchemy import select
 
-from app.models import AuditLog, Channel, Content, ModerationCase, User
+from app.models import AuditLog, Channel, Content, ModerationCase, RoomComment, User
 
 CONSENTS = [
     {"purpose": "tos", "version": "2026-11-08", "granted": True},
@@ -44,7 +44,7 @@ def seed(client, author_email: str, status: str = "published") -> tuple[str, str
 def audit_actions(client) -> list[str]:
     with client.session_factory() as session:
         rows = session.scalars(select(AuditLog.action).order_by(AuditLog.created_at))
-        return [row for row in rows if not row.startswith("account.")]  # 注册本身也记审计，这里只看后台动作
+        return [row for row in rows if not row.startswith("account.") and row != "admin.login"]  # 注册本身也记审计，这里只看后台动作
 
 
 def test_me_reports_admin_flag(client):
@@ -62,6 +62,8 @@ def test_admin_endpoints_reject_non_admin(client):
         ("get", "/api/v1/admin/users", None),
         ("get", "/api/v1/admin/contents", None),
         ("get", "/api/v1/admin/channels", None),
+        ("get", "/api/v1/admin/comments", None),
+        ("post", "/api/v1/admin/comments/x/status", {"action": "remove"}),
         ("get", "/api/v1/admin/audit", None),
         ("post", "/api/v1/admin/users/x/status", {"status": "suspended"}),
         ("post", "/api/v1/admin/contents/x/status", {"action": "remove"}),
@@ -144,7 +146,12 @@ def test_queue_and_stats(client):
     assert queue["comments"] == [] and queue["channels"] == []
 
     stats = client.get("/api/v1/admin/stats", headers=headers(boss)).json()
+    trend = stats.pop("trend")
+    assert len(trend) == 14 and trend[-1]["posts"] == 1 and trend[-1]["users"] == 2
+    assert sum(day["posts"] for day in trend) == 1
     assert stats == {
+        "total_users": 2,
+        "total_contents": 0,
         "new_posts_today": 1,
         "new_users_today": 2,
         "pending_contents": 1,
@@ -171,3 +178,64 @@ def test_channel_toggle_and_audit_list(client):
     assert audit["next_cursor"] is None
     only = client.get("/api/v1/admin/audit?action=deactivate", headers=headers(boss)).json()["items"]
     assert [row["action"] for row in only] == ["admin.channel.deactivate"]
+
+
+def test_admin_login_only_for_admins(client):
+    register(client, "boss@example.com", admin=True)
+    register(client, "plain@example.com")
+    url = "/api/v1/admin/login"
+    assert client.post(url, json={"email": "boss@example.com", "password": "wrong-pass"}).status_code == 401
+    denied = client.post(url, json={"email": "plain@example.com", "password": "password-1"})
+    assert denied.status_code == 403 and "access_token" not in denied.json()
+    ok = client.post(url, json={"email": "boss@example.com", "password": "password-1"})
+    assert ok.status_code == 200, ok.text
+    assert client.get("/api/v1/admin/stats", headers=headers(ok.json()["access_token"])).status_code == 200
+    with client.session_factory() as session:
+        assert session.scalar(select(AuditLog.action).where(AuditLog.action == "admin.login")) == "admin.login"
+
+
+def test_remove_and_restore_comment(client):
+    boss = register(client, "boss@example.com", admin=True)
+    register(client, "author@example.com")
+    channel_id, content_id = seed(client, "author@example.com")
+    with client.session_factory() as session:
+        mine = RoomComment(room_id=channel_id, content_id=content_id, author_id=user_id(client, "author@example.com"), body="一条留言", status="published")
+        gone = RoomComment(room_id=channel_id, author_id=user_id(client, "author@example.com"), body="作者自己删的", status="removed")
+        session.add_all([mine, gone])
+        session.commit()
+        mine_id, gone_id = mine.id, gone.id
+
+    listed = client.get("/api/v1/admin/comments?q=一条", headers=headers(boss)).json()
+    assert listed["total"] == 1
+    assert [(row["comment_id"], row["room_name"], row["author_name"]) for row in listed["items"]] == [(mine_id, "后台测试", "author")]
+
+    url = f"/api/v1/admin/comments/{mine_id}/status"
+    assert client.post(url, headers=headers(boss), json={"action": "restore"}).status_code == 409
+    assert client.post(url, headers=headers(boss), json={"action": "remove"}).status_code == 200
+    assert client.post(url, headers=headers(boss), json={"action": "remove"}).status_code == 409
+    assert client.post(url, headers=headers(boss), json={"action": "restore"}).status_code == 200
+    # 作者自己删的留言，后台不能复活
+    assert client.post(f"/api/v1/admin/comments/{gone_id}/status", headers=headers(boss), json={"action": "restore"}).status_code == 409
+    assert audit_actions(client) == ["admin.comment.remove", "admin.comment.restore"]
+
+
+def test_lists_paginate_and_filter_by_type(client):
+    boss = register(client, "boss@example.com", admin=True)
+    with client.session_factory() as session:
+        channel = Channel(code="uk-page", name_hans="分页", name_hant="分頁", kind="official_curated", is_active=True)
+        session.add(channel)
+        session.flush()
+        for index in range(23):
+            session.add(Content(type="post", status="published", title=f"帖子 {index}", author_id=user_id(client, "boss@example.com")))
+        session.add(Content(type="announcement", status="published", title="公告"))
+        session.commit()
+
+    first = client.get("/api/v1/admin/contents?type=post", headers=headers(boss)).json()
+    assert (first["total"], first["page_size"], len(first["items"])) == (23, 20, 20)
+    second = client.get("/api/v1/admin/contents?type=post&page=2", headers=headers(boss)).json()
+    assert len(second["items"]) == 3
+    assert not {row["content_id"] for row in first["items"]} & {row["content_id"] for row in second["items"]}
+    other = client.get("/api/v1/admin/contents?type=news,announcement,topic", headers=headers(boss)).json()
+    assert [row["title"] for row in other["items"]] == ["公告"]
+    users = client.get("/api/v1/admin/users", headers=headers(boss)).json()
+    assert users["total"] == 1 and users["items"][0]["post_count"] == 23
