@@ -10,7 +10,16 @@ import { useAdminAction } from "./useAdminList";
 const props = defineProps<{ mode: "reports" | "review" }>();
 
 type Queue = {
-  contents: { content_id: string; title: string; summary: string; author_name: string; created_at: string }[];
+  contents: {
+    content_id: string;
+    title: string;
+    summary: string;
+    author_name: string;
+    created_at: string;
+    ai_draft: boolean;
+    ai_check: boolean;
+    source_url: string | null;
+  }[];
   comments: { comment_id: string; body: string; author_name: string; created_at: string }[];
   channels: { channel_id: string; name: string; owner_name: string; created_at: string }[];
   cases: {
@@ -40,6 +49,29 @@ async function load(): Promise<void> {
 }
 const { busy, act, ask } = useAdminAction(load);
 void load();
+
+// 抓取 GOV.UK 最新资讯，AI 写成中文稿后放进下面的待审列表（要等几十秒）
+const fetching = ref(false);
+const fetchNote = ref("");
+async function fetchNews(): Promise<void> {
+  if (fetching.value) return;
+  fetching.value = true;
+  fetchNote.value = "";
+  try {
+    const result = await adminRequest<{ fetched: number; drafted: number; skipped: number; to_check: number }>(
+      "/api/v1/admin/ingest/news",
+      { method: "POST" },
+    );
+    fetchNote.value = result.fetched
+      ? `新抓到 ${result.fetched} 条，生成 ${result.drafted} 条中文稿（${result.skipped} 条和华人生活关系不大，已跳过）${result.to_check ? `，其中 ${result.to_check} 条数字需要对照原文` : ""}。`
+      : "GOV.UK 暂时没有新资讯。";
+    await load();
+  } catch (err) {
+    fetchNote.value = toMessage(err);
+  } finally {
+    fetching.value = false;
+  }
+}
 
 function path(kind: Kind, id: string): string {
   return `/api/v1/moderation/${kind}${id}/decision`;
@@ -114,6 +146,15 @@ function targetLink(item: Queue["cases"][number]): string {
 
     <template v-if="queue && props.mode === 'review'">
       <section class="adm-panel">
+        <div class="adm-actions">
+          <button type="button" class="btn btn--outline btn--sm" :disabled="fetching" @click="fetchNews">
+            {{ fetching ? "正在抓取并生成…" : "抓取今日资讯" }}
+          </button>
+          <span class="adm-sub" role="status">{{ fetchNote || "从 GOV.UK 抓最新新闻，AI 写成中文稿后出现在下面，通过才会发布。" }}</span>
+        </div>
+      </section>
+
+      <section class="adm-panel">
         <h2>帖子（{{ queue.contents.length }}）</h2>
         <p v-if="!queue.contents.length" class="adm-empty">没有待审的帖子。</p>
         <div v-else class="adm-scroll">
@@ -124,10 +165,13 @@ function targetLink(item: Queue["cases"][number]): string {
             <tbody>
               <tr v-for="item in queue.contents" :key="item.content_id">
                 <td class="adm-wide">
+                  <span v-if="item.ai_draft" class="tag">AI 资讯</span>
+                  <span v-if="item.ai_check" class="tag tag--warn" title="中文稿里有原文里找不到的数字，请点「原文」对照">数字待核对</span>
                   <RouterLink :to="`/admin/contents/${item.content_id}`"><strong>{{ item.title }}</strong></RouterLink>
                   <span v-if="item.summary" class="adm-sub">{{ item.summary }}</span>
+                  <a v-if="item.source_url" class="adm-sub" :href="item.source_url" target="_blank" rel="noopener noreferrer">原文</a>
                 </td>
-                <td class="adm-nowrap">{{ item.author_name }}</td>
+                <td class="adm-nowrap">{{ item.author_name || (item.ai_draft ? "AI 编辑" : "") }}</td>
                 <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
                 <td>
                   <div class="adm-actions">

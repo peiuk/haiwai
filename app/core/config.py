@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     app_secret_key: str = DEFAULT_SECRET_KEY
     jwt_access_ttl_minutes: int = 15
     jwt_refresh_ttl_days: int = 7
-    llm_api_key: str = ""
+    llm_api_key: str = ""  # Anthropic API 密钥（每日 AI 资讯用）
+    news_model: str = "claude-opus-5-5"
     upload_dir: str = "data/uploads"
     # 对象存储（S3 协议：MinIO、Cloudflare R2、AWS S3 等）。s3_endpoint 留空就用上面的本地磁盘。
     s3_endpoint: str = ""  # 例：https://s3.example.com（MinIO 的 API 地址）

@@ -231,6 +231,10 @@ def queue(session: Session = Depends(get_db)) -> dict[str, list[dict[str, object
                 "title": row.title,
                 "summary": row.summary or (row.body or "")[:200],
                 "author_name": names.get(row.author_id or "", ""),
+                # AI 资讯稿：没有作者；数字和原文对不上时标「待核对」，审核时点原文对一下
+                "ai_draft": row.author_id is None and row.source_name == "GOV.UK",
+                "ai_check": row.ai_status == "check",
+                "source_url": row.canonical_url,
                 "created_at": row.created_at,
             }
             for row in contents

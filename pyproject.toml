@@ -14,6 +14,8 @@ dependencies = [
   "httpx>=0.28",
   # 对象存储（S3 协议）；只在 .env 配了 S3_ENDPOINT 时才会用到。
   "boto3>=1.35",
+  # 每日 AI 资讯（app/news.py）调用 Claude。
+  "anthropic>=2.8",
 ]
 
 [project.optional-dependencies]
