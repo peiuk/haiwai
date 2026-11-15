@@ -300,8 +300,8 @@ watch(
 
           <ul v-else class="content-list">
             <template v-for="(item, index) in items" :key="item.content_id">
-              <li class="content-card" :class="{ 'content-card--listing': item.listing }">
-                <ListingCard v-if="item.listing" :item="item.listing" />
+              <li class="content-card">
+                <ListingCard v-if="item.listing" :item="item.listing" :time="item.added_at" />
                 <!-- 发现页不做个性化推荐：不传推荐理由，也就没有「减少此类内容」 -->
                 <PostCard
                   v-else
@@ -509,11 +509,6 @@ watch(
 }
 .content-card {
   display: block;
-}
-/* 分类信息卡自带边框，和上下的帖子卡留出间距 */
-.content-card--listing {
-  padding: var(--sp-2) 0;
-  border-bottom: 1px solid var(--border);
 }
 
 /* 推荐频道（窄屏插在内容流里） */

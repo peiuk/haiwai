@@ -10,6 +10,7 @@ import TextArea from "../base/TextArea.vue";
 import SelectField from "../base/SelectField.vue";
 import BaseButton from "../base/BaseButton.vue";
 import MultiUploadField from "../common/MultiUploadField.vue";
+import { ATTR_FIELDS } from "../../utils/listing";
 
 const props = defineProps<{ channels: Channel[]; presetChannelId?: string }>();
 
@@ -63,26 +64,6 @@ const UNITS: Record<string, string[]> = {
   commercial: ["月", "总价"],
   secondhand: [""],
   job: ["小时", "月", "年"],
-};
-
-const ATTR_FIELDS: Record<string, { key: string; label: string }[]> = {
-  rent: [
-    { key: "roomType", label: "房型" },
-    { key: "moveIn", label: "入住时间" },
-    { key: "bills", label: "Bills 是否包含" },
-    { key: "deposit", label: "押金" },
-    { key: "minTerm", label: "最短租期" },
-  ],
-  sale: [{ key: "roomType", label: "房型" }],
-  commercial: [{ key: "roomType", label: "物业类型" }],
-  secondhand: [
-    { key: "condition", label: "成色" },
-    { key: "pickup", label: "交易方式" },
-  ],
-  job: [
-    { key: "jobType", label: "工作类型" },
-    { key: "hours", label: "工作时间" },
-  ],
 };
 
 const kind = computed(() => {

@@ -10,8 +10,12 @@ import BaseButton from "../base/BaseButton.vue";
 import ReportButton from "../common/ReportButton.vue";
 import ImageStrip from "../common/ImageStrip.vue";
 import SourceBlock from "../common/SourceBlock.vue";
+import BaseIcon from "../base/BaseIcon.vue";
+import { fmtRelativeTime } from "../../utils/time";
+import { KIND_LABEL, attrLabel } from "../../utils/listing";
 
-const props = defineProps<{ item: ListingCardItem }>();
+// time：这条信息进入内容流的时间（发现页条目的 added_at）
+const props = defineProps<{ item: ListingCardItem; time?: string }>();
 
 const auth = useAuthStore();
 const toast = useToastStore();
@@ -52,10 +56,14 @@ const expiryBadge = computed(() => {
   return null;
 });
 
-const firstAttr = computed(() => {
-  const entries = Object.entries(props.item.attrs ?? {});
-  return entries.length > 0 ? entries[0][1] : "";
-});
+// 卡片上最多带两个字段，带上中文名，避免只露一个光秃秃的值（如「3」）
+const attrChips = computed(() =>
+  Object.entries(props.item.attrs ?? {})
+    .slice(0, 2)
+    .map(([key, value]) => `${attrLabel(props.item.kind, key)} ${value}`),
+);
+const cover = computed(() => props.item.image_keys?.[0] ?? "");
+const imageCount = computed(() => props.item.image_keys?.length ?? 0);
 
 async function toggleDetail(): Promise<void> {
   if (expanded.value) {
@@ -98,29 +106,43 @@ async function viewContact(): Promise<void> {
 
 <template>
   <article class="listing-card" :class="{ expired: expiryBadge?.urgent }">
-    <div class="card-head">
-      <div class="card-main">
-        <h3 class="card-title" data-ugc>{{ item.title }}</h3>
-        <p class="card-price">{{ priceLabel }}</p>
-        <p class="card-meta">
-          {{ item.area }}<template v-if="firstAttr"> · {{ firstAttr }}</template> · {{ item.channel_name }}
-        </p>
-      </div>
-      <ReportButton kind="content" :id="item.content_id" compact :label="`举报 ${item.title}`" />
-    </div>
+    <button
+      type="button"
+      class="card-hit"
+      :aria-expanded="expanded"
+      :aria-label="`${expanded ? '收起' : '查看'} ${item.title} 的详情`"
+      @click="toggleDetail"
+    >
+      <span class="card-thumb">
+        <img v-if="cover" :src="`/api/v1/uploads/${cover}`" alt="" loading="lazy" />
+        <BaseIcon v-else name="i-image" :size="24" />
+        <span v-if="imageCount > 1" class="thumb-count">{{ imageCount }} 图</span>
+      </span>
+      <span class="card-main">
+        <span class="card-kicker">
+          {{ KIND_LABEL[item.kind] ?? item.category }} · {{ item.channel_name }}
+          <template v-if="time"> · {{ fmtRelativeTime(time) }}</template>
+        </span>
+        <span class="card-title" data-ugc>{{ item.title }}</span>
+        <span class="card-price">{{ priceLabel }}</span>
+        <span class="card-meta">
+          <span class="meta-area" data-ugc>{{ item.area }}</span>
+          <span v-for="chip in attrChips" :key="chip" class="meta-attr" data-ugc>{{ chip }}</span>
+        </span>
+      </span>
+    </button>
 
-    <div class="badge-row">
+    <div class="card-foot">
       <BaseTag :variant="item.certified ? 'good' : 'default'">
         {{ item.certified ? "已认证" : "未认证" }}
       </BaseTag>
       <BaseTag v-if="expiryBadge" :variant="expiryBadge.variant">{{ expiryBadge.text }}</BaseTag>
       <BaseTag v-if="item.closed_reason" variant="warn">已结案</BaseTag>
-    </div>
-
-    <div class="card-actions">
-      <BaseButton type="button" variant="outline" size="sm" @click="toggleDetail">
-        {{ expanded ? "收起详情" : "查看详情" }}
-      </BaseButton>
+      <button type="button" class="detail-toggle" :aria-expanded="expanded" @click="toggleDetail">
+        {{ expanded ? "收起" : "详情与联系方式" }}
+        <BaseIcon name="i-chev" :size="14" :rotate="expanded ? 180 : 0" />
+      </button>
+      <ReportButton kind="content" :id="item.content_id" compact :label="`举报 ${item.title}`" />
     </div>
 
     <!-- 详情展开 -->
@@ -146,7 +168,7 @@ async function viewContact(): Promise<void> {
 
         <dl v-if="Object.keys(detail.attrs ?? {}).length > 0" class="detail-attrs">
           <div v-for="(value, key) in detail.attrs" :key="key" class="attr-pair">
-            <dt>{{ key }}</dt>
+            <dt>{{ attrLabel(detail.kind, String(key)) }}</dt>
             <dd>{{ value }}</dd>
           </div>
         </dl>
@@ -187,65 +209,131 @@ async function viewContact(): Promise<void> {
 <style scoped>
 .listing-card {
   display: grid;
-  gap: var(--sp-3);
-  padding: var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface);
+  gap: var(--sp-2);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.listing-card:hover {
+  background: var(--hover);
 }
 .listing-card.expired {
   color: var(--muted);
 }
-.card-head {
+.card-hit {
   display: flex;
-  gap: var(--sp-3);
+  gap: 12px;
   align-items: flex-start;
-  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.card-hit:focus-visible,
+.detail-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-md);
+}
+.card-thumb {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: var(--surface2);
+  color: var(--muted);
+}
+.card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.listing-card.expired .card-thumb img {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.thumb-count {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: var(--fs-12);
+  line-height: 18px;
 }
 .card-main {
   min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+.card-kicker,
+.card-meta {
+  font-size: var(--fs-12);
+  color: var(--muted);
 }
 .card-title {
-  margin: 0 0 var(--sp-1);
   font-size: var(--fs-15);
   font-weight: 600;
+  line-height: 1.4;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .card-price {
-  margin: 0 0 var(--sp-1);
-  font-size: var(--fs-15);
+  font-size: var(--fs-16);
   font-weight: 700;
   color: var(--accent-ink);
 }
 .card-meta {
-  margin: 0;
-  font-size: var(--fs-12);
-  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
 }
-.report-btn {
+.meta-attr::before {
+  content: "· ";
+}
+.card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-left: 108px;
+}
+.detail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   min-height: 44px;
-  min-width: 44px;
-  padding: 0 var(--sp-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
+  margin-left: auto;
+  padding: 0 var(--sp-1);
+  border: 0;
   background: transparent;
-  color: var(--text);
-  font-size: var(--fs-12);
-  white-space: nowrap;
+  color: var(--accent-ink);
+  font-size: var(--fs-13);
+  font-weight: 600;
   cursor: pointer;
 }
-.report-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.badge-row {
-  display: flex;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-}
-.card-actions {
-  display: flex;
-  gap: var(--sp-2);
+@media (max-width: 420px) {
+  .card-thumb {
+    width: 80px;
+    height: 80px;
+  }
+  .card-foot {
+    padding-left: 0;
+  }
 }
 .card-detail {
   display: grid;
