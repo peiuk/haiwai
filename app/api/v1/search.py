@@ -63,6 +63,7 @@ def search(
         return {"channels": [], "contents": [], "users": []}
     # 用户输入的 % 和 _ 按字面匹配，不当通配符（否则搜「%」会匹配全部内容并整表扫描）。
     literal = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    # 匹配一律用 ilike：PostgreSQL 的 like 区分大小写，搜 london 会找不到话题写成 London 的帖子
     pattern = f"%{literal}%"
     handle_pattern = f"%{literal.lower()}%"
     has_published = exists(
@@ -82,7 +83,7 @@ def search(
             Channel.is_private.is_(False),
             Channel.region_code.in_(list(open_regions(session))),  # 后台关闭的国家，频道搜不到
             or_(Channel.kind != "room", has_published),
-            or_(Channel.name_hans.like(pattern, escape="\\"), Channel.name_hant.like(pattern, escape="\\"), Channel.code.like(pattern, escape="\\")),
+            or_(Channel.name_hans.ilike(pattern, escape="\\"), Channel.name_hant.ilike(pattern, escape="\\"), Channel.code.ilike(pattern, escape="\\")),
         )
         .order_by(Channel.code)
         .limit(20)
@@ -94,11 +95,11 @@ def search(
             Content.status == "published",
             Content.deleted_at.is_(None),
             or_(
-                Content.title.like(pattern, escape="\\"),
-                Content.summary.like(pattern, escape="\\"),
-                Content.keywords_json.like(pattern, escape="\\"),
-                Content.city_topic.like(pattern, escape="\\"),
-                User.handle.like(handle_pattern, escape="\\"),
+                Content.title.ilike(pattern, escape="\\"),
+                Content.summary.ilike(pattern, escape="\\"),
+                Content.keywords_json.ilike(pattern, escape="\\"),
+                Content.city_topic.ilike(pattern, escape="\\"),
+                User.handle.ilike(handle_pattern, escape="\\"),
             ),
         )
         .order_by(Content.published_at.desc())
@@ -142,9 +143,9 @@ def search(
     # 「#话题」只搜内容；「@」只按用户名；普通词同时匹配用户名和昵称
     if not topic:
         name_match = (
-            User.handle.like(handle_pattern, escape="\\")
+            User.handle.ilike(handle_pattern, escape="\\")
             if people
-            else or_(User.handle.like(handle_pattern, escape="\\"), User.display_name.like(pattern, escape="\\"))
+            else or_(User.handle.ilike(handle_pattern, escape="\\"), User.display_name.ilike(pattern, escape="\\"))
         )
         matches = session.scalars(
             select(User)
