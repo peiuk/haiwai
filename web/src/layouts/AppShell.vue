@@ -156,7 +156,7 @@ watch(
     <!-- 首页 / 发现页的品牌、搜索和工具按钮已合并在 top-head 一行里，这里只给其余页面用 -->
     <!-- 发布页、帖子详情页有自己的顶栏（带返回），不再叠一层 -->
     <header v-if="route.name !== 'publish' && route.name !== 'content' && !pageTitle" class="topbar">
-      <strong class="brand">海外圈</strong>
+      <strong class="brand"><span class="brand-word">海外圈</span></strong>
       <div class="topbar-actions">
         <button class="icon-btn" type="button" :aria-label="themeLabel()" @click="theme.toggleTheme()">
           <BaseIcon name="i-theme" :size="22" />
@@ -176,7 +176,7 @@ watch(
     <div class="shell-body" :class="{ 'shell-body--publish': route.name === 'publish' }">
       <!-- 左导航（桌面端） -->
       <aside class="left-col">
-        <strong class="brand"><img class="brand-mark" src="/logo-mark.png" alt="" width="32" height="32" /><span>海外圈</span></strong>
+        <strong class="brand"><img class="brand-mark" src="/logo-mark.png" alt="" width="62" height="44" /><span class="brand-word">海外圈</span></strong>
         <nav aria-label="主导航">
           <RouterLink
             v-for="item in navItems"
@@ -221,7 +221,7 @@ watch(
         <div v-if="pageTitle" class="top-head">
           <!-- 手机端首页标题位显示产品名，桌面显示「首页」（MASTER §22.13） -->
           <h1 class="top-head-title">
-            <span v-if="route.name === 'home'" class="pt-brand">海外圈</span>
+            <span v-if="route.name === 'home'" class="pt-brand brand-word">海外圈</span>
             <span class="pt-page">{{ pageTitle }}</span>
           </h1>
           <GlobalSearch v-if="showSearch" class="top-head-search" />
@@ -336,12 +336,28 @@ watch(
   font-weight: var(--fw-heavy);
   padding: 0 var(--sp-3);
 }
+/* 字标：取 logo 地球的蓝到人物的青，字距拉开，避免雅黑粗体挤成一团 */
+.brand-word {
+  --brand-from: #1764c8;
+  --brand-to: #0e9a8a;
+  font-size: 20px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.12em;
+  background: linear-gradient(90deg, var(--brand-from), var(--brand-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+:global([data-theme="dark"]) .brand-word {
+  --brand-from: #5aa2ff;
+  --brand-to: #3cc7b4;
+}
 .brand-mark {
-  width: 32px;
-  height: 32px;
+  width: 62px;
+  height: 44px;
   flex: none;
-  /* 图是白底，裁成圆形，深色模式下不露出白色方角 */
-  border-radius: 50%;
+  /* 图是白底，圆角方块在深色模式下也像个图标 */
+  border-radius: 8px;
 }
 .lang-btn {
   font-size: var(--fs-12);
