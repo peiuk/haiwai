@@ -36,7 +36,8 @@ def make_admin(client, email: str) -> str:
     session.scalar(select(User).where(User.email == email)).is_admin = True
     session.commit()
     session.close()
-    return token
+    # 后台接口只认后台登录发的令牌
+    return client.post("/api/v1/admin/login", json={"email": email, "password": "password-1"}).json()["access_token"]
 
 
 def channels(client) -> dict[str, str]:

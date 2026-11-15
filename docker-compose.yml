@@ -40,6 +40,31 @@ services:
     command: ["python", "-m", "app.news", "--daily"]
     restart: unless-stopped
 
+  # 每天把数据库完整备份一份到 backups 卷，保留 14 天。彻底删除等操作不可恢复，出错时只能靠它。
+  # 恢复：docker compose exec backup pg_restore -h db -U ukcn -d ukcn --clean /backups/<文件名>
+  # 备份和数据库在同一台机器上，机器坏了会一起丢：请定期把 backups 卷里的文件拷到别处。
+  backup:
+    image: postgis/postgis:16-3.4
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-ukcn}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - backups:/backups
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+          # 先写到临时文件，成功了才改名：备份失败不会留下一个看着正常、其实不完整的文件
+          pg_dump -h db -U ukcn -Fc -f /backups/latest.partial ukcn && mv /backups/latest.partial "/backups/ukcn-$$(date +%Y%m%d-%H%M).dump"
+          find /backups -name "ukcn-*.dump" -mtime +14 -delete
+          sleep 86400
+        done
+    restart: unless-stopped
+
 volumes:
   pgdata:
   uploads:
+  backups:

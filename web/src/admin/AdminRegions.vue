@@ -4,7 +4,7 @@ import { ref } from "vue";
 import { RouterLink } from "vue-router";
 import { jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
-import { adminRequest } from "./adminApi";
+import { adminMe, adminRequest } from "./adminApi";
 import { useAdminAction } from "./useAdminList";
 
 type Region = { code: string; name: string; city: string; is_open: boolean; channel_count: number };
@@ -96,7 +96,7 @@ async function fill(item: Region): Promise<void> {
       <button type="button" class="btn btn--outline btn--sm" @click="load">重试</button>
     </p>
 
-    <section class="adm-panel">
+    <section v-if="adminMe.is_super" class="adm-panel">
       <h2>开通新国家</h2>
       <form class="adm-form" @submit.prevent="open">
         <div class="adm-form-row">
@@ -140,10 +140,10 @@ async function fill(item: Region): Promise<void> {
               </td>
               <td>
                 <div class="adm-actions">
-                  <button v-if="item.is_open" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.code" @click="fill(item)">补齐默认频道</button>
+                  <button v-if="adminMe.is_super && item.is_open" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.code" @click="fill(item)">补齐默认频道</button>
                   <!-- 国际频道各国共享，不能关 -->
-                  <button v-if="item.is_open && item.code !== 'GLOBAL'" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.code" @click="close(item)">关闭</button>
-                  <button v-if="!item.is_open" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.code" @click="reopen(item)">重新开通</button>
+                  <button v-if="adminMe.is_super && item.is_open && item.code !== 'GLOBAL'" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.code" @click="close(item)">关闭</button>
+                  <button v-if="adminMe.is_super && !item.is_open" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.code" @click="reopen(item)">重新开通</button>
                 </div>
               </td>
             </tr>
@@ -165,7 +165,7 @@ async function fill(item: Region): Promise<void> {
               <td class="adm-num">{{ item.count }}</td>
               <td>
                 <div class="adm-actions">
-                  <button type="button" class="btn btn--outline btn--sm" @click="prefill(item.code)">填到开通表单</button>
+                  <button v-if="adminMe.is_super" type="button" class="btn btn--outline btn--sm" @click="prefill(item.code)">填到开通表单</button>
                 </div>
               </td>
             </tr>

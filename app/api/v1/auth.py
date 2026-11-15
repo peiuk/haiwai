@@ -2,7 +2,7 @@ import re
 import secrets
 import time
 from collections import deque
-from datetime import timezone
+from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -191,18 +191,31 @@ def require_verified_phone(user: User, action: str) -> None:
         raise APIError(403, "PHONE_NOT_VERIFIED", f"{action}前需要先验证手机")
 
 
-def issue_tokens(session: Session, user_id: str) -> dict[str, str]:
-    access = create_access_token(user_id)
+ADMIN_SESSION_HOURS = 12  # 后台会话：这么久没操作就要重新登录（每次续期重新计时）
+
+
+def issue_tokens(session: Session, user_id: str, admin: bool = False) -> dict[str, str]:
+    """admin=True 是后台登录发的令牌：访问令牌带后台标记，会话有效期短。"""
+    access = create_access_token(user_id, admin)
     raw_refresh = new_refresh_token()
     session.add(
         RefreshSession(
             id=new_refresh_session_id(),
             user_id=user_id,
             token_hash=hash_refresh_token(raw_refresh),
-            expires_at=refresh_expiry(),
+            expires_at=utcnow() + timedelta(hours=ADMIN_SESSION_HOURS) if admin else refresh_expiry(),
+            admin=admin,
         )
     )
     return {"access_token": access, "refresh_token": raw_refresh, "token_type": "bearer"}
+
+
+def lift_expired_suspension(user: User) -> None:
+    """限时封禁到期：恢复正常。登录和续期时检查，不用另起定时任务。"""
+    if user.status == "suspended" and user.suspended_until is not None and _aware_datetime(user.suspended_until) <= utcnow():
+        user.status = "active"
+        user.suspended_until = None
+        user.suspend_reason = None
 
 
 def join_channels_by_code(session: Session, user_id: str, codes: list[str]) -> int:
@@ -302,8 +315,11 @@ def login(body: LoginBody, session: Session = Depends(get_db)) -> dict[str, str]
     user = session.scalar(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     if user is None or not verify_password(body.password, user.password_hash):
         raise APIError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")
+    lift_expired_suspension(user)
     if user.status != "active":  # 密码对了才告诉对方账号被限制，不泄露账号是否存在
-        raise APIError(403, "ACCOUNT_SUSPENDED", "这个账号已被限制，无法登录")
+        until = f"到 {_aware_datetime(user.suspended_until):%Y-%m-%d %H:%M} (UTC)" if user.suspended_until else ""
+        why = f"。原因：{user.suspend_reason}" if user.suspend_reason else ""
+        raise APIError(403, "ACCOUNT_SUSPENDED", f"这个账号已被限制{until}，无法登录{why}")
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
     tokens = issue_tokens(session, user.id)
@@ -350,12 +366,15 @@ def refresh_session(body: RefreshBody, session: Session = Depends(get_db)) -> di
         session.commit()
         raise APIError(401, "INVALID_REFRESH", "登录已失效，请重新登录")
     user = session.get(User, row.user_id)
+    if user is not None:
+        lift_expired_suspension(user)
     if user is None or user.deleted_at is not None or user.status != "active":
         session.delete(row)
         session.commit()
         raise APIError(401, "INVALID_REFRESH", "登录已失效，请重新登录")
     session.delete(row)
-    tokens = issue_tokens(session, user.id)
+    # 后台会话续期后仍是后台会话；管理员权限被撤销的，续出来的只是普通令牌
+    tokens = issue_tokens(session, user.id, admin=row.admin and user.is_admin)
     session.commit()
     return tokens
 

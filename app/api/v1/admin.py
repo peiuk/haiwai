@@ -2,30 +2,30 @@
 
 审帖 / 审留言 / 审房间 / 处理举报的"决定"接口在 moderation.py，这里只补列表和它没有的操作。
 """
+import time
 from datetime import datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import LoginBody, current_user, issue_tokens, throttle
+from app.api.v1.auth import LoginBody, bearer, current_user, issue_tokens, throttle
 from app.api.v1.channels import TextBody
 from app.api.v1.uploads import delete_object
-from app.core.audit import write_audit
+from app.core.audit import client_ip, recent_server_errors, write_audit
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import APIError
-from app.core.regions import DEFAULT_REGIONS, open_regions
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
-from app.core.security import hash_refresh_token, new_refresh_token, verify_password
+from app.core.security import hash_refresh_token, new_refresh_token, token_is_admin, verify_password, verify_totp
 from app.feed import image_keys_of
 from app.models import (
     AuditLog,
     Channel,
-    ChannelCollaborator,
     ChannelItem,
-    ChannelSubscription,
     CommentLike,
     ContactView,
     Content,
@@ -34,10 +34,9 @@ from app.models import (
     ModerationCase,
     Notification,
     PasswordReset,
-    Region,
-    RegionOpenRequest,
+    RefreshSession,
+    ReviewClaim,
     RoomComment,
-    RoomJoinRequest,
     RoomPostPush,
     UploadObject,
     User,
@@ -46,36 +45,69 @@ from app.models import (
 )
 from app.reports import REASONS
 from app.rooms import drop_pushes, notify_room_update
-from app.seed import ensure_region_channels
 
 LIMIT = 50  # 队列、日志每次最多条数
 PAGE = 20  # 表格每页条数
 TREND_DAYS = 14
 
 
-def require_admin(user: User = Depends(current_user)) -> User:
+def require_admin(
+    user: User = Depends(current_user),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+) -> User:
     if not user.is_admin:
         raise APIError(403, "FORBIDDEN", "需要管理员权限")
+    # 只认后台登录发的令牌：前台登录没过两步验证，它的令牌不能用来操作后台
+    if credentials is None or not token_is_admin(credentials.credentials):
+        raise APIError(401, "ADMIN_LOGIN_REQUIRED", "请从后台登录页登录")
     return user
+
+
+def require_super(admin: User = Depends(require_admin)) -> User:
+    """超级管理员才能做的事：彻底删除、管理频道和国家、任免管理员、导出数据。"""
+    if not admin.is_super:
+        raise APIError(403, "SUPER_ONLY", "这项操作需要超级管理员权限")
+    return admin
 
 
 router = APIRouter(prefix="/admin")
 guarded = APIRouter(dependencies=[Depends(require_admin)])  # 文件末尾挂到 router 上
 
 
+class AdminLoginBody(LoginBody):
+    code: str = ""  # 开了两步验证的账号要带验证器 App 上的 6 位数字
+
+
 @router.post("/login")
-def admin_login(body: LoginBody, session: Session = Depends(get_db)) -> dict[str, str]:
+def admin_login(body: AdminLoginBody, request: Request, session: Session = Depends(get_db)) -> dict[str, str]:
     """后台独立登录：密码对但不是管理员也拒绝，不给普通账号发后台用的令牌。"""
     throttle(f"admin-login:{body.email}", limit=10, window_seconds=15 * 60)
+    # 同一个来源换着邮箱试也要拦
+    throttle(f"admin-login-ip:{client_ip(request)}", limit=30, window_seconds=15 * 60)
     user = session.scalar(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     if user is None or not verify_password(body.password, user.password_hash):
         raise APIError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")
     if not user.is_admin or user.status != "active":
         raise APIError(403, "FORBIDDEN", "这个账号没有后台权限")
-    tokens = issue_tokens(session, user.id)
+    if user.totp_secret:
+        if not body.code.strip():
+            raise APIError(401, "TOTP_REQUIRED", "请输入验证器 App 上的 6 位验证码")
+        if not verify_totp(user.totp_secret, body.code):
+            raise APIError(401, "TOTP_INVALID", "验证码不正确或已过期")
+    tokens = issue_tokens(session, user.id, admin=True)
     write_audit(session, user.id, "admin.login", "user", user.id)
     session.commit()
     return tokens
+
+
+def notify_user(session: Session, user_id: str | None, body: str, content_id: str | None = None, actor_id: str | None = None) -> None:
+    """把后台的处理结果告诉当事人（出现在对方的通知里）。自己处理自己的内容不用通知。"""
+    if user_id and user_id != actor_id:
+        session.add(Notification(user_id=user_id, kind="moderation.notice", body=body[:200], content_id=content_id))
+
+
+def _because(note: str | None) -> str:
+    return f"。原因：{note}" if note else ""
 
 
 def _names(session: Session, ids) -> dict[str, str]:
@@ -153,28 +185,78 @@ _PENDING_COMMENT = (RoomComment.status == "pending", RoomComment.removed_at.is_(
 _PENDING_CHANNEL = (Channel.review_status == "pending", Channel.owner_id.is_not(None))
 
 
-@guarded.get("/stats")
-def stats(session: Session = Depends(get_db)) -> dict[str, object]:
-    today = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)  # UTC 当天
+INSIGHT_SECONDS = 60
+OVERDUE_HOURS = 24  # 举报和待审超过这么久没处理就算超时（前台对举报人承诺的是 24 小时内处理）
+_insight_cache: tuple[float, dict[str, object]] | None = None
+
+
+def _insights(session: Session) -> dict[str, object]:
+    """概览页的趋势和运营指标。算起来要扫近 30 天的数据，所以缓存一分钟；待办数字不走这里，始终是实时的。"""
+    global _insight_cache
+    if _insight_cache is not None and time.monotonic() - _insight_cache[0] < INSIGHT_SECONDS and not get_settings().testing:
+        return _insight_cache[1]
+    now = utcnow()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)  # UTC 当天
     since = today - timedelta(days=TREND_DAYS - 1)
+    month = now - timedelta(days=30)
     # shortcut: 把近 14 天的时间戳取回来在内存里按天数，量大了再换成按日期分组的 SQL。
     posts = session.scalars(select(Content.created_at).where(Content.created_at >= since, Content.author_id.is_not(None))).all()
     users = session.scalars(select(User.created_at).where(User.created_at >= since)).all()
     days = [(since + timedelta(days=index)).date() for index in range(TREND_DAYS)]
     post_days = [item.date() for item in posts]
     user_days = [item.date() for item in users]
-    return {
+    # 审核用时：近 30 天里，从发布到被审（通过或拒绝）隔了多久
+    reviewed = session.execute(
+        select(AuditLog.created_at, Content.created_at)
+        .join(Content, Content.id == AuditLog.target_id)
+        .where(
+            AuditLog.action.in_(("moderation.approve", "moderation.reject")),
+            AuditLog.target_type == "content",
+            AuditLog.created_at >= month,
+        )
+        .limit(500)
+    ).all()
+    hours = [(decided - created).total_seconds() / 3600 for decided, created in reviewed]
+    closed = _count(session, ModerationCase, ModerationCase.status == "closed", ModerationCase.decided_at >= month)
+    upheld = _count(
+        session, ModerationCase, ModerationCase.status == "closed", ModerationCase.decided_at >= month, ModerationCase.decision == "remove"
+    )
+    by_region = session.execute(
+        select(Channel.region_code, func.count(func.distinct(ChannelItem.content_id)))
+        .join(ChannelItem, ChannelItem.channel_id == Channel.id)
+        .join(Content, Content.id == ChannelItem.content_id)
+        .where(Content.created_at >= since, Content.status == "published")
+        .group_by(Channel.region_code)
+        .order_by(func.count(func.distinct(ChannelItem.content_id)).desc())
+    ).all()
+    result: dict[str, object] = {
         "new_posts_today": post_days.count(today.date()),
         "new_users_today": user_days.count(today.date()),
+        "trend": [{"date": day.isoformat(), "posts": post_days.count(day), "users": user_days.count(day)} for day in days],
+        "active_users_7d": _count(session, User, User.feed_seen_at >= now - timedelta(days=7)),
+        "avg_review_hours": round(sum(hours) / len(hours), 1) if hours else None,
+        "cases_closed_30d": closed,
+        "cases_upheld_30d": upheld,
+        "posts_by_region": [{"region": code, "posts": count} for code, count in by_region],
+        "server_errors_1h": recent_server_errors(),
+    }
+    _insight_cache = (time.monotonic(), result)
+    return result
+
+
+@guarded.get("/stats")
+def stats(session: Session = Depends(get_db)) -> dict[str, object]:
+    overdue = utcnow() - timedelta(hours=OVERDUE_HOURS)
+    return {
+        **_insights(session),
         "pending_contents": _count(session, Content, *_PENDING_CONTENT),
         "pending_comments": _count(session, RoomComment, *_PENDING_COMMENT),
         "pending_channels": _count(session, Channel, *_PENDING_CHANNEL),
         "open_cases": _count(session, ModerationCase, ModerationCase.status == "open"),
+        "overdue_cases": _count(session, ModerationCase, ModerationCase.status == "open", ModerationCase.created_at < overdue),
+        "overdue_contents": _count(session, Content, *_PENDING_CONTENT, Content.created_at < overdue),
         "total_users": _count(session, User, User.deleted_at.is_(None)),
         "total_contents": _count(session, Content, Content.status == "published"),
-        "trend": [
-            {"date": day.isoformat(), "posts": post_days.count(day), "users": user_days.count(day)} for day in days
-        ],
     }
 
 
@@ -193,8 +275,26 @@ def _case_target(session: Session, case: ModerationCase) -> tuple[str, str | Non
     return "content", case.content_id, content.title if content else "（内容已不存在）"
 
 
+CLAIM_MINUTES = 10
+
+
+def active_claims(session: Session) -> dict[tuple[str, str], str]:
+    """还在有效期内的认领：(对象类型, 对象 id) → 认领的管理员 id。"""
+    fresh = utcnow() - timedelta(minutes=CLAIM_MINUTES)
+    rows = session.scalars(select(ReviewClaim).where(ReviewClaim.claimed_at >= fresh)).all()
+    return {(row.target_type, row.target_id): row.admin_id for row in rows}
+
+
 @guarded.get("/queue")
-def queue(session: Session = Depends(get_db)) -> dict[str, list[dict[str, object]]]:
+def queue(admin: User = Depends(require_admin), session: Session = Depends(get_db)) -> dict[str, list[dict[str, object]]]:
+    claims = active_claims(session)
+    claimers = _names(session, claims.values())
+
+    def claimed_by(target_type: str, target_id: str) -> str:
+        """别的管理员正在处理这一条时返回对方的名字；没人认领或是自己认领的返回空串。"""
+        holder = claims.get((target_type, target_id))
+        return claimers.get(holder, "其他管理员") if holder and holder != admin.id else ""
+
     contents = session.scalars(select(Content).where(*_PENDING_CONTENT).order_by(Content.created_at).limit(LIMIT)).all()
     comments = session.scalars(
         select(RoomComment).where(*_PENDING_COMMENT).order_by(RoomComment.created_at).limit(LIMIT)
@@ -222,6 +322,7 @@ def queue(session: Session = Depends(get_db)) -> dict[str, list[dict[str, object
                 "reason": REASONS.get(case.reason, case.reason),
                 "detail": case.detail,
                 "reporter_name": names.get(case.reporter_id or "", ""),
+                "claimed_by": claimed_by("case", case.id),
                 "created_at": case.created_at,
             }
         )
@@ -236,6 +337,7 @@ def queue(session: Session = Depends(get_db)) -> dict[str, list[dict[str, object
                 "ai_draft": row.author_id is None and row.source_name == "GOV.UK",
                 "ai_check": row.ai_status == "check",
                 "source_url": row.canonical_url,
+                "claimed_by": claimed_by("content", row.id),
                 "created_at": row.created_at,
             }
             for row in contents
@@ -246,6 +348,7 @@ def queue(session: Session = Depends(get_db)) -> dict[str, list[dict[str, object
                 "content_id": row.content_id,
                 "body": row.body,
                 "author_name": names.get(row.author_id, ""),
+                "claimed_by": claimed_by("comment", row.id),
                 "created_at": row.created_at,
             }
             for row in comments
@@ -255,6 +358,7 @@ def queue(session: Session = Depends(get_db)) -> dict[str, list[dict[str, object
                 "channel_id": row.id,
                 "name": row.name_hans,
                 "owner_name": names.get(row.owner_id or "", ""),
+                "claimed_by": claimed_by("channel", row.id),
                 "created_at": row.created_at,
             }
             for row in channels
@@ -289,7 +393,10 @@ def list_users(q: str = "", status: str = "", page: int = 1, session: Session = 
                 "handle": row.handle or "",
                 "email": row.email,
                 "status": row.status,
+                "suspended_until": row.suspended_until,
                 "is_admin": row.is_admin,
+                "is_super": row.is_super,
+                "two_factor": bool(row.totp_secret),
                 "post_count": counts.get(row.id, 0),
                 "created_at": row.created_at,
             }
@@ -308,6 +415,8 @@ class Reasoned(BaseModel):
 
 class UserStatusBody(Reasoned):
     status: Literal["active", "suspended"]
+    days: int | None = Field(default=None, ge=1, le=365)  # 封禁天数；不填是永久
+    remove_contents: bool = False  # 封禁时一并下架对方发过的全部帖子和留言（对付刷广告的）
 
 
 @guarded.get("/users/{user_id}")
@@ -326,7 +435,12 @@ def user_detail(user_id: str, session: Session = Depends(get_db)) -> dict[str, o
         "city_label": target.city_label or "",
         "phone_verified": target.phone_verified,
         "status": target.status,
+        "suspended_until": target.suspended_until,
+        "suspend_reason": target.suspend_reason or "",
         "is_admin": target.is_admin,
+        "is_super": target.is_super,
+        "two_factor": bool(target.totp_secret),
+        "deleted": target.deleted_at is not None,
         "created_at": target.created_at,
         "post_count": _count(session, Content, Content.author_id == target.id, Content.deleted_at.is_(None)),
         "comment_count": _count(session, RoomComment, RoomComment.author_id == target.id, RoomComment.removed_at.is_(None)),
@@ -345,7 +459,7 @@ RESET_LINK_HOURS = 24
 @guarded.post("/users/{user_id}/reset-link")
 def create_reset_link(
     user_id: str,
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_super),  # 拿到链接就能接管账号，所以只给超级管理员
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
     """给忘记密码的用户生成一次性的重置凭证（24 小时内有效）。凭证只在这次响应里出现一次，库里只存哈希。"""
@@ -364,28 +478,53 @@ def create_reset_link(
 
 class AdminFlagBody(Reasoned):
     is_admin: bool
+    is_super: bool = False  # 只在 is_admin 为真时有意义
 
 
 @guarded.post("/users/{user_id}/admin")
 def set_user_admin(
     user_id: str,
     body: AdminFlagBody,
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_super),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
     target = session.get(User, user_id)
     if target is None or target.deleted_at is not None:
         raise APIError(404, "USER_NOT_FOUND", "用户不存在")
     if target.id == admin.id:
-        raise APIError(409, "CANNOT_CHANGE_SELF", "不能修改自己的管理员权限")  # 免得最后一个管理员把自己撤掉
-    if target.is_admin == body.is_admin:
+        raise APIError(409, "CANNOT_CHANGE_SELF", "不能修改自己的管理员权限")  # 免得最后一个超级管理员把自己撤掉
+    make_super = body.is_admin and body.is_super
+    if target.is_admin == body.is_admin and target.is_super == make_super:
         raise APIError(409, "NO_CHANGE", "已经是这个状态")
     if body.is_admin and target.status != "active":
         raise APIError(409, "NO_CHANGE", "被封禁的账号不能设为管理员")
     target.is_admin = body.is_admin
-    write_audit(session, admin.id, "admin.user.grant" if body.is_admin else "admin.user.revoke", "user", target.id, body.note)
+    target.is_super = make_super
+    if not body.is_admin:
+        target.totp_secret = None
+        # 对方手里的后台会话立刻作废（访问令牌本身每次请求都会查库，这里是让它续不了期）
+        session.execute(delete(RefreshSession).where(RefreshSession.user_id == target.id, RefreshSession.admin.is_(True)))
+    action = "admin.user.revoke" if not body.is_admin else "admin.user.grant_super" if make_super else "admin.user.grant"
+    write_audit(session, admin.id, action, "user", target.id, body.note)
     session.commit()
-    return {"user_id": target.id, "is_admin": target.is_admin}
+    return {"user_id": target.id, "is_admin": target.is_admin, "is_super": target.is_super}
+
+
+def take_down_everything(session: Session, admin_id: str, user_id: str, note: str) -> tuple[int, int]:
+    """下架这个人发过的全部帖子和留言，返回（帖子数，留言数）。每条都记审计，之后可以逐条恢复。"""
+    now = utcnow()
+    contents = session.scalars(select(Content).where(Content.author_id == user_id, Content.deleted_at.is_(None))).all()
+    for content in contents:
+        content.status = "deleted"
+        content.deleted_at = now
+        drop_pushes(session, content.id)
+        write_audit(session, admin_id, "admin.content.remove", "content", content.id, note)
+    comments = session.scalars(select(RoomComment).where(RoomComment.author_id == user_id, RoomComment.removed_at.is_(None))).all()
+    for comment in comments:
+        comment.status = "removed"
+        comment.removed_at = now
+        write_audit(session, admin_id, "admin.comment.remove", "comment", comment.id, note)
+    return len(contents), len(comments)
 
 
 @guarded.post("/users/{user_id}/status")
@@ -394,20 +533,40 @@ def set_user_status(
     body: UserStatusBody,
     admin: User = Depends(require_admin),
     session: Session = Depends(get_db),
-) -> dict[str, str]:
+) -> dict[str, object]:
     target = session.get(User, user_id)
     if target is None or target.deleted_at is not None:
         raise APIError(404, "USER_NOT_FOUND", "用户不存在")
-    # 不能封自己或其他管理员，免得后台被锁死；要处理管理员先用命令行撤销权限。
+    # 不能封自己或其他管理员，免得后台被锁死；要处理管理员先撤销对方的权限。
     if body.status == "suspended" and (target.id == admin.id or target.is_admin):
         raise APIError(409, "CANNOT_SUSPEND_ADMIN", "不能封禁管理员")
     if target.status == body.status:
         raise APIError(409, "NO_CHANGE", "已经是这个状态")
     target.status = body.status
-    action = "admin.user.suspend" if body.status == "suspended" else "admin.user.activate"
-    write_audit(session, admin.id, action, "user", target.id, body.note)
+    removed = (0, 0)
+    if body.status == "suspended":
+        target.suspended_until = utcnow() + timedelta(days=body.days) if body.days else None
+        target.suspend_reason = body.note
+        session.execute(delete(RefreshSession).where(RefreshSession.user_id == target.id))  # 各设备上的登录立即失效
+        if body.remove_contents:
+            removed = take_down_everything(session, admin.id, target.id, f"随封禁「{target.display_name}」一并下架")
+        detail = (f"{body.days} 天" if body.days else "永久") + (f"：{body.note}" if body.note else "")
+        if body.remove_contents:
+            detail += f"（一并下架 {removed[0]} 条帖子、{removed[1]} 条留言）"
+        write_audit(session, admin.id, "admin.user.suspend", "user", target.id, detail[:300])
+    else:
+        target.suspended_until = None
+        target.suspend_reason = None
+        write_audit(session, admin.id, "admin.user.activate", "user", target.id, body.note)
+        notify_user(session, target.id, "你的账号已恢复正常", actor_id=admin.id)
     session.commit()
-    return {"user_id": target.id, "status": target.status}
+    return {
+        "user_id": target.id,
+        "status": target.status,
+        "suspended_until": target.suspended_until,
+        "removed_posts": removed[0],
+        "removed_comments": removed[1],
+    }
 
 
 @guarded.get("/contents")
@@ -577,7 +736,7 @@ def _delete_files(keys: list[str]) -> int:
 def delete_content(
     content_id: str,
     body: Reasoned,
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_super),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
     """彻底删除一条内容，连同它的留言、点赞收藏、举报记录和图片视频文件；不能恢复。只想让它不显示请用下架。"""
@@ -597,6 +756,7 @@ def delete_content(
     # 内容删了以后日志里只剩 id，所以把标题写进备注
     detail = f"{content.title}（{content.type}）" + (f"：{body.note}" if body.note else "")
     write_audit(session, admin.id, "admin.content.delete", "content", content.id, detail[:300])
+    notify_user(session, content.author_id, f"你的「{content.title}」已被管理员删除{_because(body.note)}", actor_id=admin.id)
     session.delete(content)
     session.commit()
     return {"deleted": True, "files_left": _delete_files(orphaned)}
@@ -629,6 +789,8 @@ def set_content_status(
         content.status = "published" if content.published_at is not None else "pending"
         content.deleted_at = None
     write_audit(session, admin.id, f"admin.content.{body.action}", "content", content.id, body.note)
+    outcome = f"已被管理员下架{_because(body.note)}" if body.action == "remove" else "已恢复"
+    notify_user(session, content.author_id, f"你的「{content.title}」{outcome}", content.id, admin.id)
     session.commit()
     return {"content_id": content.id, "status": content.status}
 
@@ -689,101 +851,10 @@ def set_comment_status(
         comment.status = "published"
         comment.removed_at = None
     write_audit(session, admin.id, f"admin.comment.{body.action}", "comment", comment.id, body.note)
+    outcome = f"已被管理员删除{_because(body.note)}" if body.action == "remove" else "已恢复"
+    notify_user(session, comment.author_id, f"你的留言「{comment.body[:30]}」{outcome}", comment.content_id, admin.id)
     session.commit()
     return {"comment_id": comment.id, "status": comment.status}
-
-
-@guarded.get("/channels")
-def list_channels(q: str = "", region: str = "", page: int = 1, session: Session = Depends(get_db)) -> dict[str, object]:
-    query = select(Channel)
-    if region.strip():
-        query = query.where(Channel.region_code == region.strip().upper())
-    if q.strip():
-        like = _like(q)
-        query = query.where(or_(Channel.name_hans.ilike(like), Channel.code.ilike(like)))
-    # 官方频道在前、按国家和排序号排，和前台看到的顺序一致；用户房间跟在后面
-    rows, total = _paged(session, query, (Channel.kind == "room", Channel.region_code, Channel.sort_order, Channel.code), page)
-    names = _names(session, [row.owner_id for row in rows])
-    return {
-        "total": total,
-        "page_size": PAGE,
-        "items": [
-            {
-                "channel_id": row.id,
-                "code": row.code,
-                "name": row.name_hans,
-                "name_hant": row.name_hant,
-                "kind": row.kind,
-                "region_code": row.region_code,
-                "category": row.category or "",
-                "sort_order": row.sort_order,
-                "owner_name": names.get(row.owner_id or "", ""),
-                "is_active": row.is_active,
-                "is_certified": row.is_certified,
-                "certified": row.certified,
-                "review_status": row.review_status,
-                "subscriber_count": row.subscriber_count,
-                "created_at": row.created_at,
-            }
-            for row in rows
-        ],
-    }
-
-
-@guarded.get("/channel-options")
-def channel_options(session: Session = Depends(get_db)) -> dict[str, list[dict[str, str]]]:
-    """发公告时选频道用：所有上架的频道。"""
-    rows = session.execute(
-        select(Channel.id, Channel.name_hans).where(Channel.is_active.is_(True)).order_by(Channel.kind, Channel.name_hans).limit(200)
-    ).all()
-    return {"items": [{"channel_id": row.id, "name": row.name_hans} for row in rows]}
-
-
-class CertifiedBody(BaseModel):
-    certified: bool
-
-
-@guarded.post("/channels/{channel_id}/certified")
-def set_channel_certified(
-    channel_id: str,
-    body: CertifiedBody,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_db),
-) -> dict[str, object]:
-    channel = session.get(Channel, channel_id)
-    if channel is None:
-        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
-    if (channel.kind or "").startswith("official"):
-        raise APIError(409, "NO_CHANGE", "官方频道本来就带认证")
-    if channel.is_certified == body.certified:
-        raise APIError(409, "NO_CHANGE", "已经是这个状态")
-    channel.is_certified = body.certified
-    write_audit(session, admin.id, "admin.channel.certify" if body.certified else "admin.channel.uncertify", "channel", channel.id)
-    session.commit()
-    return {"channel_id": channel.id, "certified": channel.certified}
-
-
-class ChannelActiveBody(Reasoned):
-    active: bool
-
-
-@guarded.post("/channels/{channel_id}/active")
-def set_channel_active(
-    channel_id: str,
-    body: ChannelActiveBody,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_db),
-) -> dict[str, object]:
-    channel = session.get(Channel, channel_id)
-    if channel is None:
-        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
-    if channel.is_active == body.active:
-        raise APIError(409, "NO_CHANGE", "已经是这个状态")
-    channel.is_active = body.active
-    action = "admin.channel.activate" if body.active else "admin.channel.deactivate"
-    write_audit(session, admin.id, action, "channel", channel.id, body.note)
-    session.commit()
-    return {"channel_id": channel.id, "is_active": channel.is_active}
 
 
 @guarded.get("/audit")
@@ -807,270 +878,14 @@ def list_audit(action: str = "", cursor: str = "", session: Session = Depends(ge
                 "target_type": row.target_type,
                 "target_id": row.target_id,
                 "detail": row.detail or "",
+                "ip": row.ip or "",
+                "user_agent": row.user_agent or "",
                 "created_at": row.created_at,
             }
             for row in page
         ],
         "next_cursor": encode_cursor(page[-1].created_at.isoformat(), page[-1].id) if len(rows) > LIMIT else None,
     }
-
-
-# ---- 频道新增 / 编辑 ----
-
-
-class ChannelBody(BaseModel):
-    name_hans: str = Field(min_length=1, max_length=64)
-    name_hant: str = Field(default="", max_length=64)  # 留空则和简体名相同
-    region_code: str
-    category: str = Field(default="", max_length=16)
-    sort_order: int = Field(default=0, ge=0, le=999)
-
-    def apply(self, session: Session, channel: Channel) -> None:
-        region = self.region_code.strip().upper()
-        if region not in open_regions(session):
-            raise APIError(422, "VALIDATION_FAILED", "只能选已开通的国家")
-        channel.name_hans = self.name_hans.strip()
-        channel.name_hant = self.name_hant.strip() or channel.name_hans
-        channel.region_code = region
-        channel.category = self.category.strip() or None
-        channel.sort_order = self.sort_order
-
-
-class ChannelCreateBody(ChannelBody):
-    code: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,47}$")  # 频道的英文代号，建好后不能改
-    kind: Literal["official_curated", "official_auto"] = "official_curated"
-
-
-@guarded.post("/channels")
-def create_channel(
-    body: ChannelCreateBody,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_db),
-) -> dict[str, str]:
-    if session.scalar(select(Channel.id).where(Channel.code == body.code)) is not None:
-        raise APIError(409, "DUPLICATE_CODE", "这个代号已经有频道在用了")
-    channel = Channel(code=body.code, kind=body.kind, is_active=True, name_hans="", name_hant="")
-    body.apply(session, channel)
-    session.add(channel)
-    session.flush()
-    write_audit(session, admin.id, "admin.channel.create", "channel", channel.id)
-    session.commit()
-    return {"channel_id": channel.id}
-
-
-@guarded.patch("/channels/{channel_id}")
-def update_channel(
-    channel_id: str,
-    body: ChannelBody,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_db),
-) -> dict[str, str]:
-    channel = session.get(Channel, channel_id)
-    if channel is None:
-        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
-    body.apply(session, channel)
-    write_audit(session, admin.id, "admin.channel.update", "channel", channel.id)
-    session.commit()
-    return {"channel_id": channel.id}
-
-
-class ChannelDeleteBody(Reasoned):
-    with_content: bool = False  # 频道非空时必须显式为 True
-    confirm_name: str = ""  # 连内容一起删时要原样输入频道名
-
-
-@guarded.post("/channels/{channel_id}/delete")
-def delete_channel(
-    channel_id: str,
-    body: ChannelDeleteBody,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_db),
-) -> dict[str, object]:
-    """彻底删除频道，不能恢复。
-
-    空频道直接删。有内容的频道要显式带 with_content 并输入频道名确认：
-    只属于这个频道的帖子一并下架，留言删掉，下属房间只解除归属（房间和里面的内容保留）。
-    """
-    channel = session.get(Channel, channel_id)
-    if channel is None:
-        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
-    items = session.scalars(select(ChannelItem).where(ChannelItem.channel_id == channel.id)).all()
-    comments = _count(session, RoomComment, RoomComment.room_id == channel.id)
-    rooms = session.scalars(select(Channel).where(Channel.parent_channel_id == channel.id)).all()
-    removed_posts = 0
-    orphaned: list[str] = []
-    if items or comments or rooms:
-        if not body.with_content:
-            raise APIError(
-                409,
-                "CHANNEL_NOT_EMPTY",
-                f"这个频道里还有 {len(items)} 条内容、{comments} 条留言、{len(rooms)} 个房间",
-            )
-        if body.confirm_name.strip() != channel.name_hans:
-            raise APIError(422, "VALIDATION_FAILED", "输入的频道名不一致，没有删除")
-        now = utcnow()
-        elsewhere = set(
-            session.scalars(
-                select(ChannelItem.content_id).where(
-                    ChannelItem.content_id.in_([item.content_id for item in items]), ChannelItem.channel_id != channel.id
-                )
-            ).all()
-        )
-        for item in items:
-            # 还挂在别的频道里的帖子只解除关系，在别处照常显示；只属于这里的才下架
-            content = None if item.content_id in elsewhere else session.get(Content, item.content_id)
-            if content is not None and content.deleted_at is None:
-                content.status = "deleted"
-                content.deleted_at = now
-                drop_pushes(session, content.id)
-                removed_posts += 1
-            session.delete(item)
-        # 留言带的图片：登记记录现在删，文件等提交后删（不删的话知道原链接的人还能打开）
-        doomed = session.execute(select(RoomComment.id, RoomComment.image_key).where(RoomComment.room_id == channel.id)).all()
-        orphaned = _release_uploads(session, [row.image_key for row in doomed])
-        session.execute(delete(CommentLike).where(CommentLike.comment_id.in_([row.id for row in doomed])))
-        session.execute(delete(RoomComment).where(RoomComment.room_id == channel.id))
-        session.execute(delete(RoomPostPush).where((RoomPostPush.room_id == channel.id) | (RoomPostPush.channel_id == channel.id)))
-        for room in rooms:
-            room.parent_channel_id = None
-        # 针对这个频道的未处理举报没有对象可处理了，直接结案
-        for case in session.scalars(
-            select(ModerationCase).where(ModerationCase.reported_channel_id == channel.id, ModerationCase.status == "open")
-        ):
-            case.status = "closed"
-            case.decision = "remove"
-            case.decided_at = now
-    # 成员关系等附属记录一并清掉（SQLite 开发库没开外键级联，这里显式删）
-    for model, column in (
-        (ChannelSubscription, ChannelSubscription.channel_id),
-        (ChannelCollaborator, ChannelCollaborator.channel_id),
-        (RoomJoinRequest, RoomJoinRequest.room_id),
-    ):
-        session.execute(delete(model).where(column == channel.id))
-    # 频道删了以后日志里只剩 id，所以把名称、代号和删掉的数量写进备注
-    detail = f"{channel.name_hans}（{channel.code}）"
-    if items or comments or rooms:
-        detail += f"，连同 {removed_posts} 条内容、{comments} 条留言，解除 {len(rooms)} 个房间的归属"
-    detail += f"：{body.note}" if body.note else ""
-    write_audit(session, admin.id, "admin.channel.delete", "channel", channel.id, detail[:300])
-    session.delete(channel)
-    session.commit()
-    return {
-        "deleted": True,
-        "removed_posts": removed_posts,
-        "removed_comments": comments,
-        "detached_rooms": len(rooms),
-        "files_left": _delete_files(orphaned),
-    }
-
-
-# ---- 国家开通 ----
-
-
-def _region_row(session: Session, code: str) -> Region:
-    """取这个国家的记录；内置国家（英国 / 国际）还没有记录时按默认值建一条。"""
-    row = session.get(Region, code)
-    if row is None:
-        if code not in DEFAULT_REGIONS:
-            raise APIError(404, "REGION_NOT_FOUND", "没有这个国家")
-        name, city = DEFAULT_REGIONS[code]
-        row = Region(code=code, name_hans=name, city=city, is_open=True)
-        session.add(row)
-    return row
-
-
-@guarded.get("/regions")
-def list_regions(session: Session = Depends(get_db)) -> dict[str, object]:
-    is_open = open_regions(session)
-    closed = {row.code: (row.name_hans, row.city) for row in session.scalars(select(Region).where(Region.is_open.is_(False)))}
-    counts = dict(session.execute(select(Channel.region_code, func.count()).where(Channel.kind != "room").group_by(Channel.region_code)).all())
-    wanted = session.execute(
-        select(RegionOpenRequest.region_code, func.count()).group_by(RegionOpenRequest.region_code).order_by(func.count().desc())
-    ).all()
-    return {
-        "items": [
-            {
-                "code": code,
-                "name": name,
-                "city": city,
-                "is_open": code in is_open,
-                "channel_count": counts.get(code, 0),
-            }
-            for code, (name, city) in {**is_open, **closed}.items()
-        ],
-        # 用户申请开通、但还没开通的国家，按申请人数排
-        "requests": [{"code": code, "count": count} for code, count in wanted if code not in is_open],
-    }
-
-
-class RegionBody(BaseModel):
-    code: str = Field(pattern=r"^[A-Za-z]{2,8}$")  # 国家代码，如 US、CA、AU
-    name: str = Field(min_length=1, max_length=32)
-    city: str = Field(default="", max_length=32)
-
-
-@guarded.post("/regions")
-def open_region(
-    body: RegionBody,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_db),
-) -> dict[str, object]:
-    """开通一个新国家，并自动建好它的默认频道（资讯、交流、招聘、房产、市场、商务）。"""
-    code = body.code.upper()
-    if code in open_regions(session):
-        raise APIError(409, "NO_CHANGE", "这个国家已经开通")
-    row = session.get(Region, code)
-    if row is None:
-        row = Region(code=code, name_hans="", is_open=True)
-        session.add(row)
-    row.name_hans = body.name.strip()
-    row.city = body.city.strip()
-    row.is_open = True
-    created = ensure_region_channels(session, code, row.name_hans)
-    write_audit(session, admin.id, "admin.region.open", "region", code)
-    session.commit()
-    return {"code": code, "channels": [channel.name_hans for channel in created]}
-
-
-class RegionOpenBody(Reasoned):
-    open: bool
-
-
-@guarded.post("/regions/{code}/open")
-def set_region_open(
-    code: str,
-    body: RegionOpenBody,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_db),
-) -> dict[str, object]:
-    code = code.upper()
-    if code == "GLOBAL":
-        raise APIError(409, "NO_CHANGE", "国际频道各国共享，不能关闭")
-    if (code in open_regions(session)) == body.open:
-        raise APIError(409, "NO_CHANGE", "已经是这个状态")
-    row = _region_row(session, code)
-    row.is_open = body.open
-    write_audit(session, admin.id, "admin.region.open" if body.open else "admin.region.close", "region", code, body.note)
-    session.commit()
-    return {"code": code, "is_open": row.is_open}
-
-
-@guarded.post("/regions/{code}/channels")
-def fill_region_channels(
-    code: str,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_db),
-) -> dict[str, object]:
-    """给已开通的国家（或国际）补齐默认频道；已有同分类官方频道的不重复建。"""
-    code = code.upper()
-    regions = open_regions(session)
-    if code not in regions:
-        raise APIError(404, "REGION_NOT_FOUND", "这个国家还没开通")
-    created = ensure_region_channels(session, code, regions[code][0])
-    if created:
-        write_audit(session, admin.id, "admin.region.fill", "region", code)
-    session.commit()
-    return {"code": code, "channels": [channel.name_hans for channel in created]}
 
 
 router.include_router(guarded)

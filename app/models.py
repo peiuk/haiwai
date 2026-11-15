@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -33,6 +33,13 @@ class User(Base):
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     # 管理员：可以审核内容、处理举报。设置方式见 app/make_admin.py。
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 超级管理员：在管理员之上，还能彻底删除、管理频道和国家、任免管理员、导出数据。
+    is_super: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 后台两步验证的密钥（base32）；为空表示没开。
+    totp_secret: Mapped[str | None] = mapped_column(String(64))
+    # 限时封禁的到期时间；为空且 status=suspended 表示永久。到期后下次登录自动解封。
+    suspended_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    suspend_reason: Mapped[str | None] = mapped_column(String(300))  # 登录被拒时告诉本人
     dm_allow_strangers: Mapped[bool] = mapped_column(Boolean, default=True)
     feed_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -106,6 +113,8 @@ class Content(Base):
     __table_args__ = (
         CheckConstraint("type <> 'news' OR canonical_url IS NOT NULL", name="chk_news_link"),
         CheckConstraint("type <> 'listing' OR expires_at IS NOT NULL", name="chk_listing_expiry"),
+        Index("ix_content_status_created", "status", "created_at"),  # 后台列表、审核队列
+        Index("ix_content_author", "author_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -147,6 +156,7 @@ class Content(Base):
 
 class ChannelItem(Base):
     __tablename__ = "channel_item"
+    __table_args__ = (Index("ix_channel_item_content", "content_id"),)  # 主键以 channel_id 开头，按内容反查要单独的索引
 
     channel_id: Mapped[str] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), primary_key=True)
     content_id: Mapped[str] = mapped_column(ForeignKey("content.id", ondelete="CASCADE"), primary_key=True)
@@ -193,6 +203,7 @@ class ConsentRecord(Base):
 
 class ModerationCase(Base):
     __tablename__ = "moderation_case"
+    __table_args__ = (Index("ix_case_status_created", "status", "created_at"), Index("ix_case_content", "content_id"))
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     content_id: Mapped[str | None] = mapped_column(ForeignKey("content.id", ondelete="CASCADE"))
@@ -249,6 +260,8 @@ class RefreshSession(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # 后台登录（过了两步验证）发的会话：有效期短，续期后仍是后台会话。
+    admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -354,6 +367,7 @@ class DmMessage(Base):
 
 class RoomComment(Base):
     __tablename__ = "room_comment"
+    __table_args__ = (Index("ix_comment_status_created", "status", "created_at"), Index("ix_comment_content", "content_id"))
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     room_id: Mapped[str] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"))
@@ -410,6 +424,7 @@ class UploadObject(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
+    __table_args__ = (Index("ix_audit_created", "created_at"), Index("ix_audit_target", "target_type", "target_id"))
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     actor_id: Mapped[str | None] = mapped_column(String(36))
@@ -417,4 +432,26 @@ class AuditLog(Base):
     target_type: Mapped[str | None] = mapped_column(String(24))
     target_id: Mapped[str | None] = mapped_column(String(36))
     detail: Mapped[str | None] = mapped_column(String(300))  # 操作理由 / 备注
+    ip: Mapped[str | None] = mapped_column(String(64))  # 操作来源，账号被盗时用来分辨是不是本人
+    user_agent: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ReviewClaim(Base):
+    """审核认领：谁正在处理队列里的哪一条，免得两个管理员同时审同一条。10 分钟不处理自动失效。"""
+
+    __tablename__ = "review_claim"
+
+    target_type: Mapped[str] = mapped_column(String(16), primary_key=True)  # content / comment / channel / case
+    target_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    admin_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BlockedTerm(Base):
+    """敏感词 / 链接黑名单：标题、正文、留言里出现任意一条，就先进待审核而不是直接发布。"""
+
+    __tablename__ = "blocked_term"
+
+    term: Mapped[str] = mapped_column(String(64), primary_key=True)  # 小写保存，匹配时不分大小写
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

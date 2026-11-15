@@ -10,7 +10,14 @@ export type ConfirmOptions = {
   reason?: boolean;
   /** 不可恢复的操作：要求原样输入这段文字（如频道名）后才能点确认 */
   mustType?: string;
+  /** 让管理员选封禁多久（结果在 confirmExtras.days，空串是永久） */
+  days?: boolean;
+  /** 附带一个勾选项（结果在 confirmExtras.checked），这里是它的文字 */
+  checkbox?: string;
 };
+
+/** 确认框里除理由以外的选择；确认后由调用方读取。 */
+export const confirmExtras = reactive({ days: "", checked: false });
 
 export const confirmState = reactive<{
   open: boolean;

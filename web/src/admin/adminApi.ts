@@ -1,5 +1,6 @@
 // 后台专用的登录状态与请求封装。
 // 令牌和前台分开存：登录 / 退出后台不影响前台，反过来也一样。
+import { reactive } from "vue";
 import { ApiRequestError, type ApiError, type LoginResponse } from "../api";
 
 const TOKEN_KEY = "ukcn.admin.token";
@@ -47,11 +48,19 @@ export function hasAdminSession(): boolean {
   return read(TOKEN_KEY).length > 0;
 }
 
-export async function adminLogin(email: string, password: string): Promise<void> {
+/** 当前登录的管理员。is_super 只用来决定显示哪些按钮，权限仍由后端每个接口校验。 */
+export const adminMe = reactive({ user_id: "", display_name: "", is_super: false, two_factor: false });
+
+export async function loadAdminMe(): Promise<void> {
+  Object.assign(adminMe, await adminRequest<typeof adminMe>("/api/v1/admin/me"));
+}
+
+/** code 是验证器 App 上的 6 位数字，只有开了两步验证的账号需要。 */
+export async function adminLogin(email: string, password: string, code = ""): Promise<void> {
   const response = await fetch("/api/v1/admin/login", {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, code }),
   });
   if (!response.ok) throw await toError(response);
   store((await response.json()) as LoginResponse);
@@ -88,8 +97,7 @@ async function refreshAccess(): Promise<boolean> {
   }
 }
 
-/** 带后台令牌的请求；令牌过期自动续期一次，续不上或不是管理员就退回登录页。 */
-export async function adminRequest<T>(path: string, init?: RequestInit, allowRefresh = true): Promise<T> {
+async function send(path: string, init?: RequestInit, allowRefresh = true): Promise<Response> {
   const response = await fetch(path, {
     ...init,
     headers: { ...(init?.headers as Record<string, string> | undefined), Authorization: `Bearer ${read(TOKEN_KEY)}` },
@@ -98,12 +106,31 @@ export async function adminRequest<T>(path: string, init?: RequestInit, allowRef
     refreshing = refreshing ?? refreshAccess();
     const ok = await refreshing;
     refreshing = null;
-    if (ok) return adminRequest<T>(path, init, false);
+    if (ok) return send(path, init, false);
   }
-  if (response.status === 401 || response.status === 403) {
+  if (response.ok) return response;
+  const error = await toError(response);
+  // 「需要超级管理员」只是这一项做不了，不用退出；其余的 401 / 403 说明登录失效或不再是管理员
+  if (response.status === 401 || (response.status === 403 && error.code !== "SUPER_ONLY")) {
     store(null);
     window.dispatchEvent(new Event(ADMIN_SIGNED_OUT));
   }
-  if (!response.ok) throw await toError(response);
-  return (await response.json()) as T;
+  throw error;
+}
+
+/** 带后台令牌的请求；令牌过期自动续期一次，续不上或不是管理员就退回登录页。 */
+export async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await (await send(path, init)).json()) as T;
+}
+
+/** 下载一个文件（导出）。带着令牌取回来再存，所以不能直接用链接。 */
+export async function adminDownload(path: string, fallbackName: string): Promise<void> {
+  const response = await send(path);
+  const named = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "");
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = named?.[1] ?? fallbackName;
+  link.click();
+  URL.revokeObjectURL(url);
 }

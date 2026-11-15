@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.admin import router as admin_router
+from app.api.v1.admin_channels import router as admin_channels_router
+from app.api.v1.admin_ops import router as admin_ops_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.contents import router as contents_router
@@ -20,6 +22,7 @@ from app.api.v1.room_social import router as room_social_router
 from app.api.v1.search import router as search_router
 from app.api.v1.uploads import router as uploads_router
 from app.api.v1.users import router as users_router
+from app.core.audit import client_ip, note_server_error, request_meta
 from app.core.config import DEFAULT_SECRET_KEY, get_settings
 from app.core.db import prepare_database
 from app.core.errors import APIError
@@ -49,7 +52,19 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def attach_request_id(request: Request, call_next):
         request.state.request_id = uuid.uuid4().hex
-        return await call_next(request)
+        # 记下来源，写审计日志时用（见 core/audit.py）
+        request_meta.set((client_ip(request), request.headers.get("user-agent", "")[:200] or None))
+        try:
+            response = await call_next(request)
+        except Exception:
+            note_server_error()
+            raise
+        if response.status_code >= 500:
+            note_server_error()
+        # 接口数据因人而异：没有自己声明缓存策略的 /api 响应一律不许 CDN / 浏览器缓存，免得串号
+        if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.exception_handler(APIError)
     async def handle_api_error(request: Request, exc: APIError) -> JSONResponse:
@@ -69,6 +84,8 @@ def create_app() -> FastAPI:
     app.include_router(me_router, prefix="/api/v1")
     app.include_router(moderation_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/v1")
+    app.include_router(admin_channels_router, prefix="/api/v1")
+    app.include_router(admin_ops_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(ingest_router, prefix="/api/v1")
     app.include_router(listings_router, prefix="/api/v1")

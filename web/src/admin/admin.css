@@ -114,3 +114,8 @@ a.adm-card:hover { border-color: var(--accent); text-decoration: none; }
 .adm-form { max-width: 860px; }
 .adm-form-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .adm-form-row .field { flex: 1 1 200px; min-width: 0; }
+
+/* 批量操作条、确认框里的勾选项、概览的占比条 */
+.adm-batch { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border); font-size: var(--fs-13); }
+.adm-check { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-3) 0; font-size: var(--fs-14); }
+.adm-meter { display: block; height: 8px; min-width: 2px; border-radius: 4px; background: var(--muted); }

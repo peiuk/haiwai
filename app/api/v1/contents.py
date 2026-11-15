@@ -11,6 +11,7 @@ from app.api.v1.uploads import owned_upload
 from app.api.v1.me import active_channel
 from app.api.v1.room_social import apply_comment_like, comment_like_state, mention_count, mention_users
 from app.core.audit import write_audit
+from app.guard import blocked_term_in, hide_if_widely_reported
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.keywords import clean_city_topic, collect_keywords, dump_keywords, load_keywords, resolve_keywords, suggest_keywords
@@ -153,6 +154,8 @@ def create_post(
     )
     now = utcnow()
     status = "pending" if (prior or 0) < REVIEW_LIMIT else "published"
+    if status == "published" and blocked_term_in(session, body.title, body.body):
+        status = "pending"  # 命中敏感词 / 链接黑名单：不直接发布，先给管理员看
     if body.post_type == "video":
         if not body.rights_confirmed:
             raise APIError(400, "RIGHTS_REQUIRED", "发布视频前需要确认是原创且有权使用")
@@ -346,6 +349,7 @@ def report_content(
     session.add(case)
     session.flush()
     write_audit(session, user.id if user else None, "content.report", "content", content.id)
+    hide_if_widely_reported(session, content)
     session.commit()
     return report_receipt(case)
 

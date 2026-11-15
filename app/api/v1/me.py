@@ -53,6 +53,7 @@ def my_profile(user: User = Depends(current_user)) -> dict[str, object]:
         "script_pref": user.script_pref,
         "phone": user.phone or "",
         "is_admin": user.is_admin,  # 前端据此决定是否显示管理后台入口；权限仍由后端校验
+        "is_super": user.is_super,
     }
 
 

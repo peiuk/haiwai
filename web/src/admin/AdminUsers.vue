@@ -2,8 +2,11 @@
 // 用户管理：搜索、按状态筛选、封禁 / 解封。设 / 撤管理员在用户详情页。
 import { ref } from "vue";
 import { RouterLink } from "vue-router";
+import { toMessage } from "../api";
+import { useToastStore } from "../stores/toast";
+import { adminDownload, adminMe } from "./adminApi";
 import AdminPager from "./AdminPager.vue";
-import { STATUS_LABELS, exact, statusTone, when } from "./shared";
+import { STATUS_LABELS, exact, statusTone, suspendBody, when } from "./shared";
 import { useAdminList } from "./useAdminList";
 
 type Row = {
@@ -12,7 +15,10 @@ type Row = {
   handle: string;
   email: string;
   status: string;
+  suspended_until: string | null;
   is_admin: boolean;
+  is_super: boolean;
+  two_factor: boolean;
   post_count: number;
   created_at: string;
 };
@@ -26,12 +32,29 @@ const { items, total, page, pageSize, loading, error, busy, load, search, go, ac
 
 function suspend(item: Row): Promise<void> {
   return ask(
-    { title: `封禁「${item.display_name}」？`, message: "封禁后对方立即无法登录和使用，之后可以解封。", confirmLabel: "封禁", danger: true, reason: true },
+    {
+      title: `封禁「${item.display_name}」？`,
+      message: "封禁后对方立即无法登录和使用；限时封禁到期自动解封，也可以提前手动解封。",
+      confirmLabel: "封禁",
+      danger: true,
+      reason: true,
+      days: true,
+      checkbox: "同时下架对方发过的全部帖子和留言（刷广告的账号用）",
+    },
     item.user_id,
     `/api/v1/admin/users/${item.user_id}/status`,
-    (reason) => ({ status: "suspended", reason }),
+    suspendBody,
     "已封禁",
   );
+}
+
+const toast = useToastStore();
+async function exportCsv(): Promise<void> {
+  try {
+    await adminDownload("/api/v1/admin/export/users", "users.csv");
+  } catch (err) {
+    toast.show(toMessage(err));
+  }
 }
 
 function activate(item: Row): Promise<void> {
@@ -54,6 +77,7 @@ function activate(item: Row): Promise<void> {
         <option value="suspended">已封禁</option>
       </select>
       <button type="submit" class="btn btn--outline">搜索</button>
+      <button v-if="adminMe.is_super" type="button" class="btn btn--ghost" title="导出全部用户（最近 1 万个）为表格文件" @click="exportCsv">导出</button>
     </form>
 
     <p v-if="error" class="notice notice--danger" role="alert">
@@ -72,12 +96,16 @@ function activate(item: Row): Promise<void> {
             <tr v-for="item in items" :key="item.user_id">
               <td>
                 <RouterLink :to="`/admin/users/${item.user_id}`">{{ item.display_name }}</RouterLink>
-                <span v-if="item.is_admin" class="tag tag--link">管理员</span>
+                <span v-if="item.is_admin" class="tag tag--link">{{ item.is_super ? "超级管理员" : "管理员" }}</span>
+                <span v-if="item.is_admin && !item.two_factor" class="tag tag--warn" title="这个管理员还没开两步验证，密码泄露就能进后台">未开两步验证</span>
                 <span v-if="item.handle" class="adm-sub">@{{ item.handle }}</span>
               </td>
               <td class="adm-nowrap">{{ item.email }}</td>
               <td class="adm-num">{{ item.post_count }}</td>
-              <td><span class="tag" :class="statusTone(item.status)">{{ STATUS_LABELS[item.status] ?? item.status }}</span></td>
+              <td>
+                <span class="tag" :class="statusTone(item.status)">{{ STATUS_LABELS[item.status] ?? item.status }}</span>
+                <span v-if="item.status === 'suspended'" class="adm-sub">{{ item.suspended_until ? `到 ${exact(item.suspended_until)}` : "永久" }}</span>
+              </td>
               <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
               <td>
                 <div class="adm-actions">

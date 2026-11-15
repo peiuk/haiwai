@@ -2,9 +2,11 @@
 // 举报（mode=reports）与待审核（mode=review）共用一份队列数据。
 import { ref } from "vue";
 import { RouterLink } from "vue-router";
-import { toMessage } from "../api";
-import { adminRequest } from "./adminApi";
-import { TARGET_LABELS, exact, when } from "./shared";
+import { jsonBody, toMessage } from "../api";
+import { useToastStore } from "../stores/toast";
+import { ADMIN_CHANGED, adminRequest } from "./adminApi";
+import { confirmAction } from "./confirm";
+import { TARGET_LABELS, exact, overdue, when } from "./shared";
 import { useAdminAction } from "./useAdminList";
 
 const props = defineProps<{ mode: "reports" | "review" }>();
@@ -19,9 +21,10 @@ type Queue = {
     ai_draft: boolean;
     ai_check: boolean;
     source_url: string | null;
+    claimed_by: string; // 别的管理员正在处理时是对方的名字，否则空串
   }[];
-  comments: { comment_id: string; body: string; author_name: string; created_at: string }[];
-  channels: { channel_id: string; name: string; owner_name: string; created_at: string }[];
+  comments: { comment_id: string; body: string; author_name: string; created_at: string; claimed_by: string }[];
+  channels: { channel_id: string; name: string; owner_name: string; created_at: string; claimed_by: string }[];
   cases: {
     case_id: string;
     target_type: "content" | "comment" | "channel" | "user";
@@ -31,6 +34,7 @@ type Queue = {
     detail: string;
     reporter_name: string;
     created_at: string;
+    claimed_by: string;
   }[];
 };
 type Kind = "" | "comments/" | "channels/" | "cases/";
@@ -78,13 +82,54 @@ function path(kind: Kind, id: string): string {
   return `/api/v1/moderation/${kind}${id}/decision`;
 }
 
-// 通过 / 驳回不改动内容，直接提交；拒绝、下架、封禁先确认并可填理由。
-function approve(kind: Kind, id: string, decision: "approve" | "dismiss", done: string): Promise<void> {
-  return act(id, path(kind, id), { decision }, done);
+const toast = useToastStore();
+const CLAIM_TYPE: Record<Kind, string> = { "": "content", "comments/": "comment", "channels/": "channel", "cases/": "case" };
+
+/** 动手之前先认领：别的管理员正在处理这一条就提示并停下，免得两个人审同一条。 */
+async function claim(kind: Kind, id: string): Promise<boolean> {
+  try {
+    await adminRequest("/api/v1/admin/claims", jsonBody({ target_type: CLAIM_TYPE[kind], target_id: id }));
+    return true;
+  } catch (err) {
+    toast.show(toMessage(err));
+    void load();
+    return false;
+  }
 }
 
-function reject(kind: Kind, id: string, decision: "reject" | "remove", label: string, what: string): Promise<void> {
-  return ask(
+// ---- 批量审帖：勾选多条后一次通过或拒绝 ----
+const selected = ref<string[]>([]);
+
+function toggleAll(checked: boolean): void {
+  selected.value = checked ? (queue.value?.contents ?? []).map((item) => item.content_id) : [];
+}
+
+async function batch(action: "approve" | "reject"): Promise<void> {
+  const count = selected.value.length;
+  const reason = action === "reject" ? await confirmAction({ title: `拒绝选中的 ${count} 条帖子？`, confirmLabel: "拒绝", danger: true, reason: true }) : "";
+  if (reason === null) return;
+  try {
+    const result = await adminRequest<{ done: number; failed: { message: string }[] }>(
+      "/api/v1/admin/contents/batch",
+      jsonBody({ ids: selected.value, action, reason }),
+    );
+    toast.show(result.failed.length ? `处理了 ${result.done} 条，${result.failed.length} 条没成功：${result.failed[0].message}` : `已处理 ${result.done} 条`);
+    selected.value = [];
+    window.dispatchEvent(new Event(ADMIN_CHANGED));
+    await load();
+  } catch (err) {
+    toast.show(toMessage(err));
+  }
+}
+
+// 通过 / 驳回不改动内容，直接提交；拒绝、下架、封禁先确认并可填理由。
+async function approve(kind: Kind, id: string, decision: "approve" | "dismiss", done: string): Promise<void> {
+  if (await claim(kind, id)) await act(id, path(kind, id), { decision }, done);
+}
+
+async function reject(kind: Kind, id: string, decision: "reject" | "remove", label: string, what: string): Promise<void> {
+  if (!(await claim(kind, id))) return;
+  await ask(
     { title: `${label}${what}？`, confirmLabel: label, danger: true, reason: true },
     id,
     path(kind, id),
@@ -128,10 +173,14 @@ function targetLink(item: Queue["cases"][number]): string {
                   <span class="tag tag--warn">{{ TARGET_LABELS[item.target_type] }}</span>
                   <RouterLink v-if="targetLink(item)" :to="targetLink(item)">{{ item.target_label }}</RouterLink>
                   <template v-else>{{ item.target_label }}</template>
+                  <span v-if="item.claimed_by" class="tag">{{ item.claimed_by }} 处理中</span>
                 </td>
                 <td class="adm-wide">{{ item.reason }}<span v-if="item.detail" class="adm-sub">{{ item.detail }}</span></td>
                 <td class="adm-nowrap">{{ item.reporter_name || "游客" }}</td>
-                <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
+                <td class="adm-nowrap" :title="exact(item.created_at)">
+                  {{ when(item.created_at) }}
+                  <span v-if="overdue(item.created_at)" class="tag tag--danger">超过 24 小时</span>
+                </td>
                 <td>
                   <div class="adm-actions">
                     <button type="button" class="btn btn--danger btn--sm" :disabled="busy === item.case_id" @click="reject('cases/', item.case_id, 'remove', CASE_REMOVE[item.target_type], `这个${TARGET_LABELS[item.target_type]}`)">{{ CASE_REMOVE[item.target_type] }}</button>
@@ -157,15 +206,27 @@ function targetLink(item: Queue["cases"][number]): string {
 
       <section class="adm-panel">
         <h2>帖子（{{ queue.contents.length }}）</h2>
+        <div v-if="selected.length" class="adm-batch" role="status">
+          已选 {{ selected.length }} 条
+          <button type="button" class="btn btn--primary btn--sm" @click="batch('approve')">全部通过</button>
+          <button type="button" class="btn btn--outline btn--sm" @click="batch('reject')">全部拒绝</button>
+          <button type="button" class="btn btn--ghost btn--sm" @click="selected = []">取消选择</button>
+        </div>
         <p v-if="!queue.contents.length" class="adm-empty">没有待审的帖子。</p>
         <div v-else class="adm-scroll">
           <table class="adm-table">
             <thead>
-              <tr><th>标题与内容</th><th>作者</th><th>时间</th><th></th></tr>
+              <tr>
+                <th><input type="checkbox" aria-label="全选待审帖子" :checked="selected.length === queue.contents.length" @change="toggleAll(($event.target as HTMLInputElement).checked)" /></th>
+                <th>标题与内容</th><th>作者</th><th>时间</th><th></th>
+              </tr>
             </thead>
             <tbody>
               <tr v-for="item in queue.contents" :key="item.content_id">
+                <td><input v-model="selected" type="checkbox" :value="item.content_id" :aria-label="`选择「${item.title}」`" /></td>
                 <td class="adm-wide">
+                  <span v-if="item.claimed_by" class="tag">{{ item.claimed_by }} 处理中</span>
+                  <span v-if="overdue(item.created_at)" class="tag tag--danger">超过 24 小时</span>
                   <span v-if="item.ai_draft" class="tag">AI 资讯</span>
                   <span v-if="item.ai_check" class="tag tag--warn" title="中文稿里有原文里找不到的数字，请点「原文」对照">数字待核对</span>
                   <RouterLink :to="`/admin/contents/${item.content_id}`"><strong>{{ item.title }}</strong></RouterLink>
@@ -196,7 +257,10 @@ function targetLink(item: Queue["cases"][number]): string {
             </thead>
             <tbody>
               <tr v-for="item in queue.comments" :key="item.comment_id">
-                <td class="adm-wide">{{ item.body || "（只有图片的留言）" }}</td>
+                <td class="adm-wide">
+                  <span v-if="item.claimed_by" class="tag">{{ item.claimed_by }} 处理中</span>
+                  {{ item.body || "（只有图片的留言）" }}
+                </td>
                 <td class="adm-nowrap">{{ item.author_name }}</td>
                 <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
                 <td>
@@ -221,7 +285,10 @@ function targetLink(item: Queue["cases"][number]): string {
             </thead>
             <tbody>
               <tr v-for="item in queue.channels" :key="item.channel_id">
-                <td class="adm-wide"><strong>{{ item.name }}</strong></td>
+                <td class="adm-wide">
+                  <span v-if="item.claimed_by" class="tag">{{ item.claimed_by }} 处理中</span>
+                  <strong>{{ item.name }}</strong>
+                </td>
                 <td class="adm-nowrap">{{ item.owner_name }}</td>
                 <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
                 <td>

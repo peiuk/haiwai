@@ -1,5 +1,6 @@
 // 后台各页面共用的类型、中文标签和时间显示。
 import { fmtRelativeTime } from "../utils/time";
+import { confirmExtras } from "./confirm";
 
 export type AdminStats = {
   new_posts_today: number;
@@ -11,6 +12,14 @@ export type AdminStats = {
   total_users: number;
   total_contents: number;
   trend: { date: string; posts: number; users: number }[];
+  overdue_cases: number;
+  overdue_contents: number;
+  active_users_7d: number;
+  avg_review_hours: number | null;
+  cases_closed_30d: number;
+  cases_upheld_30d: number;
+  posts_by_region: { region: string; posts: number }[];
+  server_errors_1h: number;
 };
 
 export type Paged<T> = { items: T[]; total: number; page_size: number };
@@ -40,7 +49,15 @@ export const KIND_LABELS: Record<string, string> = {
   room: "房间",
 };
 
-export const TARGET_LABELS: Record<string, string> = { content: "帖子", comment: "留言", channel: "房间", user: "用户", region: "国家" };
+export const TARGET_LABELS: Record<string, string> = {
+  content: "帖子",
+  comment: "留言",
+  channel: "房间",
+  user: "用户",
+  region: "国家",
+  term: "敏感词",
+  table: "数据表",
+};
 
 export const ACTION_LABELS: Record<string, string> = {
   "admin.login": "登录后台",
@@ -66,6 +83,16 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin.announcement.create": "发布公告",
   "admin.user.grant": "设为管理员",
   "admin.user.revoke": "撤销管理员",
+  "admin.user.grant_super": "设为超级管理员",
+  "admin.user.export": "导出用户数据",
+  "admin.user.erase": "代用户注销账号",
+  "admin.totp.enable": "开启两步验证",
+  "admin.totp.disable": "关闭两步验证",
+  "admin.term.add": "添加敏感词",
+  "admin.term.delete": "删除敏感词",
+  "admin.export": "导出数据",
+  "auto.hide": "多人举报自动隐藏",
+  "account.erase": "注销账号",
   "admin.user.reset_link": "生成重置密码链接",
   "account.password_reset": "重置密码",
   "admin.news.fetch": "抓取 AI 资讯",
@@ -105,6 +132,18 @@ export function exact(iso: string | null | undefined): string {
   if (!iso) return "";
   const date = new Date(asUtc(iso));
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+/** 封禁请求的内容：理由来自确认框的输入，时长和「一并下架」来自确认框里的另外两个选项。 */
+export function suspendBody(reason: string): Record<string, unknown> {
+  return { status: "suspended", reason, days: confirmExtras.days ? Number(confirmExtras.days) : null, remove_contents: confirmExtras.checked };
+}
+
+const OVERDUE_MS = 24 * 3600 * 1000;
+
+/** 待办是不是等了超过 24 小时（对举报人承诺的处理时限）。 */
+export function overdue(iso: string): boolean {
+  return Date.now() - new Date(asUtc(iso)).getTime() > OVERDUE_MS;
 }
 
 export type CaseRow = {

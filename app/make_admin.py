@@ -2,7 +2,8 @@
 
 用法（项目根目录）：
     python -m app.make_admin you@example.com
-加 --revoke 取消管理员。
+默认设为超级管理员（能做全部操作）；加 --moderator 只给审核权限。
+加 --revoke 取消管理员；加 --reset-2fa 关掉对方的两步验证（手机丢了时用）。
 """
 import sys
 
@@ -16,7 +17,7 @@ def main(argv: list[str]) -> int:
     revoke = "--revoke" in argv
     emails = [item.strip().lower() for item in argv if not item.startswith("--")]
     if len(emails) != 1:
-        print("用法: python -m app.make_admin <邮箱> [--revoke]")
+        print("用法: python -m app.make_admin <邮箱> [--moderator | --revoke | --reset-2fa]")
         return 2
     session = next(get_db())
     try:
@@ -24,9 +25,17 @@ def main(argv: list[str]) -> int:
         if user is None:
             print(f"找不到用户 {emails[0]}")
             return 1
+        if "--reset-2fa" in argv:
+            user.totp_secret = None
+            session.commit()
+            print(f"{user.email}: 两步验证已关闭")
+            return 0
         user.is_admin = not revoke
+        user.is_super = not revoke and "--moderator" not in argv
+        if revoke:
+            user.totp_secret = None
         session.commit()
-        print(f"{user.email}: is_admin = {user.is_admin}")
+        print(f"{user.email}: is_admin = {user.is_admin}, is_super = {user.is_super}")
         return 0
     finally:
         session.close()

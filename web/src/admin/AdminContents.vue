@@ -4,8 +4,9 @@ import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
-import { adminRequest } from "./adminApi";
+import { ADMIN_CHANGED, adminDownload, adminMe, adminRequest } from "./adminApi";
 import AdminPager from "./AdminPager.vue";
+import { confirmAction } from "./confirm";
 import { STATUS_LABELS, TYPE_LABELS, exact, statusTone, when } from "./shared";
 import { useAdminList } from "./useAdminList";
 
@@ -56,6 +57,45 @@ function destroy(item: Row): Promise<void> {
     (reason) => ({ reason }),
     "已删除",
   );
+}
+
+// ---- 批量下架：勾选当前页的多条，一次下架（对付刷屏的广告） ----
+const selected = ref<string[]>([]);
+const removable = computed(() => items.value.filter((item) => item.status !== "deleted"));
+
+function toggleAll(checked: boolean): void {
+  selected.value = checked ? removable.value.map((item) => item.content_id) : [];
+}
+
+async function batchRemove(): Promise<void> {
+  const reason = await confirmAction({
+    title: `下架选中的 ${selected.value.length} 条内容？`,
+    message: "下架后前台不再显示，之后可以逐条恢复。",
+    confirmLabel: "全部下架",
+    danger: true,
+    reason: true,
+  });
+  if (reason === null) return;
+  try {
+    const result = await adminRequest<{ done: number; failed: { message: string }[] }>(
+      "/api/v1/admin/contents/batch",
+      jsonBody({ ids: selected.value, action: "remove", reason }),
+    );
+    toast.show(result.failed.length ? `下架了 ${result.done} 条，${result.failed.length} 条没成功：${result.failed[0].message}` : `已下架 ${result.done} 条`);
+    selected.value = [];
+    window.dispatchEvent(new Event(ADMIN_CHANGED));
+    await load();
+  } catch (err) {
+    toast.show(toMessage(err));
+  }
+}
+
+async function exportCsv(): Promise<void> {
+  try {
+    await adminDownload("/api/v1/admin/export/contents", "contents.csv");
+  } catch (err) {
+    toast.show(toMessage(err));
+  }
 }
 
 function restore(item: Row): Promise<void> {
@@ -142,6 +182,7 @@ async function publish(): Promise<void> {
         <option value="deleted">已下架</option>
       </select>
       <button type="submit" class="btn btn--outline">搜索</button>
+      <button v-if="adminMe.is_super" type="button" class="btn btn--ghost" title="导出全部内容（最近 1 万条）为表格文件" @click="exportCsv">导出</button>
     </form>
 
     <p v-if="error" class="notice notice--danger" role="alert">
@@ -150,16 +191,23 @@ async function publish(): Promise<void> {
     </p>
 
     <section class="adm-panel">
+      <div v-if="selected.length" class="adm-batch" role="status">
+        已选 {{ selected.length }} 条
+        <button type="button" class="btn btn--danger btn--sm" @click="batchRemove">全部下架</button>
+        <button type="button" class="btn btn--ghost btn--sm" @click="selected = []">取消选择</button>
+      </div>
       <p v-if="!items.length" class="adm-empty">{{ loading ? "正在加载…" : "没有符合条件的内容。" }}</p>
       <div v-else class="adm-scroll">
         <table class="adm-table">
           <thead>
             <tr>
+              <th><input type="checkbox" aria-label="全选本页没下架的内容" :checked="removable.length > 0 && selected.length === removable.length" @change="toggleAll(($event.target as HTMLInputElement).checked)" /></th>
               <th>标题</th><th v-if="showType">类型</th><th>作者 / 来源</th><th>频道</th><th>状态</th><th class="adm-num">浏览</th><th>发布时间</th><th></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.content_id">
+              <td><input v-if="item.status !== 'deleted'" v-model="selected" type="checkbox" :value="item.content_id" :aria-label="`选择「${item.title}」`" /></td>
               <td class="adm-wide">
                 <RouterLink :to="`/admin/contents/${item.content_id}`">{{ item.title }}</RouterLink>
                 <span v-if="item.featured" class="tag tag--link">精选</span>
@@ -175,7 +223,7 @@ async function publish(): Promise<void> {
                   <button v-if="item.status === 'published'" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.content_id" @click="feature(item)">{{ item.featured ? "取消精选" : "精选" }}</button>
                   <button v-if="item.status === 'deleted'" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.content_id" @click="restore(item)">恢复</button>
                   <button v-else type="button" class="btn btn--danger btn--sm" :disabled="busy === item.content_id" @click="remove(item)">下架</button>
-                  <button type="button" class="btn btn--ghost btn--sm" :disabled="busy === item.content_id" @click="destroy(item)">删除</button>
+                  <button v-if="adminMe.is_super" type="button" class="btn btn--ghost btn--sm" :disabled="busy === item.content_id" @click="destroy(item)">删除</button>
                 </div>
               </td>
             </tr>

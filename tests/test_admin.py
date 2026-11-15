@@ -35,8 +35,18 @@ def register(client, email: str, admin: bool = False) -> str:
     assert response.status_code == 200, response.text
     if admin:
         with client.session_factory() as session:
-            session.scalar(select(User).where(User.email == email)).is_admin = True
+            user = session.scalar(select(User).where(User.email == email))
+            user.is_admin = True
+            user.is_super = True
             session.commit()
+        return admin_login(client, email)
+    return response.json()["access_token"]
+
+
+def admin_login(client, email: str, code: str = "") -> str:
+    """后台接口只认后台登录发的令牌（前台登录没过两步验证）。"""
+    response = client.post("/api/v1/admin/login", json={"email": email, "password": "password-1", "code": code})
+    assert response.status_code == 200, response.text
     return response.json()["access_token"]
 
 
@@ -188,7 +198,7 @@ def test_queue_and_stats(client):
     trend = stats.pop("trend")
     assert len(trend) == 14 and trend[-1]["posts"] == 1 and trend[-1]["users"] == 2
     assert sum(day["posts"] for day in trend) == 1
-    assert stats == {
+    want = {
         "total_users": 2,
         "total_contents": 0,
         "new_posts_today": 1,
@@ -198,6 +208,7 @@ def test_queue_and_stats(client):
         "pending_channels": 0,
         "open_cases": 1,
     }
+    assert {key: stats[key] for key in want} == want  # 其余是运营指标，另有用例
 
 
 def test_channel_toggle_and_audit_list(client):
@@ -211,7 +222,7 @@ def test_channel_toggle_and_audit_list(client):
     assert [(row["channel_id"], row["is_active"]) for row in listed] == [(channel_id, False)]
     assert client.post(url, headers=headers(boss), json={"active": True}).status_code == 200
 
-    audit = client.get("/api/v1/admin/audit?action=admin.", headers=headers(boss)).json()
+    audit = client.get("/api/v1/admin/audit?action=admin.channel", headers=headers(boss)).json()
     assert [row["action"] for row in audit["items"]] == ["admin.channel.activate", "admin.channel.deactivate"]
     assert audit["items"][0]["actor_name"] == "boss" and audit["items"][0]["target_id"] == channel_id
     assert audit["next_cursor"] is None
@@ -333,9 +344,9 @@ def test_reason_is_recorded_and_shown_in_detail(client):
     user = client.get(f"/api/v1/admin/users/{author_id}", headers=headers(boss)).json()
     assert (user["email"], user["status"], user["post_count"]) == ("author@example.com", "suspended", 0)
     assert [post["content_id"] for post in user["posts"]] == [content_id]
-    assert user["history"][0]["detail"] == "多次发布虚假信息"
+    assert user["history"][0]["detail"] == "永久：多次发布虚假信息"
     audit = client.get("/api/v1/admin/audit?action=admin.user", headers=headers(boss)).json()["items"]
-    assert audit[0]["detail"] == "多次发布虚假信息"
+    assert audit[0]["detail"] == "永久：多次发布虚假信息"
 
     # 处理举报时填的理由也要进日志
     with client.session_factory() as session:
@@ -353,6 +364,8 @@ def test_grant_and_revoke_admin(client):
 
     assert client.get("/api/v1/admin/stats", headers=headers(helper)).status_code == 403
     assert client.post(url, headers=headers(boss), json={"is_admin": True}).status_code == 200
+    assert client.get("/api/v1/admin/stats", headers=headers(helper)).status_code == 401  # 前台令牌不能操作后台
+    helper = admin_login(client, "helper@example.com")
     assert client.get("/api/v1/admin/stats", headers=headers(helper)).status_code == 200
     assert client.post(url, headers=headers(boss), json={"is_admin": True}).status_code == 409
     assert client.post(url, headers=headers(boss), json={"is_admin": False}).status_code == 200

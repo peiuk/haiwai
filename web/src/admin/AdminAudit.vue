@@ -2,10 +2,20 @@
 // 操作日志：按动作筛选，往下加载更多。
 import { ref } from "vue";
 import { toMessage } from "../api";
-import { adminRequest } from "./adminApi";
+import { adminDownload, adminMe, adminRequest } from "./adminApi";
 import { ACTION_LABELS, TARGET_LABELS, exact, when } from "./shared";
 
-type Row = { id: string; action: string; actor_name: string; target_type: string | null; target_id: string | null; detail: string; created_at: string };
+type Row = {
+  id: string;
+  action: string;
+  actor_name: string;
+  target_type: string | null;
+  target_id: string | null;
+  detail: string;
+  ip: string;
+  user_agent: string;
+  created_at: string;
+};
 type Page = { items: Row[]; next_cursor: string | null };
 
 const action = ref("");
@@ -32,6 +42,14 @@ async function load(more = false): Promise<void> {
   }
 }
 void load();
+
+async function exportCsv(): Promise<void> {
+  try {
+    await adminDownload("/api/v1/admin/export/audit", "audit.csv");
+  } catch (err) {
+    error.value = toMessage(err);
+  }
+}
 </script>
 
 <template>
@@ -48,7 +66,11 @@ void load();
         <option value="moderation.">审核与举报处理</option>
         <option value="admin.login">登录后台</option>
         <option value="account.">账号</option>
+        <option value="admin.user">用户与权限</option>
+        <option value="admin.export">导出数据</option>
+        <option value="auto.">自动拦截</option>
       </select>
+      <button v-if="adminMe.is_super" type="button" class="btn btn--ghost" title="导出最近 1 万条操作记录为表格文件" @click="exportCsv">导出</button>
     </form>
 
     <p v-if="error" class="notice notice--danger" role="alert">
@@ -61,7 +83,7 @@ void load();
       <div v-else class="adm-scroll">
         <table class="adm-table">
           <thead>
-            <tr><th>动作</th><th>操作人</th><th>对象</th><th>理由</th><th>时间</th></tr>
+            <tr><th>动作</th><th>操作人</th><th>对象</th><th>理由</th><th>来源</th><th>时间</th></tr>
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.id">
@@ -78,6 +100,7 @@ void load();
                 <template v-else>—</template>
               </td>
               <td class="adm-wide">{{ item.detail || "—" }}</td>
+              <td class="adm-nowrap adm-mono" :title="item.user_agent">{{ item.ip || "—" }}</td>
               <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
             </tr>
           </tbody>

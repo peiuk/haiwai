@@ -3,7 +3,7 @@
 import { ref } from "vue";
 import { ApiRequestError, jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
-import { ADMIN_CHANGED, adminRequest } from "./adminApi";
+import { ADMIN_CHANGED, adminMe, adminRequest } from "./adminApi";
 import AdminPager from "./AdminPager.vue";
 import { confirmAction } from "./confirm";
 import { KIND_LABELS, STATUS_LABELS, exact, when } from "./shared";
@@ -155,7 +155,7 @@ function certify(item: Row): Promise<void> {
     <header class="adm-head">
       <h1>频道 / 房间</h1>
       <p>同一国家里按排序号从小到大排列</p>
-      <button v-if="!editing" type="button" class="btn btn--primary btn--sm" @click="openCreate">新增频道</button>
+      <button v-if="!editing && adminMe.is_super" type="button" class="btn btn--primary btn--sm" @click="openCreate">新增频道</button>
     </header>
 
     <section v-if="editing" class="adm-panel">
@@ -251,12 +251,12 @@ function certify(item: Row): Promise<void> {
               <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
               <td>
                 <div class="adm-actions">
-                  <button type="button" class="btn btn--outline btn--sm" @click="openEdit(item)">编辑</button>
+                  <button v-if="adminMe.is_super" type="button" class="btn btn--outline btn--sm" @click="openEdit(item)">编辑</button>
                   <!-- 官方频道天然认证，不需要也不能改 -->
-                  <button v-if="!item.kind.startsWith('official')" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="certify(item)">{{ item.is_certified ? "取消认证" : "认证" }}</button>
+                  <button v-if="adminMe.is_super && !item.kind.startsWith('official')" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="certify(item)">{{ item.is_certified ? "取消认证" : "认证" }}</button>
                   <button v-if="item.is_active" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.channel_id" @click="deactivate(item)">下架</button>
                   <button v-else type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="activate(item)">上架</button>
-                  <button type="button" class="btn btn--ghost btn--sm" :disabled="busy === item.channel_id" @click="remove(item)">删除</button>
+                  <button v-if="adminMe.is_super" type="button" class="btn btn--ghost btn--sm" :disabled="busy === item.channel_id" @click="remove(item)">删除</button>
                 </div>
               </td>
             </tr>

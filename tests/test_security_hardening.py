@@ -72,6 +72,9 @@ def test_outside_dev_only_admins_can_moderate(client, monkeypatch):
         session.scalar(select(User).where(User.email == "outsider-h@example.com")).is_admin = True
         session.commit()
         session.close()
+        # 后台接口只认后台登录发的令牌
+        login = client.post("/api/v1/admin/login", json={"email": "outsider-h@example.com", "password": "password-1"})
+        outsider = login.json()["access_token"]
         allowed = client.post(f"/api/v1/moderation/{content_id}/decision", headers=headers(outsider), json={"decision": "approve"})
         assert allowed.status_code == 200, allowed.text
         session = client.session_factory()

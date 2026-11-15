@@ -48,6 +48,8 @@ const routes: RouteRecordRaw[] = [
       { path: "channels", meta: { title: "频道与房间" }, component: () => import("../admin/AdminChannels.vue") },
       { path: "regions", meta: { title: "国家" }, component: () => import("../admin/AdminRegions.vue") },
       { path: "audit", meta: { title: "操作日志" }, component: () => import("../admin/AdminAudit.vue") },
+      { path: "terms", meta: { title: "敏感词" }, component: () => import("../admin/AdminTerms.vue") },
+      { path: "security", meta: { title: "账号安全" }, component: () => import("../admin/AdminSecurity.vue") },
     ],
   },
   // 兜底：未匹配回到首页

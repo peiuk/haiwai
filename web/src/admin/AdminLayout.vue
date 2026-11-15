@@ -3,10 +3,9 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import Toast from "../components/base/Toast.vue";
-import type { MeProfile } from "../api";
 import { useThemeStore } from "../stores/theme";
 import AdminConfirm from "./AdminConfirm.vue";
-import { ADMIN_CHANGED, ADMIN_SIGNED_OUT, adminLogout, adminRequest } from "./adminApi";
+import { ADMIN_CHANGED, ADMIN_SIGNED_OUT, adminLogout, adminMe, adminRequest, loadAdminMe } from "./adminApi";
 import type { AdminStats } from "./shared";
 import "./admin.css";
 
@@ -22,13 +21,14 @@ const NAV: { to: string; label: string; badge?: Badge }[] = [
   { to: "/admin/users", label: "用户" },
   { to: "/admin/channels", label: "频道 / 房间" },
   { to: "/admin/regions", label: "国家" },
+  { to: "/admin/terms", label: "敏感词" },
   { to: "/admin/audit", label: "操作日志" },
+  { to: "/admin/security", label: "账号安全" },
 ];
 
 const route = useRoute();
 const router = useRouter();
 const theme = useThemeStore();
-const name = ref("");
 const counts = ref<Record<Badge, number>>({ cases: 0, review: 0 });
 
 async function loadCounts(): Promise<void> {
@@ -57,7 +57,7 @@ onMounted(async () => {
   window.addEventListener(ADMIN_CHANGED, loadCounts);
   void loadCounts();
   try {
-    name.value = (await adminRequest<MeProfile>("/api/v1/me")).display_name;
+    await loadAdminMe();
   } catch {
     // 名字拿不到不影响使用
   }
@@ -83,7 +83,10 @@ onBeforeUnmount(() => {
     </aside>
     <div class="adm-body">
       <header class="adm-top">
-        <span v-if="name" class="adm-who">{{ name }}</span>
+        <span v-if="adminMe.display_name" class="adm-who">
+          {{ adminMe.display_name }}（{{ adminMe.is_super ? "超级管理员" : "管理员" }}）
+          <RouterLink v-if="!adminMe.two_factor" to="/admin/security" class="tag tag--warn">未开两步验证</RouterLink>
+        </span>
         <button type="button" class="btn btn--ghost btn--sm" @click="theme.toggleTheme()">切换深浅色</button>
         <a href="/" target="_blank" rel="noopener" class="btn btn--ghost btn--sm">打开前台</a>
         <button type="button" class="btn btn--outline btn--sm" @click="logout">退出</button>

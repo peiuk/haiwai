@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     app_secret_key: str = DEFAULT_SECRET_KEY
     jwt_access_ttl_minutes: int = 15
     jwt_refresh_ttl_days: int = 7
+    # 部署在 nginx 等反向代理后面时设为 true：审计日志和登录限流才能拿到真实的客户端 IP。
+    # 直接对外提供服务时保持 false，否则客户端可以伪造 X-Forwarded-For。
+    trust_proxy: bool = False
     # 每日 AI 资讯用的模型（PRD 附录同名变量）。LLM_API_BASE 留空用 Claude；
     # 填了就走 OpenAI 兼容接口（OpenAI、DeepSeek、通义千问等，填到 /v1 为止），此时 LLM_MODEL 必填。
     llm_api_base: str = ""

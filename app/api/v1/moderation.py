@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.v1.admin import require_admin
+from app.api.v1.admin import _because, notify_user, require_admin
 from app.api.v1.room_social import mention_users
 from app.core.audit import write_audit
 from app.core.db import get_db
@@ -59,6 +59,9 @@ def decide(
     else:
         content.status = "rejected"
         drop_pushes(session, content.id)
+    note = body.note.strip() or None
+    outcome = "已通过审核" if body.decision == "approve" else f"没有通过审核{_because(note)}"
+    notify_user(session, content.author_id, f"你的「{content.title}」{outcome}", content.id, user.id)
     write_audit(session, user.id, f"moderation.{body.decision}", "content", content.id, body.note.strip() or None)
     session.commit()
     return {"content_id": content.id, "status": content.status}
@@ -96,6 +99,13 @@ def decide_comment(
     else:
         comment.status = "rejected"
         comment.removed_at = utcnow()
+        notify_user(
+            session,
+            comment.author_id,
+            f"你的留言「{comment.body[:30]}」没有通过审核{_because(body.note.strip() or None)}",
+            comment.content_id,
+            user.id,
+        )
     write_audit(session, user.id, f"moderation.{body.decision}", "comment", comment.id, body.note.strip() or None)
     session.commit()
     return {"comment_id": comment.id, "status": comment.status}
@@ -135,6 +145,13 @@ def decide_case(
             comment.removed_at = now
             comment.status = "removed"
             outcome = "已删除"
+            notify_user(
+                session,
+                comment.author_id,
+                f"你的留言「{comment.body[:30]}」被举报后已删除{_because(body.note.strip() or None)}",
+                comment.content_id,
+                user.id,
+            )
             write_audit(session, user.id, "moderation.remove", "comment", comment.id, body.note.strip() or None)
         else:
             outcome = "未删除"
@@ -179,6 +196,7 @@ def decide_case(
             if reported.is_admin:
                 raise APIError(409, "CANNOT_SUSPEND_ADMIN", "不能封禁管理员；要处理请先撤销对方的管理员权限")
             reported.status = "suspended"
+            reported.suspend_reason = body.note.strip() or None
             outcome = "已限制"
             write_audit(session, user.id, "moderation.remove", "user", reported.id, body.note.strip() or None)
         else:
@@ -202,6 +220,13 @@ def decide_case(
         content.deleted_at = now
         drop_pushes(session, content.id)
         outcome = "已下架"
+        notify_user(
+            session,
+            content.author_id,
+            f"你的「{content.title}」被举报后已下架{_because(body.note.strip() or None)}",
+            content.id,
+            user.id,
+        )
         write_audit(session, user.id, "moderation.remove", "content", content.id, body.note.strip() or None)
     else:
         outcome = "未下架"

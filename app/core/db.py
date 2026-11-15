@@ -55,6 +55,10 @@ def prepare_database() -> None:
     if engine is None:
         return
     Base.metadata.create_all(engine)
+    # create_all 只建缺的表，不会给已有的表补索引：这里按模型补上（已存在的跳过）。
+    for table in Base.metadata.tables.values():
+        for index in table.indexes:
+            index.create(engine, checkfirst=True)
     # 老的开发库按模型补齐缺的列（只加列，不改不删）；新库 create_all 已经完整。
     if engine.dialect.name == "sqlite":
         _ensure_remaining_columns(engine)

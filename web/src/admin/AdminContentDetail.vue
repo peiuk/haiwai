@@ -5,7 +5,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
 import { confirmAction } from "./confirm";
-import { adminRequest } from "./adminApi";
+import { adminMe, adminRequest } from "./adminApi";
 import AdminCaseTable from "./AdminCaseTable.vue";
 import AdminHistoryTable from "./AdminHistoryTable.vue";
 import { STATUS_LABELS, TYPE_LABELS, exact, statusTone, when, type CaseRow, type HistoryRow } from "./shared";
@@ -114,7 +114,7 @@ function feature(): Promise<void> {
           <button type="button" class="btn btn--danger btn--sm" :disabled="!!busy" @click="remove">下架</button>
         </template>
         <button v-else-if="detail.status === 'deleted'" type="button" class="btn btn--outline btn--sm" :disabled="!!busy" @click="restore">恢复</button>
-        <button type="button" class="btn btn--ghost btn--sm" :disabled="!!busy" @click="destroy">删除</button>
+        <button v-if="adminMe.is_super" type="button" class="btn btn--ghost btn--sm" :disabled="!!busy" @click="destroy">删除</button>
       </header>
 
       <section class="adm-panel">
