@@ -118,6 +118,44 @@ def recommended_channels(
     return {"items": items}
 
 
+@router.get("/mine")
+def my_rooms(
+    user: User = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, list[dict[str, object]]]:
+    """我能直接发帖的房间（房主或协作者、综合讨论类、没被拒），给发布页的「发布到」用。新建的在前。"""
+    collab = select(ChannelCollaborator.channel_id).where(ChannelCollaborator.user_id == user.id)
+    rows = session.scalars(
+        select(Channel)
+        .where(
+            Channel.kind == "room",
+            Channel.visibility == "public",
+            Channel.room_type == "general",
+            Channel.review_status != "rejected",
+            or_(Channel.owner_id == user.id, Channel.id.in_(collab)),
+        )
+        .order_by(Channel.created_at.desc())
+    ).all()
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "code": row.code,
+                "name_hans": row.name_hans,
+                "name_hant": row.name_hant,
+                "kind": row.kind,
+                "room_type": row.room_type,
+                "certified": row.certified,
+                "region_code": row.region_code,
+                "parent_channel_id": row.parent_channel_id,
+                "subscriber_count": row.subscriber_count,
+                "category": row.category,
+            }
+            for row in rows
+        ]
+    }
+
+
 def _channel_rooms(session: Session, channel: Channel, user: User | None) -> list[dict[str, object]]:
     rows = session.scalars(
         select(Channel)

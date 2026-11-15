@@ -206,15 +206,7 @@ onMounted(load);
         <p v-if="detail.subscriber_count !== undefined" class="room-meta">
           <template v-if="countryName">{{ countryName }} · </template>{{ detail.subscriber_count }} 人订阅<template v-if="detail.sort_basis"> · 排序：{{ detail.sort_basis }}</template>
         </p>
-        <div v-if="canModerate && !editing" class="room-head__actions">
-          <!-- 综合讨论房间：房主 / 协作者发帖走「发布内容」页（图片、视频、话题都有），预选这个房间 -->
-          <RouterLink
-            v-if="detail.room_type === 'general' && !detail.region_blocked"
-            class="btn btn--primary btn--sm"
-            :to="{ name: 'publish', query: { channel: roomId } }"
-          >发帖</RouterLink>
-          <BaseButton v-if="detail.is_owner" class="room-edit-btn" size="sm" variant="outline" @click="startEdit">编辑房间</BaseButton>
-        </div>
+        <BaseButton v-if="detail.is_owner && !editing" class="room-edit-btn" size="sm" variant="outline" @click="startEdit">编辑房间</BaseButton>
         <form v-if="editing" class="room-edit" @submit.prevent="saveEdit">
           <TextField id="room-edit-name" v-model="editName" label="房间名" required />
           <SelectField id="room-edit-type" v-model="editType" label="类型" :options="[...ROOM_TYPES]" />
@@ -282,6 +274,7 @@ onMounted(load);
       <RoomSubmissions
         :room-id="roomId"
         :can-moderate="canModerate"
+        :can-post="detail.room_type === 'general'"
         @changed="onChanged"
       />
 
@@ -324,6 +317,8 @@ onMounted(load);
   font-size: var(--fs-12);
 }
 .room-edit-btn {
+  justify-self: start;
+  align-self: flex-start;
   width: auto;
 }
 .room-edit {
@@ -349,11 +344,6 @@ onMounted(load);
 .private-gate {
   display: grid;
   justify-items: start;
-.room-head__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-}
   gap: var(--sp-3);
   padding: var(--sp-6);
   border: 1px solid var(--border);

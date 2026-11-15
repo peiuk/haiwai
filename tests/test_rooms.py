@@ -848,3 +848,33 @@ def test_owner_can_fill_rename_and_show_a_pending_room(client):
         json={"decision": "accept"},
     )
     assert self_ok.status_code == 403
+
+
+def test_my_rooms_lists_rooms_i_can_post_to(client):
+    """发布页「我的房间」：自己建的、自己协作的综合讨论房间；别人的、非综合类、被拒的不列。"""
+    owner = register(client, "mine-owner@example.com")
+    other = register(client, "mine-other@example.com")
+    verify(client, owner, "+447700900321")
+    verify(client, other, "+447700900322")
+    parent_id = official_channel(client)
+
+    def create(token: str, name: str, room_type: str = "general") -> str:
+        return client.post(
+            "/api/v1/channels", headers=headers(token), json={"name": name, "parent_channel_id": parent_id, "room_type": room_type}
+        ).json()["channel_id"]
+
+    mine = create(owner, "我的综合")
+    create(owner, "我的剧集", "series")
+    rejected = create(owner, "被拒房")
+    shared = create(other, "别人的房")
+    others_only = create(other, "别人自己的")
+    with client.session_factory() as session:
+        owner_id = session.scalar(select(User.id).where(User.email == "mine-owner@example.com"))
+        session.get(Channel, rejected).review_status = "rejected"
+        session.commit()
+    assert client.put(f"/api/v1/channels/{shared}/collaborators/{owner_id}", headers=headers(other)).status_code == 200
+
+    ids = [item["id"] for item in client.get("/api/v1/channels/mine", headers=headers(owner)).json()["items"]]
+    assert set(ids) == {mine, shared}
+    assert others_only not in ids
+    assert client.get("/api/v1/channels/mine").status_code == 401

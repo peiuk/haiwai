@@ -9,12 +9,6 @@ import EmptyState from "../base/EmptyState.vue";
 import ErrorState from "../base/ErrorState.vue";
 import Skeleton from "../base/Skeleton.vue";
 import RoomEntryCard from "./RoomEntryCard.vue";
-import PostActions from "../common/PostActions.vue";
-import { useRouter } from "vue-router";
-import { usePostReactions } from "../../composables/usePostReactions";
-
-const router = useRouter();
-const reactions = usePostReactions();
 
 const props = defineProps<{
   roomId: string;
@@ -151,15 +145,6 @@ defineExpose({ reload: () => load(true) });
           @toggle-watch="toggleWatchMark(item, $event)"
           @reorder="emitReorder(item.content_id, $event)"
         />
-        <!-- 审核中的内容别人看不到，不显示互动按钮 -->
-        <PostActions
-          v-if="item.status !== 'pending'"
-          class="entry-acts"
-          no-repost
-          :content-id="item.content_id" :title="item.title" :liked="item.liked" :favorited="item.favorited"
-          @open="router.push({ name: 'content', params: { id: item.content_id } })"
-          @like="reactions.toggleLike(item)" @favorite="reactions.toggleFavorite(item)"
-        />
       </li>
     </ul>
 
@@ -210,9 +195,6 @@ defineExpose({ reload: () => load(true) });
   padding: 0;
   display: grid;
   gap: var(--sp-3);
-}
-.entry-acts {
-  padding: 0 var(--sp-2);
 }
 .load-more {
   justify-self: center;

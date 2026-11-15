@@ -85,10 +85,18 @@ const MAX_LEN = 2000;
 
 const userKeywords = computed(() => topics.value.slice(0, 5));
 
-const channelOptions = computed(() => [
-  { value: "", label: "我的动态" },
-  ...channels.value.map((c) => ({ value: c.id, label: c.name_hans })),
-]);
+// 「发布到」分三组：平台频道、我管的房间、其他公开房间。房间多了靠分组和下拉自身的滚动。
+const myRooms = ref<ChannelsResponse["items"]>([]);
+const channelGroups = computed(() => {
+  const mine = new Set(myRooms.value.map((r) => r.id));
+  const opt = (c: ChannelsResponse["items"][number]) => ({ value: c.id, label: c.name_hans });
+  return [
+    { label: "频道", options: channels.value.filter((c) => c.kind !== "room").map(opt) },
+    { label: "我的房间", options: myRooms.value.map(opt) },
+    { label: "其他房间", options: channels.value.filter((c) => c.kind === "room" && !mine.has(c.id)).map(opt) },
+  ].filter((g) => g.options.length);
+});
+const allTargets = computed(() => [...channels.value, ...myRooms.value]);
 
 const count = computed(() => body.value.length);
 const countOver = computed(() => count.value > MAX_LEN);
@@ -113,17 +121,21 @@ async function loadChannels(): Promise<void> {
   loading.value = true;
   error.value = "";
   try {
-    const res = await request<ChannelsResponse>("/api/v1/channels");
+    const [res, mine] = await Promise.all([
+      request<ChannelsResponse>("/api/v1/channels"),
+      request<ChannelsResponse>("/api/v1/channels/mine").catch(() => ({ items: [] })),
+    ]);
     channels.value = res.items;
+    myRooms.value = mine.items;
     const requestedChannel = typeof route.query.channel === "string" ? route.query.channel : "";
-    if (requestedChannel && !channels.value.some((item) => item.id === requestedChannel)) {
+    if (requestedChannel && !allTargets.value.some((item) => item.id === requestedChannel)) {
       // 从房间点「发帖」进来：房间不在公开频道列表里（私密 / 审核中 / 还没内容），单独取来当发布目标
       const room = await request<RoomDetail>(`/api/v1/channels/${requestedChannel}`).catch(() => null);
       if (room?.kind === "room") {
         channels.value.push({
           id: room.id,
           code: room.code,
-          name_hans: `房间：${room.name_hans}`,
+          name_hans: room.name_hans,
           name_hant: room.name_hant,
           kind: room.kind,
           room_type: room.room_type,
@@ -135,7 +147,7 @@ async function loadChannels(): Promise<void> {
         });
       }
     }
-    if (requestedChannel && channels.value.some((item) => item.id === requestedChannel)) channelId.value = requestedChannel;
+    if (requestedChannel && allTargets.value.some((item) => item.id === requestedChannel)) channelId.value = requestedChannel;
     openListingFormFor(requestedChannel);
   } catch (err) {
     error.value = err instanceof Error ? err.message : "频道列表加载失败";
@@ -232,7 +244,7 @@ async function submit(): Promise<void> {
     const result = await request<PublishResponse>("/api/v1/contents", jsonBody(payload));
     success.value = result.status === "pending" ? "已提交，审核通过后会公开" : "已发布";
     toast.show(success.value);
-    const target = channels.value.find((item) => item.id === channelId.value);
+    const target = allTargets.value.find((item) => item.id === channelId.value);
     if (target?.kind === "room") {
       // 从房间来的：发完回房间，刚发的这条在房间里就能看到
       clearDraft();
@@ -358,7 +370,7 @@ watch(
   { immediate: true },
 );
 watch(() => route.query.channel, (value) => {
-  if (typeof value === "string" && channels.value.some((item) => item.id === value)) channelId.value = value;
+  if (typeof value === "string" && allTargets.value.some((item) => item.id === value)) channelId.value = value;
   if (typeof value === "string") openListingFormFor(value);
 });
 
@@ -387,7 +399,10 @@ watch(
         <label class="sr-only" for="dest-select">发布到</label>
         <span class="dest-control-label" aria-hidden="true">发布到</span>
         <select id="dest-select" v-model="channelId" class="dest-select" aria-describedby="dest-hint">
-          <option v-for="opt in channelOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          <option value="">我的动态</option>
+          <optgroup v-for="group in channelGroups" :key="group.label" :label="group.label">
+            <option v-for="opt in group.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </optgroup>
         </select>
       </div>
       <BaseButton v-if="currentType !== 'info'" type="button" variant="primary" :disabled="!canPublish" :loading="busy" title="Ctrl / ⌘ + Enter 发布" aria-keyshortcuts="Control+Enter Meta+Enter" @click="submit">发布</BaseButton>
