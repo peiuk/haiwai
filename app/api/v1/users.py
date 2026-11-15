@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import optional_user
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
-from app.models import Content, ModerationCase, User, UserBlock, UserFollow
+from app.feed import image_keys_of, reaction_flags
+from app.keywords import load_keywords
+from app.models import Channel, ChannelItem, Content, ModerationCase, User, UserBlock, UserFollow
 from app.privacy import can_view_content
 from app.reports import ReportBody, report_receipt
 
@@ -38,9 +40,21 @@ def public_profile(
         "handle": profile.handle or "",
         "avatar_tone": profile.avatar_tone,
         "city_label": profile.city_label or "",
+        "joined_at": profile.created_at.isoformat(),
+        "post_count": _count(session, select(func.count()).select_from(Content).where(*_published(profile.id))),
+        "follower_count": _count(session, select(func.count()).select_from(UserFollow).where(UserFollow.target_id == profile.id)),
+        "following_count": _count(session, select(func.count()).select_from(UserFollow).where(UserFollow.user_id == profile.id)),
         "following": following,
         "blocked": blocked,
     }
+
+
+def _count(session: Session, stmt: Select[tuple[int]]) -> int:
+    return int(session.scalar(stmt) or 0)
+
+
+def _published(user_id: str) -> tuple:
+    return (Content.author_id == user_id, Content.deleted_at.is_(None), Content.status == "published")
 
 
 @router.post("/users/{user_id}/report")
@@ -76,23 +90,45 @@ def report_user(
 
 
 @router.get("/users/{user_id}/posts")
-def public_posts(user_id: str, session: Session = Depends(get_db)) -> dict[str, list[dict[str, str | None]]]:
+def public_posts(
+    user_id: str,
+    viewer: User | None = Depends(optional_user),
+    session: Session = Depends(get_db),
+) -> dict[str, list[dict[str, object]]]:
     profile = _profile(session, user_id)
     rows = session.scalars(
         select(Content)
-        .where(Content.author_id == profile.id, Content.deleted_at.is_(None), Content.status == "published")
+        .where(*_published(profile.id))
         .order_by(Content.created_at.desc())
         .limit(50)  # shortcut: 主页只显示最近 50 条；要看更早的再加游标分页
     ).all()
     rows = [row for row in rows if can_view_content(session, row, None)]
-    return {
-        "items": [
+    flags = reaction_flags(session, viewer.id if viewer else None, [row.id for row in rows])
+    items: list[dict[str, object]] = []
+    for row in rows:
+        # 和搜索结果一样：帖子发在哪个频道（不算房间推送的副本），用于卡片上的频道名和转发
+        placed = session.scalar(
+            select(ChannelItem).where(ChannelItem.content_id == row.id, ChannelItem.origin_room_id.is_(None))
+        )
+        channel = session.get(Channel, placed.channel_id) if placed is not None else None
+        liked, favorited = flags.get(row.id, (False, False))
+        items.append(
             {
                 "content_id": row.id,
                 "title": row.title,
+                "summary": row.summary,
                 "type": row.type,
                 "created_at": row.created_at.isoformat(),
+                "source_name": row.source_name or "",
+                "licence_ref": row.licence_ref or "",
+                "canonical_url": row.canonical_url,
+                "channel_id": channel.id if channel else None,
+                "channel_name": channel.name_hans if channel else "",
+                "keywords": load_keywords(row.keywords_json),
+                "image_keys": image_keys_of(row),
+                "video_key": row.video_key,
+                "liked": liked,
+                "favorited": favorited,
             }
-            for row in rows
-        ]
-    }
+        )
+    return {"items": items}

@@ -9,7 +9,7 @@ const TONES = ["a", "b", "c", "d", "e", "f"] as const;
 const props = withDefaults(
   defineProps<{
     name: string;
-    size?: 38 | 40 | 42 | 44 | 56;
+    size?: 38 | 40 | 42 | 44 | 56 | 88;
     kind?: "person" | "channel";
     tone?: string;
   }>(),
@@ -35,7 +35,7 @@ const resolvedTone = computed(() => {
 
 // 字号随尺寸缩放：38→14，40→15，42→15，44→16，56→22（对齐原型 me-card 头像 22px）
 const fontSize = computed(() => {
-  const map: Record<number, number> = { 38: 14, 40: 15, 42: 15, 44: 16, 56: 22 };
+  const map: Record<number, number> = { 38: 14, 40: 15, 42: 15, 44: 16, 56: 22, 88: 34 };
   return map[props.size] ?? 15;
 });
 </script>

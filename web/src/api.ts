@@ -253,6 +253,7 @@ export type FeedItem = {
   repost_of: { content_id: string; title: string } | null;
   is_unread: boolean;
   added_at: string;
+  author_id?: string | null;
   author_name: string;
   author_handle: string;
   keywords: string[];
@@ -447,6 +448,7 @@ export type DiscoverItem = {
   is_joined: boolean;
   category: string | null;
   added_at: string;
+  author_id?: string | null;
   author_name: string;
   author_handle: string;
   keywords: string[];
@@ -729,6 +731,7 @@ export type SearchContent = {
   source_name: string;
   licence_ref: string;
   canonical_url: string | null;
+  author_id?: string | null;
   author_name: string;
   author_handle: string;
   channel_id: string | null;
@@ -822,6 +825,10 @@ export type UserProfile = {
   handle: string;
   avatar_tone: string;
   city_label: string;
+  joined_at: string;
+  post_count: number;
+  follower_count: number;
+  following_count: number;
   following: boolean;
   blocked: boolean;
 };
@@ -829,8 +836,20 @@ export type UserProfile = {
 export type UserPost = {
   content_id: string;
   title: string;
+  summary: string | null;
   type: string;
   created_at: string;
+  source_name: string;
+  licence_ref: string;
+  canonical_url: string | null;
+  channel_id: string | null;
+  channel_name: string;
+  keywords: string[];
+  image_keys: string[];
+  video_key: string | null;
+  liked: boolean;
+  favorited: boolean;
+  reposted?: boolean;
 };
 
 export type UserPostsResponse = { items: UserPost[] };

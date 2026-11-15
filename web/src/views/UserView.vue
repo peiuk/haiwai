@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// 用户主页（/user/:id）：公开资料 + 关注 / 举报 + 该用户的公开帖子列表。
+// 用户主页（/user/:id），X 式布局：吸顶顶栏（名字 + 帖子数）、横幅、大头像、关注/私信、资料、关注数、帖子流。
 // 后端：GET /users/{id}、GET /users/{id}/posts、PUT /me/follows/{id}、POST /users/{id}/report。
-// 判断「是否自己」用 GET /me 的 user_id 对比；自己主页隐藏关注/举报，改跳「我的」编辑。
+// 判断「是否自己」用 GET /me 的 user_id 对比；自己主页隐藏关注/举报，改成「编辑资料」。
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -9,14 +9,18 @@ import {
   jsonBody,
   type DmOpenResponse,
   type MeProfile,
+  type UserPost,
   type UserPostsResponse,
   type UserProfile,
 } from "../api";
 import { useAuthStore } from "../stores/auth";
 import { useToastStore } from "../stores/toast";
+import { usePostReactions } from "../composables/usePostReactions";
 import Avatar from "../components/base/Avatar.vue";
 import BaseIcon from "../components/base/BaseIcon.vue";
 import ReportButton from "../components/common/ReportButton.vue";
+import PostCard from "../components/common/PostCard.vue";
+import ContentDetail from "../components/ContentDetail.vue";
 import EmptyState from "../components/base/EmptyState.vue";
 import ErrorState from "../components/base/ErrorState.vue";
 
@@ -24,11 +28,12 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const toast = useToastStore();
+const { toggleLike, toggleFavorite, repost } = usePostReactions();
 
 const userId = computed(() => (typeof route.params.id === "string" ? route.params.id : ""));
 
 const profile = ref<UserProfile | null>(null);
-const posts = ref<UserPostsResponse["items"]>([]);
+const posts = ref<UserPost[]>([]);
 const loading = ref(true);
 const error = ref("");
 const selfId = ref("");
@@ -37,8 +42,14 @@ const blockBusy = ref(false);
 const dmOpen = ref(false);
 const dmBody = ref("");
 const dmBusy = ref(false);
+const activeContentId = ref<string | null>(null);
 
 const isSelf = computed(() => selfId.value !== "" && selfId.value === userId.value);
+const displayName = computed(() => profile.value?.display_name || profile.value?.handle || "匿名用户");
+const joinedText = computed(() => {
+  const d = new Date(profile.value?.joined_at ?? "");
+  return Number.isNaN(d.getTime()) ? "" : `${d.getFullYear()}年${d.getMonth() + 1}月加入`;
+});
 
 function requireLogin(): boolean {
   if (!auth.isLoggedIn) {
@@ -46,12 +57,6 @@ function requireLogin(): boolean {
     return false;
   }
   return true;
-}
-
-function fmtTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("zh-CN");
 }
 
 async function loadSelf(): Promise<void> {
@@ -94,17 +99,16 @@ async function toggleFollow(): Promise<void> {
     const body = await request<{ following: boolean }>(`/api/v1/me/follows/${userId.value}`, {
       method: willFollow ? "PUT" : "DELETE",
     });
-    if (profile.value) profile.value.following = body.following;
+    if (profile.value && profile.value.following !== body.following) {
+      profile.value.follower_count += body.following ? 1 : -1;
+      profile.value.following = body.following;
+    }
     toast.show(willFollow ? "已关注" : "已取消关注");
   } catch (err) {
     toast.show(err instanceof Error ? err.message : "操作没有成功");
   } finally {
     followingBusy.value = false;
   }
-}
-
-function openPost(contentId: string): void {
-  void router.push(`/content/${contentId}`);
 }
 
 async function toggleBlock(): Promise<void> {
@@ -157,83 +161,114 @@ onMounted(() => {
 watch(userId, () => {
   profile.value = null;
   posts.value = [];
+  activeContentId.value = null;
   void load();
 });
 </script>
 
 <template>
   <section class="user-view">
-    <nav class="user-back">
-      <button type="button" class="back-btn" @click="router.back()">
-        <BaseIcon name="i-back" :size="18" /> 返回
+    <!-- 顶栏：返回 + 名字 + 帖子数，滚动时吸顶 -->
+    <nav class="user-top">
+      <button type="button" class="back-btn" aria-label="返回" @click="router.back()">
+        <BaseIcon name="i-back" :size="20" />
       </button>
+      <div v-if="profile" class="user-top-text">
+        <strong data-ugc>{{ displayName }}</strong>
+        <span>{{ profile.post_count }} 条帖子</span>
+      </div>
     </nav>
 
     <p v-if="loading" class="empty">加载中…</p>
     <ErrorState v-else-if="error" :message="error" retry-label="重试" @retry="load" />
 
     <template v-else-if="profile">
-      <!-- 资料卡 -->
-      <header class="profile-card">
-        <Avatar
-          :name="profile.display_name || profile.handle || '·'"
-          :size="56"
-          kind="person"
-          :tone="profile.avatar_tone"
-        />
-        <div class="profile-main">
-          <h1 class="profile-name" data-ugc>{{ profile.display_name || "匿名用户" }}</h1>
-          <p class="profile-sub">
-            <span v-if="profile.handle">@{{ profile.handle }}</span>
-            <span v-if="profile.city_label" class="profile-city">
-              <BaseIcon name="i-globe" :size="14" /> {{ profile.city_label }}
-            </span>
+      <header class="profile">
+        <div class="profile-banner" aria-hidden="true"></div>
+        <div class="profile-row">
+          <div class="profile-avatar">
+            <Avatar :name="displayName" :size="88" kind="person" :tone="profile.avatar_tone" />
+          </div>
+          <div v-if="!isSelf" class="profile-actions">
+            <ReportButton kind="user" :id="profile.user_id" compact />
+            <button type="button" class="pill-btn" :disabled="blockBusy" @click="toggleBlock">
+              {{ profile.blocked ? "解除拉黑" : "拉黑" }}
+            </button>
+            <button type="button" class="pill-btn" aria-label="私信" @click="openDm">
+              <BaseIcon name="i-mail" :size="18" />
+            </button>
+            <button
+              type="button"
+              class="follow-btn"
+              :class="{ 'follow-btn--on': profile.following }"
+              :disabled="followingBusy"
+              @click="toggleFollow"
+            >
+              {{ profile.following ? "已关注" : followingBusy ? "关注中…" : "关注" }}
+            </button>
+          </div>
+          <div v-else class="profile-actions">
+            <RouterLink class="pill-btn" :to="{ name: 'profile' }">编辑资料</RouterLink>
+          </div>
+        </div>
+
+        <div class="profile-info">
+          <div>
+            <h1 class="profile-name" data-ugc>{{ displayName }}</h1>
+            <p v-if="profile.handle" class="profile-handle">@{{ profile.handle }}</p>
+          </div>
+          <p v-if="profile.city_label || joinedText" class="profile-sub">
+            <span v-if="profile.city_label"><BaseIcon name="i-pin" :size="15" /> {{ profile.city_label }}</span>
+            <span v-if="joinedText">{{ joinedText }}</span>
+          </p>
+          <p class="profile-counts">
+            <span><strong>{{ profile.following_count }}</strong> 正在关注</span>
+            <span><strong>{{ profile.follower_count }}</strong> 关注者</span>
           </p>
         </div>
-        <div v-if="!isSelf" class="profile-actions">
-          <button
-            type="button"
-            class="follow-btn"
-            :class="{ 'follow-btn--on': profile.following }"
-            :disabled="followingBusy"
-            @click="toggleFollow"
-          >
-            {{ profile.following ? "已关注" : followingBusy ? "关注中…" : "关注" }}
-          </button>
-          <button type="button" class="dm-btn" @click="openDm">
-            <BaseIcon name="i-mail" :size="16" /> 私信
-          </button>
-          <button
-            type="button"
-            class="block-btn"
-            :disabled="blockBusy"
-            @click="toggleBlock"
-          >
-            {{ profile.blocked ? "解除拉黑" : "拉黑" }}
-          </button>
-          <ReportButton kind="user" :id="profile.user_id" compact />
+
+        <div class="profile-tabs" role="tablist">
+          <span class="profile-tab profile-tab--on" role="tab" aria-selected="true">帖子</span>
         </div>
-        <span v-else class="profile-self">这是你的主页</span>
       </header>
 
-      <!-- 帖子列表 -->
-      <section class="posts-section">
-        <h2 class="posts-title">公开帖子</h2>
-        <EmptyState
-          v-if="posts.length === 0"
-          title="还没有公开帖子"
-          description="这位用户暂时没有发布公开内容"
+      <EmptyState
+        v-if="posts.length === 0"
+        title="还没有公开帖子"
+        description="这位用户暂时没有发布公开内容"
+      />
+      <div v-else class="posts">
+        <PostCard
+          v-for="post in posts"
+          :key="post.content_id"
+          :content-id="post.content_id"
+          :title="post.title"
+          :summary="post.summary"
+          :channel-name="post.channel_name"
+          :channel-id="post.channel_id || ''"
+          :author-id="profile.user_id"
+          :author-name="profile.display_name"
+          :author-handle="profile.handle"
+          :author-tone="profile.avatar_tone"
+          :source-name="post.source_name"
+          :licence-ref="post.licence_ref"
+          :canonical-url="post.canonical_url"
+          :keywords="post.keywords"
+          :image-keys="post.image_keys"
+          :video-key="post.video_key"
+          :time="post.created_at"
+          :liked="post.liked"
+          :favorited="post.favorited"
+          :reposted="post.reposted"
+          @open="activeContentId = post.content_id"
+          @like="toggleLike(post)"
+          @favorite="toggleFavorite(post)"
+          @repost="repost(post, post.channel_id)"
         />
-        <ul v-else class="posts-list">
-          <li v-for="post in posts" :key="post.content_id">
-            <button type="button" class="post-row" @click="openPost(post.content_id)">
-              <span class="post-row-title" data-ugc>{{ post.title || "（无标题）" }}</span>
-              <span class="post-row-time">{{ fmtTime(post.created_at) }}</span>
-            </button>
-          </li>
-        </ul>
-      </section>
+      </div>
     </template>
+
+    <ContentDetail v-if="activeContentId" :content-id="activeContentId" @close="activeContentId = null" />
 
     <!-- 私信弹窗 -->
     <div v-if="dmOpen" class="dm-overlay" role="dialog" aria-modal="true" aria-label="发送私信">
@@ -262,75 +297,109 @@ watch(userId, () => {
 
 <style scoped>
 .user-view {
-  display: grid;
-  gap: var(--sp-4);
   max-width: 720px;
   margin: 0 auto;
 }
-.user-back {
+.user-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: 53px;
+  padding: 0 var(--sp-2);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(12px);
 }
 .back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  min-height: var(--tap);
-  padding: 0 var(--sp-2);
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
   border: 0;
+  border-radius: 50%;
   background: transparent;
   color: var(--text);
-  font-size: var(--fs-14);
   cursor: pointer;
 }
 .back-btn:hover {
-  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.user-top-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.25;
+}
+.user-top-text strong {
+  font-size: var(--fs-16);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-top-text span {
+  color: var(--muted);
+  font-size: var(--fs-12);
 }
 .empty {
-  padding: var(--sp-6) 0;
+  padding: var(--sp-6) var(--sp-4);
   color: var(--muted);
   font-size: var(--fs-13);
 }
-.profile-card {
+.profile {
+  border-bottom: 1px solid var(--border);
+}
+.profile-banner {
+  height: 150px;
+  background: linear-gradient(135deg, var(--accent-soft), color-mix(in srgb, var(--accent-strong) 40%, var(--bg)));
+}
+.profile-row {
   display: flex;
   align-items: flex-start;
-  gap: var(--sp-4);
-  padding: var(--sp-4);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface);
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-4);
 }
-.profile-main {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: var(--sp-1);
-}
-.profile-name {
-  margin: 0;
-  font-size: var(--fs-19);
-  font-weight: var(--fw-bold);
-  overflow-wrap: anywhere;
-}
-.profile-sub {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-  color: var(--muted);
-  font-size: var(--fs-13);
-}
-.profile-city {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.profile-avatar {
+  margin-top: -48px;
+  padding: 4px;
+  border-radius: 50%;
+  background: var(--bg);
+  flex-shrink: 0;
 }
 .profile-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--sp-2);
+  min-width: 0;
+  padding-top: var(--sp-3);
+}
+.profile-actions > * {
   flex-shrink: 0;
-  flex-wrap: wrap;
+}
+.pill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-bold);
+  text-decoration: none;
+  cursor: pointer;
+}
+.pill-btn:hover {
+  background: var(--accent-soft);
+}
+.pill-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 .follow-btn {
   min-height: var(--tap);
@@ -348,104 +417,79 @@ watch(userId, () => {
 }
 .follow-btn--on {
   background: transparent;
-  color: var(--muted);
+  color: var(--text);
   border-color: var(--line);
-  cursor: pointer; /* 点击仍可取消关注，视觉与行为一致 */
 }
 .follow-btn:disabled {
   opacity: 0.65;
   cursor: default;
 }
-.dm-btn {
-  min-height: var(--tap);
-  padding: 0 var(--sp-4);
+.profile-info {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4) 0;
+}
+.profile-name {
+  margin: 0;
+  font-size: var(--fs-19);
+  font-weight: var(--fw-bold);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.profile-handle {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+.profile-sub,
+.profile-counts {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+.profile-sub span {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-1);
-  border: 1px solid var(--accent-strong);
-  border-radius: var(--r-pill);
-  background: var(--accent-strong);
-  color: var(--on-accent);
+  gap: 4px;
+}
+.profile-counts strong {
+  color: var(--text);
+}
+.profile-tabs {
+  display: flex;
+  margin-top: var(--sp-3);
+}
+.profile-tab {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 52px;
+  color: var(--muted);
   font-size: var(--fs-14);
   font-weight: var(--fw-bold);
-  cursor: pointer;
 }
-.dm-btn:hover {
-  opacity: 0.9;
+.profile-tab {
+  position: relative;
 }
-.block-btn {
-  min-height: var(--tap);
-  padding: 0 var(--sp-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--muted);
-  font-size: var(--fs-13);
-  cursor: pointer;
-}
-.block-btn:hover {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-.block-btn:disabled {
-  opacity: 0.65;
-  cursor: default;
-}
-.profile-self {
-  color: var(--muted);
-  font-size: var(--fs-13);
-}
-.posts-section {
-  display: grid;
-  gap: var(--sp-3);
-}
-.posts-title {
-  margin: 0;
-  font-size: var(--fs-16);
-}
-.posts-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  overflow: hidden;
-}
-.posts-list li + li {
-  border-top: 1px solid var(--border);
-}
-.post-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  width: 100%;
-  min-height: var(--tap);
-  padding: var(--sp-3) var(--sp-4);
-  border: 0;
-  background: transparent;
+.profile-tab--on {
   color: var(--text);
-  cursor: pointer;
-  text-align: left;
 }
-.post-row:hover {
-  background: var(--accent-soft);
+.profile-tab--on::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent-strong);
+  transform: translateX(-50%);
 }
-.post-row-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-14);
-}
-.post-row-time {
-  flex-shrink: 0;
-  color: var(--muted);
-  font-size: var(--fs-12);
+.posts {
+  display: grid;
 }
 .dm-overlay {
   position: fixed;

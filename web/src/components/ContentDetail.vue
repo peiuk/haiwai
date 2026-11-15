@@ -257,6 +257,11 @@ async function postComment(): Promise<void> {
   }
 }
 
+/** 弹层里点进用户主页时顺手关掉弹层，返回列表时不会还挂着。 */
+function leaveOverlay(): void {
+  if (!props.standalone) emit("close");
+}
+
 async function toggleCommentLike(comment: RoomComment): Promise<void> {
   if (!props.contentId || needLogin("点赞", () => void toggleCommentLike(comment))) return;
   try {
@@ -311,9 +316,22 @@ watch(detail, async (value) => {
           <template v-if="detail">
             <article class="cd-original">
               <div class="cd-author-row">
-                <Avatar :name="authorLabel" :size="44" />
+                <RouterLink
+                  v-if="detail.author_id"
+                  class="cd-user-link"
+                  :to="{ name: 'user', params: { id: detail.author_id } }"
+                  :aria-label="`查看 ${authorLabel} 的主页`"
+                  @click="leaveOverlay"
+                ><Avatar :name="authorLabel" :size="44" kind="person" /></RouterLink>
+                <Avatar v-else :name="authorLabel" :size="44" />
                 <div class="cd-author-text">
-                  <strong data-ugc>{{ authorLabel }}</strong>
+                  <RouterLink
+                    v-if="detail.author_id"
+                    class="cd-user-link"
+                    :to="{ name: 'user', params: { id: detail.author_id } }"
+                    @click="leaveOverlay"
+                  ><strong data-ugc>{{ authorLabel }}</strong></RouterLink>
+                  <strong v-else data-ugc>{{ authorLabel }}</strong>
                   <span>
                     <template v-if="detail.author_handle">@{{ detail.author_handle }}</template>
                     <template v-if="detail.channel_name"> · 发布于 {{ detail.channel_name }}</template>
@@ -406,10 +424,20 @@ watch(detail, async (value) => {
             <p v-if="comments.length === 0" class="cd-no-replies">还没有回复，来写下第一条。</p>
             <ul v-else class="cd-list">
               <li v-for="comment in comments" :key="comment.id" class="cd-item">
-                <Avatar :name="comment.author_name || comment.author_handle || '用户'" :size="40" />
+                <RouterLink
+                  class="cd-user-link"
+                  :to="{ name: 'user', params: { id: comment.author_id } }"
+                  :aria-label="`查看 ${comment.author_name || comment.author_handle || '用户'} 的主页`"
+                  @click="leaveOverlay"
+                ><Avatar :name="comment.author_name || comment.author_handle || '用户'" :size="40" kind="person" /></RouterLink>
                 <div class="cd-item-main">
                   <div class="cd-item-meta">
-                    <span class="cd-author" data-ugc>{{ comment.author_name || comment.author_handle || "匿名" }}</span>
+                    <RouterLink
+                      class="cd-author cd-user-link"
+                      :to="{ name: 'user', params: { id: comment.author_id } }"
+                      data-ugc
+                      @click="leaveOverlay"
+                    >{{ comment.author_name || comment.author_handle || "匿名" }}</RouterLink>
                     <time class="cd-time" :datetime="comment.created_at">· {{ fmtRelativeTime(comment.created_at) }}</time>
                   </div>
                   <p class="cd-text" data-ugc>{{ comment.body }}</p>
@@ -726,6 +754,8 @@ watch(detail, async (value) => {
   flex-wrap: wrap;
 }
 .cd-author { font-weight: var(--fw-semibold); color: var(--text); }
+.cd-user-link { color: inherit; text-decoration: none; border-radius: 50%; }
+.cd-user-link:hover strong, a.cd-author:hover { text-decoration: underline; }
 .cd-time { color: var(--muted); font-size: var(--fs-13); }
 .cd-text {
   margin: 0;

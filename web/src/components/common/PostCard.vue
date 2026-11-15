@@ -26,6 +26,8 @@ const props = withDefaults(
     summary: string | null;
     channelName: string;
     channelId?: string;
+    /** 发帖人 ID：有值时头像和 @handle 可点进其主页 */
+    authorId?: string | null;
     authorName?: string;
     authorHandle?: string;
     authorTone?: string;
@@ -55,6 +57,7 @@ const props = withDefaults(
   }>(),
   {
     channelId: "",
+    authorId: null,
     authorName: "",
     authorHandle: "",
     authorTone: "",
@@ -240,7 +243,16 @@ onBeforeUnmount(() => {
 
 <template>
   <article class="post-card" :class="{ 'post-card--unread': unread }">
-    <div class="post-avatar">
+    <!-- 有发帖人时头像进发帖人主页（X 式）；官方/抓取内容没有发帖人，仍显示频道头像 -->
+    <RouterLink
+      v-if="authorId"
+      class="post-avatar"
+      :to="{ name: 'user', params: { id: authorId } }"
+      :aria-label="`查看 ${authorName || displayHandle} 的主页`"
+    >
+      <Avatar :name="authorName || displayHandle" :size="40" kind="person" :tone="authorTone || authorName" />
+    </RouterLink>
+    <div v-else class="post-avatar">
       <Avatar :name="displayChannel" :size="40" kind="channel" :tone="authorTone || displayChannel" />
     </div>
 
@@ -263,7 +275,13 @@ onBeforeUnmount(() => {
             class="post-verified"
             aria-label="官方认证"
           />
-          <span v-if="displayHandle" class="post-handle">@{{ displayHandle }}</span>
+          <RouterLink
+            v-if="displayHandle && authorId"
+            class="post-handle post-handle--link"
+            :to="{ name: 'user', params: { id: authorId } }"
+            data-ugc
+          >@{{ displayHandle }}</RouterLink>
+          <span v-else-if="displayHandle" class="post-handle">@{{ displayHandle }}</span>
           <span v-if="time" class="post-time">· {{ fmtRelativeTime(time) }}</span>
           <BaseIcon v-if="pinned" name="i-pin" :size="16" class="post-pin" />
           <span
@@ -499,6 +517,20 @@ onBeforeUnmount(() => {
 }
 .post-pin {
   color: var(--accent-ink);
+}
+.post-handle--link {
+  text-decoration: none;
+}
+.post-handle--link:hover,
+.post-handle--link:focus-visible {
+  text-decoration: underline;
+}
+a.post-avatar {
+  align-self: flex-start;
+  border-radius: 50%;
+}
+a.post-avatar:hover {
+  opacity: 0.85;
 }
 .post-why-dot {
   display: inline-flex;

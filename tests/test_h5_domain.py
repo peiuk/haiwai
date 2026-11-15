@@ -838,16 +838,21 @@ def test_public_profile_lists_published_posts(client):
     assert hidden.json()["items"] == []
     approve(client, author, content_id)
     shown = client.get(f"/api/v1/users/{author_id}/posts")
-    assert shown.json()["items"][0]["content_id"] == content_id
+    post = shown.json()["items"][0]
+    assert post["content_id"] == content_id
+    assert post["channel_id"] == channel_id and post["liked"] is False  # 主页帖子是完整卡片，能直接点赞/转发
     card = client.get(f"/api/v1/channels/{channel_id}/items").json()["items"][0]
     assert card["author_name"] == "作者"
+    assert card["author_id"] == author_id  # 卡片头像 / @handle 靠它进主页
     guest = client.get(f"/api/v1/users/{author_id}")
     assert guest.json()["following"] is False
+    assert guest.json()["post_count"] == 1 and guest.json()["follower_count"] == 0
     followed = client.put(f"/api/v1/me/follows/{author_id}", headers=headers(reader))
     assert followed.status_code == 200
     seen = client.get(f"/api/v1/users/{author_id}", headers=headers(reader))
     assert seen.json()["display_name"] == "作者"
     assert seen.json()["following"] is True
+    assert seen.json()["follower_count"] == 1 and seen.json()["joined_at"]
 
 
 def test_recipient_can_delete_message_request(client):

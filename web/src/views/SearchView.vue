@@ -89,7 +89,7 @@ function setTab(id: TabId): void {
             :summary="item.summary"
             :channel-name="item.channel_name"
             :channel-id="item.channel_id ?? ''"
-            :author-name="item.author_name"
+            :author-id="item.author_id" :author-name="item.author_name"
             :author-handle="item.author_handle"
             :source-name="item.source_name"
             :licence-ref="item.licence_ref"

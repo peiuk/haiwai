@@ -178,7 +178,7 @@ onMounted(() => void load(true));
       <li v-for="comment in items" :key="comment.id" class="rc-item">
         <div class="rc-main">
           <div class="rc-meta">
-            <span class="rc-author" data-ugc>{{ comment.author_name || comment.author_handle || "匿名" }}</span>
+            <RouterLink class="rc-author" :to="{ name: 'user', params: { id: comment.author_id } }" data-ugc>{{ comment.author_name || comment.author_handle || "匿名" }}</RouterLink>
             <time class="rc-time" :datetime="comment.created_at">{{ comment.created_at }}</time>
           </div>
           <p class="rc-text" data-ugc>{{ comment.body }}</p>
@@ -394,6 +394,10 @@ onMounted(() => void load(true));
 .rc-author {
   font-weight: var(--fw-semibold);
   color: var(--text);
+  text-decoration: none;
+}
+.rc-author:hover {
+  text-decoration: underline;
 }
 .rc-time {
   color: var(--muted);

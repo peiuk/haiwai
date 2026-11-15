@@ -125,6 +125,7 @@ def search(
                 "source_name": row.source_name or "",
                 "licence_ref": row.licence_ref or "",
                 "canonical_url": row.canonical_url,
+                "author_id": row.author_id,
                 "author_name": author.display_name if author else "",
                 "author_handle": author.handle or "" if author else "",
                 "channel_id": channel.id if channel else None,
