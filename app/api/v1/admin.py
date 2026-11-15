@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import LoginBody, current_user, issue_tokens, throttle
 from app.api.v1.channels import TextBody
+from app.api.v1.uploads import delete_object
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
@@ -25,14 +26,21 @@ from app.models import (
     ChannelCollaborator,
     ChannelItem,
     ChannelSubscription,
+    CommentLike,
+    ContactView,
     Content,
+    ContentReaction,
+    ListingExt,
     ModerationCase,
+    Notification,
     Region,
     RegionOpenRequest,
     RoomComment,
     RoomJoinRequest,
     RoomPostPush,
+    UploadObject,
     User,
+    UserItemProgress,
     utcnow,
 )
 from app.reports import REASONS
@@ -505,6 +513,46 @@ def publish_announcement(
     write_audit(session, admin.id, "admin.announcement.create", "content", content.id)
     session.commit()
     return {"content_id": content.id, "status": content.status}
+
+
+@guarded.post("/contents/{content_id}/delete")
+def delete_content(
+    content_id: str,
+    body: Reasoned,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """彻底删除一条内容，连同它的留言、点赞收藏、举报记录和图片视频文件；不能恢复。只想让它不显示请用下架。"""
+    content = session.get(Content, content_id)
+    if content is None:
+        raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
+    comments = session.scalars(select(RoomComment).where(RoomComment.content_id == content.id)).all()
+    # 图片 / 视频文件一并删掉（不删的话知道原链接的人还能打开）；别的内容还在用的文件不动
+    keys = set(image_keys_of(content)) | {content.video_key} | {comment.image_key for comment in comments}
+    for key in keys - {None, ""}:
+        used_elsewhere = session.scalar(
+            select(Content.id)
+            .where(
+                Content.id != content.id,
+                (Content.image_key == key) | (Content.video_key == key) | Content.image_keys_json.contains(key),
+            )
+            .limit(1)
+        )
+        if used_elsewhere is None:
+            delete_object(key)
+            session.execute(delete(UploadObject).where(UploadObject.key == key))
+    # 附属记录显式删（SQLite 开发库没开外键级联）
+    comment_ids = [comment.id for comment in comments]
+    session.execute(delete(CommentLike).where(CommentLike.comment_id.in_(comment_ids)))
+    session.execute(delete(RoomComment).where(RoomComment.id.in_(comment_ids)))
+    for model in (ChannelItem, UserItemProgress, ModerationCase, Notification, ListingExt, ContactView, ContentReaction, RoomPostPush):
+        session.execute(delete(model).where(model.content_id == content.id))
+    # 内容删了以后日志里只剩 id，所以把标题写进备注
+    detail = f"{content.title}（{content.type}）" + (f"：{body.note}" if body.note else "")
+    write_audit(session, admin.id, "admin.content.delete", "content", content.id, detail[:300])
+    session.delete(content)
+    session.commit()
+    return {"deleted": True}
 
 
 class TakedownBody(Reasoned):

@@ -11,7 +11,7 @@ import SelectField from "../base/SelectField.vue";
 import BaseButton from "../base/BaseButton.vue";
 import MultiUploadField from "../common/MultiUploadField.vue";
 
-const props = defineProps<{ channels: Channel[] }>();
+const props = defineProps<{ channels: Channel[]; presetChannelId?: string }>();
 
 const emit = defineEmits<{ (e: "submitted"): void }>();
 
@@ -127,6 +127,19 @@ function onKindChange(): void {
   channelId.value = "";
   error.value = "";
 }
+
+// 从招聘 / 房产 / 市场频道点「发布到此频道」进来：直接选好对应的分类和频道，用户少选两次。
+watch(
+  [() => props.presetChannelId, () => props.channels],
+  () => {
+    const preset = props.channels.find((channel) => channel.id === props.presetChannelId);
+    if (!preset?.certified || !CATEGORIES.some((option) => option.value === preset.category)) return;
+    category.value = preset.category as string;
+    onKindChange();
+    channelId.value = preset.id;
+  },
+  { immediate: true },
+);
 
 async function submit(): Promise<void> {
   error.value = "";

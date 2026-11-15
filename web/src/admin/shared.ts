@@ -48,6 +48,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin.user.activate": "解封用户",
   "admin.content.remove": "下架内容",
   "admin.content.restore": "恢复内容",
+  "admin.content.delete": "彻底删除内容",
   "admin.comment.remove": "删除留言",
   "admin.comment.restore": "恢复留言",
   "admin.channel.activate": "上架频道",

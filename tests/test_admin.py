@@ -1,7 +1,20 @@
 """管理后台：只有管理员能进，写操作都留审计。"""
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from app.models import AuditLog, Channel, ChannelItem, ChannelSubscription, Content, ModerationCase, RegionOpenRequest, RoomComment, User
+from app.models import (
+    AuditLog,
+    Channel,
+    ChannelItem,
+    ChannelSubscription,
+    Content,
+    ContentReaction,
+    ModerationCase,
+    Notification,
+    RegionOpenRequest,
+    RoomComment,
+    UploadObject,
+    User,
+)
 
 CONSENTS = [
     {"purpose": "tos", "version": "2026-11-08", "granted": True},
@@ -78,6 +91,7 @@ def test_admin_endpoints_reject_non_admin(client):
         ("post", "/api/v1/admin/channels", {"code": "uk-food", "name_hans": "英国美食", "region_code": "UK"}),
         ("patch", "/api/v1/admin/channels/x", {"name_hans": "改名", "region_code": "UK"}),
         ("post", "/api/v1/admin/channels/x/delete", {"reason": ""}),
+        ("post", "/api/v1/admin/contents/x/delete", {"reason": ""}),
         ("get", "/api/v1/admin/audit", None),
         ("post", "/api/v1/admin/users/x/status", {"status": "suspended"}),
         ("post", "/api/v1/admin/contents/x/status", {"action": "remove"}),
@@ -591,3 +605,46 @@ def test_delete_channel_with_its_content(client):
     assert client.get(f"/api/v1/contents/{only_id}").status_code == 404
     assert client.get(f"/api/v1/contents/{shared_id}").status_code == 200
     assert client.get("/api/v1/admin/queue", headers=headers(boss)).json()["cases"] == []
+
+
+def test_delete_content_permanently(client, tmp_path, monkeypatch):
+    from app.api.v1 import uploads
+
+    monkeypatch.setattr(uploads, "upload_root", lambda: tmp_path)
+    boss = register(client, "boss@example.com", admin=True)
+    boss_id = user_id(client, "boss@example.com")
+    for name in ("a" * 32, "b" * 32):
+        (tmp_path / name).write_bytes(b"img")
+    with client.session_factory() as session:
+        channel = Channel(code="uk-del", name_hans="删帖测试", name_hant="刪帖測試", kind="official_curated", region_code="UK", is_active=True)
+        doomed = Content(type="post", status="published", title="要删的帖子", author_id=boss_id, image_key="a" * 32, image_keys_json='["' + "a" * 32 + '", "' + "b" * 32 + '"]')
+        other = Content(type="post", status="published", title="别的帖子", author_id=boss_id, image_key="b" * 32)  # 和要删的帖子共用一张图
+        session.add_all([channel, doomed, other, UploadObject(key="a" * 32, owner_id=boss_id, content_type="image/png", stored=True)])
+        session.flush()
+        session.add_all(
+            [
+                ChannelItem(channel_id=channel.id, content_id=doomed.id),
+                ChannelItem(channel_id=channel.id, content_id=other.id),
+                RoomComment(room_id=channel.id, content_id=doomed.id, author_id=boss_id, body="留言", status="published"),
+                ContentReaction(user_id=boss_id, content_id=doomed.id, liked=True),
+                ModerationCase(content_id=doomed.id, reason="scam"),
+                Notification(user_id=boss_id, kind="mention", body="有人提到你", content_id=doomed.id),
+            ]
+        )
+        session.commit()
+        doomed_id, other_id = doomed.id, other.id
+
+    removed = client.post(f"/api/v1/admin/contents/{doomed_id}/delete", headers=headers(boss), json={"reason": "广告"})
+    assert removed.status_code == 200, removed.text
+    with client.session_factory() as session:
+        assert session.get(Content, doomed_id) is None
+        assert session.get(Content, other_id) is not None
+        for model in (ChannelItem, RoomComment, ContentReaction, ModerationCase, Notification):
+            assert session.scalar(select(func.count()).select_from(model).where(model.content_id == doomed_id)) == 0, model.__name__
+        assert session.get(UploadObject, "a" * 32) is None
+        assert session.scalar(select(AuditLog.detail).where(AuditLog.action == "admin.content.delete")) == "要删的帖子（post）：广告"
+    assert not (tmp_path / ("a" * 32)).exists()  # 只有这条帖子在用的图片连文件一起删
+    assert (tmp_path / ("b" * 32)).exists()  # 别的帖子还在用的图片保留
+    assert client.get(f"/api/v1/contents/{doomed_id}").status_code == 404
+    assert client.get("/api/v1/admin/queue", headers=headers(boss)).json()["cases"] == []
+    assert client.post(f"/api/v1/admin/contents/{doomed_id}/delete", headers=headers(boss), json={}).status_code == 404

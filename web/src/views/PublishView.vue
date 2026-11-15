@@ -99,6 +99,15 @@ const canPublish = computed(() => {
   return true;
 });
 
+// 招聘 / 房产 / 市场频道有固定的填写模块：从这类频道点「发布到此频道」进来，直接打开「发信息」，
+// 不用先落在「发图文」再切一次。优先于草稿里记的类型——这次点击的意图更明确。
+const LISTING_CATEGORIES = ["招聘", "房产", "市场"];
+const presetChannelId = computed(() => (typeof route.query.channel === "string" ? route.query.channel : ""));
+function openListingFormFor(id: string): void {
+  const target = channels.value.find((item) => item.id === id);
+  if (target?.certified && LISTING_CATEGORIES.includes(target.category ?? "")) currentType.value = "info";
+}
+
 async function loadChannels(): Promise<void> {
   loading.value = true;
   error.value = "";
@@ -107,6 +116,7 @@ async function loadChannels(): Promise<void> {
     channels.value = res.items;
     const requestedChannel = typeof route.query.channel === "string" ? route.query.channel : "";
     if (requestedChannel && channels.value.some((item) => item.id === requestedChannel)) channelId.value = requestedChannel;
+    openListingFormFor(requestedChannel);
   } catch (err) {
     error.value = err instanceof Error ? err.message : "频道列表加载失败";
   } finally {
@@ -322,6 +332,7 @@ watch(
 );
 watch(() => route.query.channel, (value) => {
   if (typeof value === "string" && channels.value.some((item) => item.id === value)) channelId.value = value;
+  if (typeof value === "string") openListingFormFor(value);
 });
 
 // 输入变化 → 防抖保存草稿
@@ -384,7 +395,7 @@ watch(
         </div>
 
         <div v-if="currentType === 'info'" class="listing-wrap">
-          <ListingForm :channels="channels" @submitted="loadFeed" />
+          <ListingForm :channels="channels" :preset-channel-id="presetChannelId" @submitted="loadFeed" />
         </div>
 
         <template v-else>

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 // 内容详情：全文、图片、举报记录、处理记录；待审的可以直接在这里通过 / 拒绝。
 import { ref } from "vue";
-import { RouterLink, useRoute } from "vue-router";
-import { toMessage } from "../api";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import { jsonBody, toMessage } from "../api";
+import { useToastStore } from "../stores/toast";
+import { confirmAction } from "./confirm";
 import { adminRequest } from "./adminApi";
 import { ACTION_LABELS, STATUS_LABELS, TYPE_LABELS, exact, statusTone, when, type CaseRow, type HistoryRow } from "./shared";
 import { useAdminAction } from "./useAdminList";
@@ -28,6 +30,8 @@ type Detail = {
 };
 
 const id = String(useRoute().params.id);
+const router = useRouter();
+const toast = useToastStore();
 const detail = ref<Detail | null>(null);
 const error = ref("");
 
@@ -56,6 +60,24 @@ function remove(): Promise<void> {
     (reason) => ({ action: "remove", reason }),
     "已下架",
   );
+}
+// 删除后这一页没有东西可显示了，所以不走通用的"提交后刷新"，直接回列表。
+async function destroy(): Promise<void> {
+  const reason = await confirmAction({
+    title: "彻底删除这条内容？",
+    message: "连同它的留言、点赞收藏和图片视频都会删掉，不能恢复。只想让它不显示的话请用「下架」。",
+    confirmLabel: "彻底删除",
+    danger: true,
+    reason: true,
+  });
+  if (reason === null) return;
+  try {
+    await adminRequest(`/api/v1/admin/contents/${id}/delete`, jsonBody({ reason }));
+    toast.show("已删除");
+    await router.replace("/admin/posts");
+  } catch (err) {
+    toast.show(toMessage(err));
+  }
 }
 function restore(): Promise<void> {
   return act(id, `/api/v1/admin/contents/${id}/status`, { action: "restore" }, "已恢复");
@@ -90,6 +112,7 @@ function feature(): Promise<void> {
           <button type="button" class="btn btn--danger btn--sm" :disabled="!!busy" @click="remove">下架</button>
         </template>
         <button v-else-if="detail.status === 'deleted'" type="button" class="btn btn--outline btn--sm" :disabled="!!busy" @click="restore">恢复</button>
+        <button type="button" class="btn btn--ghost btn--sm" :disabled="!!busy" @click="destroy">删除</button>
       </header>
 
       <section class="adm-panel">

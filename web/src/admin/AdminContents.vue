@@ -42,6 +42,22 @@ function remove(item: Row): Promise<void> {
   );
 }
 
+function destroy(item: Row): Promise<void> {
+  return ask(
+    {
+      title: "彻底删除这条内容？",
+      message: `「${item.title}」连同它的留言、点赞收藏和图片视频都会删掉，不能恢复。只想让它不显示的话请用「下架」。`,
+      confirmLabel: "彻底删除",
+      danger: true,
+      reason: true,
+    },
+    item.content_id,
+    `/api/v1/admin/contents/${item.content_id}/delete`,
+    (reason) => ({ reason }),
+    "已删除",
+  );
+}
+
 function restore(item: Row): Promise<void> {
   return act(item.content_id, `/api/v1/admin/contents/${item.content_id}/status`, { action: "restore" }, "已恢复");
 }
@@ -87,7 +103,7 @@ async function publish(): Promise<void> {
   <div>
     <header class="adm-head">
       <h1>{{ props.title }}</h1>
-      <p>下架后前台不再显示；精选内容会在「为你推荐」里靠前</p>
+      <p>下架可以恢复，删除不能；精选内容会在「为你推荐」里靠前</p>
       <button v-if="props.announce && !composing" type="button" class="btn btn--primary btn--sm" @click="openComposer">发布公告</button>
     </header>
 
@@ -159,6 +175,7 @@ async function publish(): Promise<void> {
                   <button v-if="item.status === 'published'" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.content_id" @click="feature(item)">{{ item.featured ? "取消精选" : "精选" }}</button>
                   <button v-if="item.status === 'deleted'" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.content_id" @click="restore(item)">恢复</button>
                   <button v-else type="button" class="btn btn--danger btn--sm" :disabled="busy === item.content_id" @click="remove(item)">下架</button>
+                  <button type="button" class="btn btn--ghost btn--sm" :disabled="busy === item.content_id" @click="destroy(item)">删除</button>
                 </div>
               </td>
             </tr>
