@@ -70,11 +70,13 @@ def _cooccurrence(session: Session, subscribed: set[str]) -> dict[str, float]:
     return {channel_id: len(users) / largest for channel_id, users in counts.items()}
 
 
-def for_you(session: Session, user: User, limit: int | None = 12, order: str = "ranked") -> list[dict[str, object]]:
+def for_you(session: Session, user: User | None, limit: int | None = 12, order: str = "ranked") -> list[dict[str, object]]:
+    """user 为 None 时是游客版：没有加入的频道、不看个人数据，只按新鲜度 / 活跃度 / 官方精选排序。"""
     region = effective_region(session, user)
+    user_id = user.id if user else None
     subscribed = set(
-        session.scalars(select(ChannelSubscription.channel_id).where(ChannelSubscription.user_id == user.id)).all()
-    )
+        session.scalars(select(ChannelSubscription.channel_id).where(ChannelSubscription.user_id == user_id)).all()
+    ) if user_id else set()
     together = _cooccurrence(session, subscribed)
     rows = session.scalars(
         select(ChannelItem)
@@ -97,8 +99,8 @@ def for_you(session: Session, user: User, limit: int | None = 12, order: str = "
         if (now - added).total_seconds() <= 7 * 24 * 3600:
             recent[item.channel_id] = recent.get(item.channel_id, 0) + 1
     authors = author_names(session, [item.content.author_id for item in rows])
-    flags = reaction_flags(session, user.id, [item.content_id for item in rows])
-    repost_titles, reposted_ids = repost_context(session, user.id, [item.content for item in rows])
+    flags = reaction_flags(session, user_id, [item.content_id for item in rows])
+    repost_titles, reposted_ids = repost_context(session, user_id, [item.content for item in rows])
     best: dict[str, tuple[float, dict[str, object]]] = {}
     for item in rows:
         channel = item.channel
@@ -122,6 +124,11 @@ def for_you(session: Session, user: User, limit: int | None = 12, order: str = "
             "curated": 0.10 * curated,
         }
         reason_code = max(parts, key=parts.get)
+        reason = _REASONS[reason_code]
+        if user is None:
+            # 游客没有「你的国家 / 你加入的频道」，理由只能说内容本身的情况。
+            reason_code = "activity" if activity >= curated else "curated"
+            reason = _REASONS[reason_code] if parts[reason_code] > 0 else "最近发布的公开内容"
         penalty = 0.88 if channel.id in subscribed else 1.0
         score = sum(parts.values()) * freshness * penalty
         title_hans, title_hant, summary_hans, summary_hant = content_titles(item.content)
@@ -139,7 +146,7 @@ def for_you(session: Session, user: User, limit: int | None = 12, order: str = "
             "channel_name": channel.name_hans,
             "is_joined": channel.id in subscribed,
             "reason_code": reason_code,
-            "reason": _REASONS[reason_code],
+            "reason": reason,
             "added_at": item.added_at.isoformat(),
             **card_extras(item.content, None, authors.get(item.content.author_id or "", ("", ""))),
             "liked": flags.get(item.content_id, (False, False))[0],

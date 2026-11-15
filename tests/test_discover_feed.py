@@ -77,6 +77,17 @@ def test_cursor_pages_cover_everything_once_in_order(client):
     assert client.get("/api/v1/discover/items", params={"cursor": "not-a-cursor"}).status_code == 200
 
 
+def test_guest_for_you_is_ranked_and_honest(client):
+    data = seed(client)
+    body = client.get("/api/v1/me/feed", params={"tab": "foryou", "limit": 3}).json()
+    assert len(body["items"]) == 3 and body.get("next_cursor")
+    # 游客没有「你的国家 / 你加入的频道」，理由不能这么写
+    assert all(item["reason_code"] in {"activity", "curated"} for item in body["items"])
+    assert {item["content_id"] for item in body["items"]} <= set(data["ids"])
+    # 关注流仍然要登录
+    assert client.get("/api/v1/me/feed").status_code == 401
+
+
 def test_listings_follow_category_filter(client):
     token = client.post(
         "/api/v1/auth/register",

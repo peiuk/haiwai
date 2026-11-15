@@ -5,7 +5,7 @@ import ContentDetail from "../ContentDetail.vue";
 import PostCard from "../common/PostCard.vue";
 import InfiniteSentinel from "../common/InfiniteSentinel.vue";
 import HomeComposer from "./HomeComposer.vue";
-import { request, type DiscoverItem, type DiscoverResponse } from "../../api";
+import { request, type DiscoverItem } from "../../api";
 import { useAuthStore } from "../../stores/auth";
 import { useToastStore } from "../../stores/toast";
 import { useLoginPromptStore } from "../../stores/loginPrompt";
@@ -28,7 +28,6 @@ const auth = useAuthStore();
 const toast = useToastStore();
 const loginPrompt = useLoginPromptStore();
 const items = ref<RecommendItem[]>([]);
-const guestPool = ref<RecommendItem[]>([]);
 const visibleCount = ref(BATCH);
 const cursor = ref<string | null>(null);
 const order = ref<"ranked" | "time">("ranked");
@@ -41,7 +40,6 @@ let loadVersion = 0;
 const visibleItems = computed(() => items.value.slice(0, visibleCount.value));
 const hasMore = computed(() =>
   visibleCount.value < items.value.length ||
-  (!auth.isLoggedIn && guestPool.value.length > items.value.length) ||
   (!!cursor.value && !pageError.value),
 );
 
@@ -51,26 +49,16 @@ async function load(): Promise<void> {
   error.value = "";
   pageError.value = false;
   items.value = [];
-  guestPool.value = [];
   visibleCount.value = BATCH;
   cursor.value = null;
   try {
-    if (auth.isLoggedIn) {
-      const body = await request<ForYouPage>(
-        `/api/v1/me/feed?tab=foryou&order=${order.value}&limit=${PAGE}`,
-      );
-      if (version !== loadVersion) return;
-      items.value = body.items;
-      cursor.value = body.next_cursor ?? null;
-    } else {
-      const body = await request<DiscoverResponse>("/api/v1/discover/items?limit=50");
-      if (version !== loadVersion) return;
-      const publicItems = order.value === "time"
-        ? [...body.items].sort((a, b) => b.added_at.localeCompare(a.added_at))
-        : body.items;
-      guestPool.value = publicItems as RecommendItem[];
-      items.value = guestPool.value.slice(0, PAGE);
-    }
+    // 游客也走这个接口：不个性化，按新鲜度 / 活跃度 / 官方精选排序，和发现页的时间流不同。
+    const body = await request<ForYouPage>(
+      `/api/v1/me/feed?tab=foryou&order=${order.value}&limit=${PAGE}`,
+    );
+    if (version !== loadVersion) return;
+    items.value = body.items;
+    cursor.value = body.next_cursor ?? null;
   } catch (err) {
     if (version !== loadVersion) return;
     items.value = [];
@@ -85,12 +73,6 @@ async function loadMore(): Promise<void> {
   // 先消费已加载的池，避免每次滚动都打接口。
   if (visibleCount.value < items.value.length) {
     visibleCount.value = Math.min(visibleCount.value + BATCH, items.value.length);
-    return;
-  }
-  // 游客：发现接口一次返回全量，本地继续分批放出。
-  if (!auth.isLoggedIn) {
-    items.value = guestPool.value.slice(0, items.value.length + BATCH);
-    visibleCount.value = items.value.length;
     return;
   }
   if (!cursor.value) return;
@@ -152,7 +134,7 @@ void load();
 <template>
   <div class="recommend-tab">
     <div class="rec-note">
-      <span>{{ order === "ranked" ? "按推荐排序" : "按时间排序" }}</span>
+      <span>{{ order === "ranked" ? "按推荐排序" : "按时间排序" }}{{ auth.isLoggedIn ? "" : " · 未登录，不做个性化" }}</span>
       <button type="button" class="rec-order" @click="order = order === 'ranked' ? 'time' : 'ranked'">
         {{ order === "ranked" ? "切到时间序" : "切到推荐序" }}
       </button>

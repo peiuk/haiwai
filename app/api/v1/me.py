@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import current_user
+from app.api.v1.auth import current_user, optional_user
 from app.api.v1.uploads import upload_root
 from app.core.audit import write_audit
 from app.core.db import get_db
@@ -519,10 +519,12 @@ def my_feed(
     limit: int = 20,
     tab: str = "following",
     order: str = "ranked",
-    user: User = Depends(current_user),
+    viewer: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
+    # 「为你推荐」游客也能看（不个性化，按新鲜度 / 活跃度 / 官方精选排序）；关注流必须登录。
     if tab == "foryou":
+        user = viewer
         if order not in {"ranked", "time"}:
             raise APIError(400, "VALIDATION_FAILED", "排序只能是推荐或时间")
         bounded_foryou = min(max(limit, 1), 50)
@@ -532,6 +534,9 @@ def my_feed(
         if next_cursor:
             payload["next_cursor"] = next_cursor
         return payload
+    if viewer is None:
+        raise APIError(401, "UNAUTHENTICATED", "请先登录")
+    user = viewer
     bounded = min(max(limit, 1), 50)
     all_items = build_following_feed(session, user.id)
     subscriptions = session.scalars(
