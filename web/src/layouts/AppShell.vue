@@ -176,7 +176,7 @@ watch(
     <div class="shell-body" :class="{ 'shell-body--publish': route.name === 'publish' }">
       <!-- 左导航（桌面端） -->
       <aside class="left-col">
-        <strong class="brand"><span class="brand-mark" aria-hidden="true">海</span><span>海外圈</span></strong>
+        <strong class="brand"><img class="brand-mark" src="/logo-mark.png" alt="" width="32" height="32" /><span>海外圈</span></strong>
         <nav aria-label="主导航">
           <RouterLink
             v-for="item in navItems"
@@ -337,15 +337,11 @@ watch(
   padding: 0 var(--sp-3);
 }
 .brand-mark {
-  display: grid;
-  place-items: center;
   width: 32px;
   height: 32px;
   flex: none;
-  border-radius: 9px;
-  background: var(--accent-strong);
-  color: var(--on-accent);
-  font-size: 17px;
+  /* 图是白底，裁成圆形，深色模式下不露出白色方角 */
+  border-radius: 50%;
 }
 .lang-btn {
   font-size: var(--fs-12);
