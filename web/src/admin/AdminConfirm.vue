@@ -4,6 +4,7 @@ import { nextTick, ref, watch } from "vue";
 import { confirmState, settleConfirm } from "./confirm";
 
 const reason = ref("");
+const typed = ref("");
 const panel = ref<HTMLElement | null>(null);
 
 watch(
@@ -11,9 +12,10 @@ watch(
   async (open) => {
     if (!open) return;
     reason.value = "";
+    typed.value = "";
     await nextTick();
-    // 有理由框就先聚焦它，否则聚焦"取消"，免得回车误触危险操作
-    (panel.value?.querySelector("textarea, .adm-modal-cancel") as HTMLElement | null)?.focus();
+    // 有输入框就先聚焦它，否则聚焦"取消"，免得回车误触危险操作
+    (panel.value?.querySelector("input, textarea, .adm-modal-cancel") as HTMLElement | null)?.focus();
   },
 );
 </script>
@@ -23,6 +25,10 @@ watch(
     <div ref="panel" class="adm-modal" role="dialog" aria-modal="true" aria-labelledby="adm-confirm-title">
       <h2 id="adm-confirm-title">{{ confirmState.options.title }}</h2>
       <p v-if="confirmState.options.message">{{ confirmState.options.message }}</p>
+      <div v-if="confirmState.options.mustType" class="field">
+        <label for="adm-confirm-typed">请输入「{{ confirmState.options.mustType }}」确认</label>
+        <input id="adm-confirm-typed" v-model="typed" class="input" autocomplete="off" />
+      </div>
       <div v-if="confirmState.options.reason" class="field">
         <label for="adm-confirm-reason">理由（选填，会记入操作日志）</label>
         <textarea id="adm-confirm-reason" v-model="reason" class="input" rows="3" maxlength="300"></textarea>
@@ -33,6 +39,7 @@ watch(
           type="button"
           class="btn"
           :class="confirmState.options.danger ? 'btn--danger' : 'btn--primary'"
+          :disabled="!!confirmState.options.mustType && typed.trim() !== confirmState.options.mustType"
           @click="settleConfirm(reason.trim())"
         >
           {{ confirmState.options.confirmLabel }}

@@ -526,6 +526,8 @@ def test_delete_channel_only_when_empty(client):
     refused = client.post(f"/api/v1/admin/channels/{busy_id}/delete", headers=headers(boss), json={})
     assert refused.status_code == 409 and refused.json()["code"] == "CHANNEL_NOT_EMPTY"
     assert "1 条内容" in refused.json()["message"]
+    with client.session_factory() as session:
+        assert session.get(Channel, busy_id) is not None  # 没带 with_content：什么都没动
 
     removed = client.post(f"/api/v1/admin/channels/{empty_id}/delete", headers=headers(boss), json={"reason": "建错了"})
     assert removed.status_code == 200, removed.text
@@ -536,3 +538,56 @@ def test_delete_channel_only_when_empty(client):
         assert session.scalar(select(AuditLog.detail).where(AuditLog.action == "admin.channel.delete")) == "建错的频道（uk-empty）：建错了"
     assert client.post(f"/api/v1/admin/channels/{empty_id}/delete", headers=headers(boss), json={}).status_code == 404
     assert audit_actions(client) == ["admin.channel.delete"]  # 被拒绝的那次不记日志
+
+
+def test_delete_channel_with_its_content(client):
+    boss = register(client, "boss@example.com", admin=True)
+    boss_id = user_id(client, "boss@example.com")
+    with client.session_factory() as session:
+        doomed = Channel(code="uk-doomed", name_hans="要删的频道", name_hant="要刪的頻道", kind="official_curated", region_code="UK", is_active=True)
+        other = Channel(code="uk-other", name_hans="别的频道", name_hant="別的頻道", kind="official_curated", region_code="UK", is_active=True)
+        session.add_all([doomed, other])
+        session.flush()
+        room = Channel(code="room-kid", name_hans="下属房间", name_hant="下屬房間", kind="room", region_code="UK", is_active=True, owner_id=boss_id, parent_channel_id=doomed.id)
+        only_here = Content(type="post", status="published", title="只在这个频道", author_id=boss_id)
+        shared = Content(type="post", status="published", title="两个频道都有", author_id=boss_id)
+        session.add_all([room, only_here, shared])
+        session.flush()
+        session.add_all(
+            [
+                ChannelItem(channel_id=doomed.id, content_id=only_here.id),
+                ChannelItem(channel_id=doomed.id, content_id=shared.id),
+                ChannelItem(channel_id=other.id, content_id=shared.id),
+                RoomComment(room_id=doomed.id, content_id=only_here.id, author_id=boss_id, body="一条留言", status="published"),
+                ModerationCase(reported_channel_id=doomed.id, reason="scam"),
+            ]
+        )
+        session.commit()
+        doomed_id, room_id, only_id, shared_id = doomed.id, room.id, only_here.id, shared.id
+    url = f"/api/v1/admin/channels/{doomed_id}/delete"
+
+    # 两道保护：要显式 with_content，还要输对频道名
+    assert client.post(url, headers=headers(boss), json={}).status_code == 409
+    wrong = client.post(url, headers=headers(boss), json={"with_content": True, "confirm_name": "别的频道"})
+    assert wrong.status_code == 422
+    with client.session_factory() as session:
+        assert session.get(Channel, doomed_id) is not None and session.get(Content, only_id).status == "published"
+
+    done = client.post(url, headers=headers(boss), json={"with_content": True, "confirm_name": "要删的频道", "reason": "合并频道"})
+    assert done.status_code == 200, done.text
+    assert done.json() == {"deleted": True, "removed_posts": 1, "removed_comments": 1, "detached_rooms": 1}
+
+    with client.session_factory() as session:
+        assert session.get(Channel, doomed_id) is None
+        assert session.get(Content, only_id).status == "deleted"  # 只属于这个频道的帖子一并下架
+        assert session.get(Content, shared_id).status == "published"  # 别的频道里还有的帖子不动
+        assert session.scalar(select(ChannelItem.channel_id).where(ChannelItem.content_id == shared_id)) is not None
+        assert session.scalar(select(RoomComment.id).where(RoomComment.room_id == doomed_id)) is None
+        kept = session.get(Channel, room_id)
+        assert kept is not None and kept.parent_channel_id is None and kept.is_active  # 下属房间保留，只解除归属
+        assert session.scalar(select(ModerationCase.status).where(ModerationCase.reported_channel_id == doomed_id)) == "closed"
+        detail = session.scalar(select(AuditLog.detail).where(AuditLog.action == "admin.channel.delete"))
+    assert detail == "要删的频道（uk-doomed），连同 1 条内容、1 条留言，解除 1 个房间的归属：合并频道"
+    assert client.get(f"/api/v1/contents/{only_id}").status_code == 404
+    assert client.get(f"/api/v1/contents/{shared_id}").status_code == 200
+    assert client.get("/api/v1/admin/queue", headers=headers(boss)).json()["cases"] == []

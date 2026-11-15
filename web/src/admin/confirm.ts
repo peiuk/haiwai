@@ -8,6 +8,8 @@ export type ConfirmOptions = {
   danger?: boolean;
   /** 是否让管理员填理由（记入操作日志） */
   reason?: boolean;
+  /** 不可恢复的操作：要求原样输入这段文字（如频道名）后才能点确认 */
+  mustType?: string;
 };
 
 export const confirmState = reactive<{

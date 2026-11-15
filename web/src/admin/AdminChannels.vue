@@ -1,10 +1,11 @@
 <script setup lang="ts">
-// 频道 / 房间管理：搜索、新增、编辑、认证、上架 / 下架、删除空频道。
+// 频道 / 房间管理：搜索、新增、编辑、认证、上架 / 下架、删除。
 import { ref } from "vue";
-import { toMessage } from "../api";
+import { ApiRequestError, jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
 import { ADMIN_CHANGED, adminRequest } from "./adminApi";
 import AdminPager from "./AdminPager.vue";
+import { confirmAction } from "./confirm";
 import { KIND_LABELS, STATUS_LABELS, exact, when } from "./shared";
 import { useAdminList } from "./useAdminList";
 
@@ -103,20 +104,41 @@ function deactivate(item: Row): Promise<void> {
   );
 }
 
-function remove(item: Row): Promise<void> {
-  return ask(
-    {
-      title: `彻底删除「${item.name}」？`,
-      message: "只有空频道（没有帖子、留言和下属房间）才能删除，删除后不能恢复。有内容的频道请用「下架」。",
-      confirmLabel: "删除",
-      danger: true,
-      reason: true,
-    },
-    item.channel_id,
-    `/api/v1/admin/channels/${item.channel_id}/delete`,
-    (reason) => ({ reason }),
-    "已删除",
-  );
+// 删除分两步：先按空频道删；后端说里面还有内容时，再让管理员输入频道名确认连内容一起删。
+async function remove(item: Row): Promise<void> {
+  const url = `/api/v1/admin/channels/${item.channel_id}/delete`;
+  const reason = await confirmAction({
+    title: `彻底删除「${item.name}」？`,
+    message: "删除后不能恢复。只是不想让它显示的话，请用「下架」。",
+    confirmLabel: "删除",
+    danger: true,
+    reason: true,
+  });
+  if (reason === null || busy.value) return;
+  busy.value = item.channel_id;
+  try {
+    try {
+      await adminRequest(url, jsonBody({ reason }));
+    } catch (err) {
+      if (!(err instanceof ApiRequestError) || err.code !== "CHANNEL_NOT_EMPTY") throw err;
+      const again = await confirmAction({
+        title: `连内容一起删除「${item.name}」？`,
+        message: `${err.message}。继续的话：只属于这个频道的帖子会一并下架，留言会删掉，下属房间保留但不再归属这个频道。不能恢复。`,
+        confirmLabel: "连内容一起删除",
+        danger: true,
+        mustType: item.name,
+      });
+      if (again === null) return;
+      await adminRequest(url, jsonBody({ reason, with_content: true, confirm_name: item.name }));
+    }
+    toast.show("已删除");
+    window.dispatchEvent(new Event(ADMIN_CHANGED));
+    await load();
+  } catch (err) {
+    toast.show(toMessage(err));
+  } finally {
+    busy.value = "";
+  }
 }
 
 function activate(item: Row): Promise<void> {

@@ -31,6 +31,7 @@ from app.models import (
     RegionOpenRequest,
     RoomComment,
     RoomJoinRequest,
+    RoomPostPush,
     User,
     utcnow,
 )
@@ -777,26 +778,67 @@ def update_channel(
     return {"channel_id": channel.id}
 
 
+class ChannelDeleteBody(Reasoned):
+    with_content: bool = False  # 频道非空时必须显式为 True
+    confirm_name: str = ""  # 连内容一起删时要原样输入频道名
+
+
 @guarded.post("/channels/{channel_id}/delete")
 def delete_channel(
     channel_id: str,
-    body: Reasoned,
+    body: ChannelDeleteBody,
     admin: User = Depends(require_admin),
     session: Session = Depends(get_db),
-) -> dict[str, bool]:
-    """彻底删除一个空频道。有内容的频道只能下架：删了的话里面的帖子会失去所属频道，在前台消失且找不回来。"""
+) -> dict[str, object]:
+    """彻底删除频道，不能恢复。
+
+    空频道直接删。有内容的频道要显式带 with_content 并输入频道名确认：
+    只属于这个频道的帖子一并下架，留言删掉，下属房间只解除归属（房间和里面的内容保留）。
+    """
     channel = session.get(Channel, channel_id)
     if channel is None:
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
-    posts = _count(session, ChannelItem, ChannelItem.channel_id == channel.id)
+    items = session.scalars(select(ChannelItem).where(ChannelItem.channel_id == channel.id)).all()
     comments = _count(session, RoomComment, RoomComment.room_id == channel.id)
-    rooms = _count(session, Channel, Channel.parent_channel_id == channel.id)
-    if posts or comments or rooms:
-        raise APIError(
-            409,
-            "CHANNEL_NOT_EMPTY",
-            f"这个频道里还有 {posts} 条内容、{comments} 条留言、{rooms} 个房间，不能删除；不想让它显示请用「下架」",
+    rooms = session.scalars(select(Channel).where(Channel.parent_channel_id == channel.id)).all()
+    removed_posts = 0
+    if items or comments or rooms:
+        if not body.with_content:
+            raise APIError(
+                409,
+                "CHANNEL_NOT_EMPTY",
+                f"这个频道里还有 {len(items)} 条内容、{comments} 条留言、{len(rooms)} 个房间",
+            )
+        if body.confirm_name.strip() != channel.name_hans:
+            raise APIError(422, "VALIDATION_FAILED", "输入的频道名不一致，没有删除")
+        now = utcnow()
+        elsewhere = set(
+            session.scalars(
+                select(ChannelItem.content_id).where(
+                    ChannelItem.content_id.in_([item.content_id for item in items]), ChannelItem.channel_id != channel.id
+                )
+            ).all()
         )
+        for item in items:
+            # 还挂在别的频道里的帖子只解除关系，在别处照常显示；只属于这里的才下架
+            content = None if item.content_id in elsewhere else session.get(Content, item.content_id)
+            if content is not None and content.deleted_at is None:
+                content.status = "deleted"
+                content.deleted_at = now
+                drop_pushes(session, content.id)
+                removed_posts += 1
+            session.delete(item)
+        session.execute(delete(RoomComment).where(RoomComment.room_id == channel.id))
+        session.execute(delete(RoomPostPush).where((RoomPostPush.room_id == channel.id) | (RoomPostPush.channel_id == channel.id)))
+        for room in rooms:
+            room.parent_channel_id = None
+        # 针对这个频道的未处理举报没有对象可处理了，直接结案
+        for case in session.scalars(
+            select(ModerationCase).where(ModerationCase.reported_channel_id == channel.id, ModerationCase.status == "open")
+        ):
+            case.status = "closed"
+            case.decision = "remove"
+            case.decided_at = now
     # 成员关系等附属记录一并清掉（SQLite 开发库没开外键级联，这里显式删）
     for model, column in (
         (ChannelSubscription, ChannelSubscription.channel_id),
@@ -804,12 +846,15 @@ def delete_channel(
         (RoomJoinRequest, RoomJoinRequest.room_id),
     ):
         session.execute(delete(model).where(column == channel.id))
-    # 频道删了以后日志里只剩 id，所以把名称和代号写进备注
-    detail = f"{channel.name_hans}（{channel.code}）" + (f"：{body.note}" if body.note else "")
+    # 频道删了以后日志里只剩 id，所以把名称、代号和删掉的数量写进备注
+    detail = f"{channel.name_hans}（{channel.code}）"
+    if items or comments or rooms:
+        detail += f"，连同 {removed_posts} 条内容、{comments} 条留言，解除 {len(rooms)} 个房间的归属"
+    detail += f"：{body.note}" if body.note else ""
     write_audit(session, admin.id, "admin.channel.delete", "channel", channel.id, detail[:300])
     session.delete(channel)
     session.commit()
-    return {"deleted": True}
+    return {"deleted": True, "removed_posts": removed_posts, "removed_comments": comments, "detached_rooms": len(rooms)}
 
 
 # ---- 国家开通 ----
