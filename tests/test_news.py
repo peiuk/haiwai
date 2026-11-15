@@ -50,6 +50,14 @@ def channels(client) -> dict[str, str]:
     return ids
 
 
+def test_next_run_is_8am_london_across_dst():
+    # 冬令时（伦敦 = UTC）：7:00 UTC 起 1 小时后；9:00 UTC 起到第二天 8:00 是 23 小时
+    assert news.seconds_until_next_run(datetime(2026, 11, 15, 7, 0, tzinfo=timezone.utc)) == 3600
+    assert news.seconds_until_next_run(datetime(2026, 11, 15, 9, 0, tzinfo=timezone.utc)) == 23 * 3600
+    # 夏令时（伦敦 = UTC+1）：伦敦 8 点是 UTC 7 点
+    assert news.seconds_until_next_run(datetime(2026, 7, 1, 6, 0, tzinfo=timezone.utc)) == 3600
+
+
 def test_numbers_match():
     assert news.numbers_match("fee £1,524 from 1 April", "费用1524英镑，4月1日起")
     assert not news.numbers_match("waiting lists fell", "减少30%")

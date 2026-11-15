@@ -23,6 +23,19 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+  # 每天伦敦时间 8 点抓 GOV.UK 资讯、AI 写成中文稿进「待审核」。单独一个进程，api 的多个 worker 不会重复调用 AI。
+  news:
+    build: .
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+psycopg://ukcn:${POSTGRES_PASSWORD:-ukcn}@db:5432/ukcn
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started  # api 启动时先做数据库迁移
+    command: ["python", "-m", "app.news", "--daily"]
+    restart: unless-stopped
 
 volumes:
   pgdata:

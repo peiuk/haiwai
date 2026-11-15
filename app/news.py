@@ -1,12 +1,16 @@
 """每日 AI 资讯：抓 GOV.UK 最新新闻 → AI 写中文标题和摘要 → 存为待审，管理员在「待审核」里一键发布。
 
 只用 GOV.UK（Open Government Licence v3.0，允许翻译改编，须署名并附原文链接）；不存全文。
-用法：后台「待审核」页的「抓取今日资讯」按钮，或定时任务每天跑一次 `python -m app.news`。
+用法：后台「待审核」页的「抓取今日资讯」按钮；`python -m app.news` 立刻跑一次；
+`python -m app.news --daily` 常驻、每天伦敦时间 8 点自动跑（docker compose 的 news 服务）。
 """
 import hashlib
 import re
+import sys
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import anthropic
 import httpx
@@ -202,14 +206,39 @@ def _parse_time(value: str) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
-if __name__ == "__main__":
+LONDON = ZoneInfo("Europe/London")
+RUN_HOUR = 8  # 每天伦敦时间 8 点
+
+
+def seconds_until_next_run(now: datetime) -> float:
+    local = now.astimezone(LONDON)
+    target = local.replace(hour=RUN_HOUR, minute=0, second=0, microsecond=0)
+    if target <= local:
+        target = (local + timedelta(days=1)).replace(hour=RUN_HOUR, minute=0, second=0, microsecond=0)
+    return (target - local).total_seconds()
+
+
+def run_once() -> int:
     from app.core.db import get_db
 
     db = next(get_db())
     try:
-        print(run_daily_news(db))
+        print(f"{utcnow().isoformat()} 每日资讯：{run_daily_news(db)}", flush=True)
+        return 0
     except NewsUnavailable as err:
-        print(f"没有生成：{err}")
-        raise SystemExit(1)
+        print(f"{utcnow().isoformat()} 每日资讯没有生成：{err}", flush=True)
+        return 1
     finally:
         db.close()
+
+
+if __name__ == "__main__":
+    # 不带参数：立刻跑一次（给系统定时任务用）。--daily：常驻，每天 8 点跑（给 docker compose 的 news 服务用，只开一个进程，避免重复调用 AI）。
+    if "--daily" not in sys.argv:
+        raise SystemExit(run_once())
+    while True:
+        time.sleep(seconds_until_next_run(utcnow()))
+        try:
+            run_once()
+        except Exception as err:  # 某天出错不能让常驻进程退出，第二天照常跑
+            print(f"{utcnow().isoformat()} 每日资讯出错：{err!r}", flush=True)
