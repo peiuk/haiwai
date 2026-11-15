@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user, optional_user
-from app.api.v1.uploads import upload_root
+from app.api.v1.uploads import delete_object
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
@@ -806,9 +806,8 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
         room.is_active = False
     # 刷新令牌记录也一并清掉：不删的话它们带着用户 id 一直留到有人拿来刷新为止。
     session.execute(delete(RefreshSession).where(RefreshSession.user_id == user.id))
-    root = upload_root()
     for upload in session.scalars(select(UploadObject).where(UploadObject.owner_id == user.id)).all():
-        (root / upload.key).unlink(missing_ok=True)
+        delete_object(upload.key)
         session.delete(upload)
     write_audit(session, user.id, "account.erase", "user", user.id)
     session.commit()

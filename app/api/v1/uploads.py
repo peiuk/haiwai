@@ -1,7 +1,8 @@
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -39,6 +40,64 @@ def upload_root() -> Path:
     root = Path(get_settings().upload_dir)
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+@lru_cache
+def _s3_client(endpoint: str, access_key: str, secret_key: str, region: str):
+    import boto3  # 只在配置了对象存储时才用到
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name=region,
+        # MinIO 等自建存储用路径风格（endpoint/bucket/key），不用 bucket 子域名
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}, retries={"max_attempts": 3}),
+    )
+
+
+def _s3():
+    """配置了对象存储就返回 (client, bucket)，否则 None（用本地磁盘）。"""
+    settings = get_settings()
+    if not settings.s3_endpoint.strip():
+        return None
+    client = _s3_client(settings.s3_endpoint.strip(), settings.s3_access_key, settings.s3_secret_key, settings.s3_region)
+    return client, settings.s3_bucket
+
+
+def public_url(key: str) -> str:
+    settings = get_settings()
+    base = settings.media_public_url.strip() or f"{settings.s3_endpoint.strip().rstrip('/')}/{settings.s3_bucket}"
+    return f"{base.rstrip('/')}/{key}"
+
+
+def save_object(key: str, payload: bytes, content_type: str) -> None:
+    remote = _s3()
+    if remote is None:
+        (upload_root() / key).write_bytes(payload)
+        return
+    client, bucket = remote
+    try:
+        # key 随机生成且不可覆盖，内容永远不变，可以让浏览器和 CDN 长期缓存
+        client.put_object(
+            Bucket=bucket, Key=key, Body=payload, ContentType=content_type, CacheControl="public, max-age=31536000, immutable"
+        )
+    except Exception as exc:  # 存储服务器连不上、密钥不对等：让用户稍后再试，不能当成上传成功
+        raise APIError(503, "STORAGE_UNAVAILABLE", "存储服务暂时不可用，请稍后再试") from exc
+
+
+def delete_object(key: str) -> None:
+    remote = _s3()
+    if remote is None:
+        (upload_root() / key).unlink(missing_ok=True)
+        return
+    client, bucket = remote
+    try:
+        client.delete_object(Bucket=bucket, Key=key)
+    except Exception as exc:  # 删不掉就不能说"已删除"：注销账号承诺了连文件一起删
+        raise APIError(503, "STORAGE_UNAVAILABLE", "存储服务暂时不可用，请稍后再试") from exc
 
 
 def _safe_key(key: str) -> str:
@@ -103,18 +162,22 @@ async def store_upload(
     payload = b"".join(chunks)
     if not payload:
         raise too_big
-    path = upload_root() / key
-    path.write_bytes(payload)
+    save_object(key, payload, row.content_type)
     row.stored = True
     session.commit()
     return {"stored": True}
 
 
-@router.get("/{key}")
-def read_upload(key: str, session: Session = Depends(get_db)) -> FileResponse:
+@router.get("/{key}", response_model=None)
+def read_upload(key: str, session: Session = Depends(get_db)) -> Response:
     key = _safe_key(key)
     row = session.get(UploadObject, key)
+    if row is None or not row.stored:
+        raise APIError(404, "UPLOAD_NOT_FOUND", "图片不存在")
+    if _s3() is not None:
+        # 文件在对象存储上：让浏览器直接去媒体域名取，流量不经过这台服务器
+        return RedirectResponse(public_url(key), status_code=302)
     path = upload_root() / key
-    if row is None or not row.stored or not path.is_file():
+    if not path.is_file():
         raise APIError(404, "UPLOAD_NOT_FOUND", "图片不存在")
     return FileResponse(path, media_type=row.content_type)

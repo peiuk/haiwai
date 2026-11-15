@@ -12,6 +12,8 @@ dependencies = [
   "pyjwt>=2.9",
   # app/embed.py 运行时就要用；只放在 dev 里会让生产镜像一导入就报 ModuleNotFoundError。
   "httpx>=0.28",
+  # 对象存储（S3 协议）；只在 .env 配了 S3_ENDPOINT 时才会用到。
+  "boto3>=1.35",
 ]
 
 [project.optional-dependencies]

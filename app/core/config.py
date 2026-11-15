@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_days: int = 7
     llm_api_key: str = ""
     upload_dir: str = "data/uploads"
+    # 对象存储（S3 协议：MinIO、Cloudflare R2、AWS S3 等）。s3_endpoint 留空就用上面的本地磁盘。
+    s3_endpoint: str = ""  # 例：https://s3.example.com（MinIO 的 API 地址）
+    s3_bucket: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "us-east-1"  # MinIO 不关心区域，保持默认即可
+    # 用户浏览器取图片 / 视频的地址前缀（桶要允许匿名读）。留空时用 {s3_endpoint}/{s3_bucket}。
+    media_public_url: str = ""
     # 跑单元测试时为 True（tests/conftest.py 设置）：跳过外网检查和开发库自动初始化。
     testing: bool = False
 
