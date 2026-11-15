@@ -55,6 +55,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin.channel.certify": "认证频道",
   "admin.channel.create": "新增频道",
   "admin.channel.update": "编辑频道",
+  "admin.channel.delete": "删除频道",
   "admin.region.open": "开通国家",
   "admin.region.close": "关闭国家",
   "admin.region.fill": "补齐默认频道",

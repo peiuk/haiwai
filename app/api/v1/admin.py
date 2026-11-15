@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import LoginBody, current_user, issue_tokens, throttle
@@ -22,12 +22,15 @@ from app.feed import image_keys_of
 from app.models import (
     AuditLog,
     Channel,
+    ChannelCollaborator,
     ChannelItem,
+    ChannelSubscription,
     Content,
     ModerationCase,
     Region,
     RegionOpenRequest,
     RoomComment,
+    RoomJoinRequest,
     User,
     utcnow,
 )
@@ -772,6 +775,41 @@ def update_channel(
     write_audit(session, admin.id, "admin.channel.update", "channel", channel.id)
     session.commit()
     return {"channel_id": channel.id}
+
+
+@guarded.post("/channels/{channel_id}/delete")
+def delete_channel(
+    channel_id: str,
+    body: Reasoned,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """彻底删除一个空频道。有内容的频道只能下架：删了的话里面的帖子会失去所属频道，在前台消失且找不回来。"""
+    channel = session.get(Channel, channel_id)
+    if channel is None:
+        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
+    posts = _count(session, ChannelItem, ChannelItem.channel_id == channel.id)
+    comments = _count(session, RoomComment, RoomComment.room_id == channel.id)
+    rooms = _count(session, Channel, Channel.parent_channel_id == channel.id)
+    if posts or comments or rooms:
+        raise APIError(
+            409,
+            "CHANNEL_NOT_EMPTY",
+            f"这个频道里还有 {posts} 条内容、{comments} 条留言、{rooms} 个房间，不能删除；不想让它显示请用「下架」",
+        )
+    # 成员关系等附属记录一并清掉（SQLite 开发库没开外键级联，这里显式删）
+    for model, column in (
+        (ChannelSubscription, ChannelSubscription.channel_id),
+        (ChannelCollaborator, ChannelCollaborator.channel_id),
+        (RoomJoinRequest, RoomJoinRequest.room_id),
+    ):
+        session.execute(delete(model).where(column == channel.id))
+    # 频道删了以后日志里只剩 id，所以把名称和代号写进备注
+    detail = f"{channel.name_hans}（{channel.code}）" + (f"：{body.note}" if body.note else "")
+    write_audit(session, admin.id, "admin.channel.delete", "channel", channel.id, detail[:300])
+    session.delete(channel)
+    session.commit()
+    return {"deleted": True}
 
 
 # ---- 国家开通 ----

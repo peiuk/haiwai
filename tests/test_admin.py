@@ -1,7 +1,7 @@
 """管理后台：只有管理员能进，写操作都留审计。"""
 from sqlalchemy import select
 
-from app.models import AuditLog, Channel, ChannelItem, Content, ModerationCase, RegionOpenRequest, RoomComment, User
+from app.models import AuditLog, Channel, ChannelItem, ChannelSubscription, Content, ModerationCase, RegionOpenRequest, RoomComment, User
 
 CONSENTS = [
     {"purpose": "tos", "version": "2026-11-08", "granted": True},
@@ -77,6 +77,7 @@ def test_admin_endpoints_reject_non_admin(client):
         ("post", "/api/v1/admin/regions/UK/channels", None),
         ("post", "/api/v1/admin/channels", {"code": "uk-food", "name_hans": "英国美食", "region_code": "UK"}),
         ("patch", "/api/v1/admin/channels/x", {"name_hans": "改名", "region_code": "UK"}),
+        ("post", "/api/v1/admin/channels/x/delete", {"reason": ""}),
         ("get", "/api/v1/admin/audit", None),
         ("post", "/api/v1/admin/users/x/status", {"status": "suspended"}),
         ("post", "/api/v1/admin/contents/x/status", {"action": "remove"}),
@@ -506,3 +507,32 @@ def test_create_and_edit_channel(client):
     assert (row["name"], row["name_hant"], row["region_code"], row["category"], row["sort_order"]) == ("英国餐饮", "英國餐飲", "GLOBAL", "", 2)
     assert client.patch(f"{url}/missing", headers=headers(boss), json={"name_hans": "x", "region_code": "UK"}).status_code == 404
     assert audit_actions(client) == ["admin.channel.create", "admin.channel.update"]
+
+
+def test_delete_channel_only_when_empty(client):
+    boss = register(client, "boss@example.com", admin=True)
+    boss_id = user_id(client, "boss@example.com")
+    with client.session_factory() as session:
+        empty = Channel(code="uk-empty", name_hans="建错的频道", name_hant="建錯的頻道", kind="official_curated", region_code="UK", is_active=True)
+        busy = Channel(code="uk-busy", name_hans="有帖子的频道", name_hant="有帖子的頻道", kind="official_curated", region_code="UK", is_active=True)
+        post = Content(type="post", status="published", title="一条帖子", author_id=boss_id)
+        session.add_all([empty, busy, post])
+        session.flush()
+        session.add(ChannelItem(channel_id=busy.id, content_id=post.id))
+        session.add(ChannelSubscription(user_id=boss_id, channel_id=empty.id))
+        session.commit()
+        empty_id, busy_id = empty.id, busy.id
+
+    refused = client.post(f"/api/v1/admin/channels/{busy_id}/delete", headers=headers(boss), json={})
+    assert refused.status_code == 409 and refused.json()["code"] == "CHANNEL_NOT_EMPTY"
+    assert "1 条内容" in refused.json()["message"]
+
+    removed = client.post(f"/api/v1/admin/channels/{empty_id}/delete", headers=headers(boss), json={"reason": "建错了"})
+    assert removed.status_code == 200, removed.text
+    assert public_names(client, "UK") == ["有帖子的频道"]
+    with client.session_factory() as session:
+        assert session.get(Channel, empty_id) is None
+        assert session.scalar(select(ChannelSubscription.user_id).where(ChannelSubscription.channel_id == empty_id)) is None
+        assert session.scalar(select(AuditLog.detail).where(AuditLog.action == "admin.channel.delete")) == "建错的频道（uk-empty）：建错了"
+    assert client.post(f"/api/v1/admin/channels/{empty_id}/delete", headers=headers(boss), json={}).status_code == 404
+    assert audit_actions(client) == ["admin.channel.delete"]  # 被拒绝的那次不记日志

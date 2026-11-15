@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 频道 / 房间管理：搜索、新增、编辑、认证、上架 / 下架。
+// 频道 / 房间管理：搜索、新增、编辑、认证、上架 / 下架、删除空频道。
 import { ref } from "vue";
 import { toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
@@ -100,6 +100,22 @@ function deactivate(item: Row): Promise<void> {
     `/api/v1/admin/channels/${item.channel_id}/active`,
     (reason) => ({ active: false, reason }),
     "已下架",
+  );
+}
+
+function remove(item: Row): Promise<void> {
+  return ask(
+    {
+      title: `彻底删除「${item.name}」？`,
+      message: "只有空频道（没有帖子、留言和下属房间）才能删除，删除后不能恢复。有内容的频道请用「下架」。",
+      confirmLabel: "删除",
+      danger: true,
+      reason: true,
+    },
+    item.channel_id,
+    `/api/v1/admin/channels/${item.channel_id}/delete`,
+    (reason) => ({ reason }),
+    "已删除",
   );
 }
 
@@ -218,6 +234,7 @@ function certify(item: Row): Promise<void> {
                   <button v-if="!item.kind.startsWith('official')" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="certify(item)">{{ item.is_certified ? "取消认证" : "认证" }}</button>
                   <button v-if="item.is_active" type="button" class="btn btn--danger btn--sm" :disabled="busy === item.channel_id" @click="deactivate(item)">下架</button>
                   <button v-else type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="activate(item)">上架</button>
+                  <button type="button" class="btn btn--ghost btn--sm" :disabled="busy === item.channel_id" @click="remove(item)">删除</button>
                 </div>
               </td>
             </tr>
