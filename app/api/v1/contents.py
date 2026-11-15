@@ -6,6 +6,7 @@ from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from app.embed import embed_fields
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.uploads import owned_upload
 from app.api.v1.me import active_channel
@@ -47,6 +48,7 @@ class PostBody(BaseModel):
     image_key: str | None = None
     image_keys: list[str] = []
     video_key: str | None = None
+    video_url: str | None = None  # 视频外链（YouTube / 哔哩哔哩），和上传视频二选一
     post_type: str = "text"
     rights_confirmed: bool = False
     keywords: list[str] = []
@@ -148,6 +150,10 @@ def create_post(
         keys = [body.image_key]
     for key in keys:
         owned_upload(session, user, key)
+    video_url = (body.video_url or "").strip()
+    if video_url and body.post_type == "video":
+        raise APIError(400, "VALIDATION_FAILED", "上传视频和视频外链只能选一个")
+    embed = embed_fields(video_url) if video_url else {}
     _check_hourly_limit(session, user.id)
     prior = session.scalar(
         select(func.count()).select_from(Content).where(Content.author_id == user.id, Content.deleted_at.is_(None))
@@ -170,6 +176,8 @@ def create_post(
         raise APIError(400, "TOPIC_REQUIRED", "发话题至少要有一个话题")
     else:
         stored_type = "post"
+    if embed:
+        stored_type = "embed"  # 外链视频按外链规则：不进推荐和发现
     # 城市话题：官方默认自动用用户注册时填的城市名，作为发帖默认带上的话题之一。
     # body.city_topic 为 None → 未显式指定，回落到 user.city_label；
     # body.city_topic 为 "" → 用户主动删除了城市话题，尊重用户，不自动加。
@@ -194,6 +202,7 @@ def create_post(
         video_key=body.video_key if body.post_type == "video" else None,
         rights_confirmed=body.rights_confirmed if body.post_type == "video" else False,
         published_at=now if status == "published" else None,
+        **embed,
     )
     session.add(content)
     session.flush()

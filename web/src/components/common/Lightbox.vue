@@ -8,6 +8,8 @@ const props = defineProps<{
   images: string[];
   initialIndex: number;
   alt: string;
+  /** images 里哪几项是视频（下标），视频用播放器显示 */
+  videos?: number[];
 }>();
 
 const emit = defineEmits<{ (e: "close"): void }>();
@@ -76,7 +78,16 @@ onBeforeUnmount(() => {
         <BaseIcon name="i-back" :size="28" />
       </button>
 
-      <img :src="images[current]" :alt="`${alt} 图片 ${current + 1}`" class="lightbox-img" />
+      <video
+        v-if="videos?.includes(current)"
+        :key="images[current]"
+        :src="images[current]"
+        class="lightbox-img"
+        controls
+        autoplay
+        playsinline
+      ></video>
+      <img v-else :src="images[current]" :alt="`${alt} 图片 ${current + 1}`" class="lightbox-img" />
 
       <button
         v-if="images.length > 1"

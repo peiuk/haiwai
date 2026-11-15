@@ -57,7 +57,7 @@ const videoBadge = computed(() => {
         <div class="progress-bar"><span :style="{ width: `${item.progress}%` }"></span></div>
         <span class="progress-pct">{{ item.progress }}%</span>
       </div>
-      <EntryMedia :images="images" :video-key="item.video_key" :title="item.title" />
+      <EntryMedia :images="images" :video-key="item.video_key" :title="item.title" :content-id="item.content_id" :embed-status="item.type === 'embed' ? item.embed_status : null" :source-url="item.canonical_url" :provider="item.embed_provider_code" />
       <div class="entry-compliance">
         <SourceBlock :source-name="item.source_name" :licence-ref="item.licence_ref" :canonical-url="item.canonical_url" :label="`${item.title} 的来源与许可`" />
         <ReportButton kind="content" :id="item.content_id" compact />
@@ -78,7 +78,7 @@ const videoBadge = computed(() => {
     <div class="entry-body">
       <h3 class="entry-title entry-title--serif" data-ugc>{{ item.title }}</h3>
       <p v-if="item.summary" class="entry-meta" data-ugc>{{ item.summary }}</p>
-      <EntryMedia :images="images.slice(1)" :video-key="item.video_key" :title="item.title" />
+      <EntryMedia :images="images.slice(1)" :video-key="item.video_key" :title="item.title" :content-id="item.content_id" :embed-status="item.type === 'embed' ? item.embed_status : null" :source-url="item.canonical_url" :provider="item.embed_provider_code" />
       <div class="entry-actions">
         <button type="button" class="icon-btn" :aria-pressed="isWant" :title="isWant ? '取消想看' : '想看'" @click="emit('toggle-watch', 'want')"><BaseIcon name="i-heart" :size="20" /></button>
         <button v-if="!isWatched" type="button" class="btn btn--ghost btn--sm" @click="emit('watched')">看过</button>
@@ -140,7 +140,7 @@ const videoBadge = computed(() => {
     <div class="entry-body">
       <h3 class="entry-title" data-ugc>{{ item.title }}</h3>
       <p v-if="item.summary" class="entry-meta" data-ugc>{{ item.summary }}</p>
-      <EntryMedia :images="images" :video-key="item.video_key" :title="item.title" />
+      <EntryMedia :images="images" :video-key="item.video_key" :title="item.title" :content-id="item.content_id" :embed-status="item.type === 'embed' ? item.embed_status : null" :source-url="item.canonical_url" :provider="item.embed_provider_code" />
       <div class="entry-meta-row">
         <span v-if="item.author_name || item.author_handle" data-ugc>{{ item.author_name || item.author_handle }}</span>
         <span v-if="item.comment_count > 0">{{ item.comment_count }} 条留言</span>

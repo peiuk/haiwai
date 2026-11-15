@@ -15,6 +15,7 @@ from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.regions import open_regions
+from app.embed import embed_fields
 from app.guard import blocked_term_in
 from app.models import (
     Channel,
@@ -663,6 +664,7 @@ class EntryBody(BaseModel):
     rights_confirmed: bool = False
     image_keys: list[str] = []  # 最多 4 张，第一张作封面（电影卡片左侧）
     video_key: str | None = None
+    video_url: str | None = None  # 视频外链（YouTube / 哔哩哔哩），和上传视频二选一
 
     @field_validator("image_keys")
     @classmethod
@@ -782,6 +784,11 @@ def add_entry(
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
     channel = _catalog_room(session, channel_id, user)
+    video_url = (body.video_url or "").strip()
+    if video_url and body.video_key:
+        raise APIError(400, "VALIDATION_FAILED", "上传视频和视频外链只能选一个")
+    # 外链先校验（不在白名单 / 短链直接报错），再动数据库
+    embed = embed_fields(video_url) if video_url else {}
     season = body.season
     episode = body.episode
     if channel.room_type == "series":
@@ -799,11 +806,12 @@ def add_entry(
         sort_key = episode_sort_key(season, episode)
         confirmed = False
     elif channel.room_type == "video":
-        if not body.rights_confirmed:
+        # 外链视频播放的是原站内容，不是本人上传，不用确认原创
+        if not body.rights_confirmed and not embed:
             raise APIError(400, "RIGHTS_REQUIRED", "原创视频需要确认人物同意，且没有未授权的音乐或影视片段")
         season = None
         episode = None
-        confirmed = True
+        confirmed = not embed
         count = session.scalar(
             select(func.count()).select_from(ChannelItem).where(ChannelItem.channel_id == channel.id, ChannelItem.sort_key != "")
         )
@@ -835,7 +843,10 @@ def add_entry(
         image_key=body.image_keys[0] if body.image_keys else None,
         image_keys_json=json.dumps(body.image_keys),
         video_key=body.video_key,
+        **embed,
     )
+    if embed:
+        content.type = "embed"
     session.add(content)
     session.flush()
     session.add(

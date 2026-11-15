@@ -1,3 +1,4 @@
+import re
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -16,6 +17,14 @@ PROVIDERS = {
         "uk_rights_verified": True,
         "notice": "加载后 YouTube 会收到你的 IP、设备与浏览信息，并可能设置 cookie。平台不代理、不缓存影片。",
     },
+    "bilibili": {
+        "display_name": "哔哩哔哩",
+        "hosts": {"www.bilibili.com", "bilibili.com", "m.bilibili.com"},
+        "template": "https://player.bilibili.com/player.html?bvid={id}&autoplay=0",
+        "allows_framing": True,
+        "uk_rights_verified": True,
+        "notice": "加载后哔哩哔哩会收到你的 IP、设备与浏览信息，并可能设置 cookie。平台不代理、不缓存影片。",
+    },
     "bbc": {
         "display_name": "BBC",
         "hosts": {"www.bbc.co.uk", "bbc.co.uk"},
@@ -26,7 +35,7 @@ PROVIDERS = {
     },
 }
 
-_SHORT_HOSTS = {"youtu.be", "bit.ly", "t.co", "tinyurl.com"}
+_SHORT_HOSTS = {"youtu.be", "b23.tv", "bit.ly", "t.co", "tinyurl.com"}
 
 
 def _provider_for(host: str) -> tuple[str, dict[str, object]] | None:
@@ -88,6 +97,12 @@ def resolve_embed_url(raw_url: str) -> dict[str, object]:
         if not media_id or len(media_id) > 16:
             raise APIError(400, "VALIDATION_FAILED", "无法识别 YouTube 视频编号")
         source = f"https://www.youtube.com/watch?v={media_id}"
+    elif code == "bilibili":
+        parts = parsed.path.strip("/").split("/")
+        media_id = parts[1] if len(parts) > 1 and parts[0] == "video" else ""
+        if not re.fullmatch(r"BV[0-9A-Za-z]{10}", media_id):
+            raise APIError(400, "VALIDATION_FAILED", "无法识别哔哩哔哩视频编号（BV 号）")
+        source = f"https://www.bilibili.com/video/{media_id}"
     else:
         source = f"https://{host}{parsed.path}"
         media_id = parsed.path.strip("/")[:32] or "page"
@@ -126,3 +141,15 @@ def embed_url_for(provider_code: str, media_id: str) -> str | None:
         return None
     template = str(provider["template"])
     return template.replace("{id}", media_id)
+
+
+def embed_fields(raw_url: str) -> dict[str, str]:
+    """帖子 / 房间条目带视频外链时写进 Content 的字段；调用方再把 type 设为 embed（按外链规则不进推荐）。"""
+    resolved = resolve_embed_url(raw_url)
+    return {
+        "canonical_url": str(resolved["source_url"]),
+        "embed_provider_code": str(resolved["provider_code"]),
+        "embed_media_id": str(resolved["media_id"]),
+        "embed_source_url": str(resolved["source_url"]),
+        "embed_status": str(resolved["embed_status"]),
+    }

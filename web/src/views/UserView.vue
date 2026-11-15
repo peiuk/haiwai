@@ -22,6 +22,7 @@ import ReportButton from "../components/common/ReportButton.vue";
 import PostCard from "../components/common/PostCard.vue";
 import ContentDetail from "../components/ContentDetail.vue";
 import EmptyState from "../components/base/EmptyState.vue";
+import Lightbox from "../components/common/Lightbox.vue";
 import ErrorState from "../components/base/ErrorState.vue";
 
 const route = useRoute();
@@ -43,7 +44,17 @@ const dmOpen = ref(false);
 const dmBody = ref("");
 const dmBusy = ref(false);
 const activeContentId = ref<string | null>(null);
-const tab = ref<"posts" | "rooms">("posts");
+const tab = ref<"posts" | "media" | "rooms">("posts");
+const mediaIndex = ref(-1);
+
+// 媒体：这个人帖子里的全部图片和视频，按帖子时间倒序平铺
+const media = computed(() =>
+  posts.value.flatMap((post) => [
+    ...(post.video_key ? [{ src: `/api/v1/uploads/${post.video_key}`, video: true, post }] : []),
+    ...post.image_keys.map((key) => ({ src: `/api/v1/uploads/${key}`, video: false, post })),
+  ]),
+);
+const mediaVideos = computed(() => media.value.flatMap((m, i) => (m.video ? [i] : [])));
 
 const isSelf = computed(() => selfId.value !== "" && selfId.value === userId.value);
 const displayName = computed(() => profile.value?.display_name || profile.value?.handle || "匿名用户");
@@ -164,6 +175,7 @@ watch(userId, () => {
   posts.value = [];
   activeContentId.value = null;
   tab.value = "posts";
+  mediaIndex.value = -1;
   void load();
 });
 </script>
@@ -241,6 +253,14 @@ watch(userId, () => {
           <button
             type="button"
             class="profile-tab"
+            :class="{ 'profile-tab--on': tab === 'media' }"
+            role="tab"
+            :aria-selected="tab === 'media'"
+            @click="tab = 'media'"
+          >媒体</button>
+          <button
+            type="button"
+            class="profile-tab"
             :class="{ 'profile-tab--on': tab === 'rooms' }"
             role="tab"
             :aria-selected="tab === 'rooms'"
@@ -263,6 +283,31 @@ watch(userId, () => {
             </RouterLink>
           </li>
         </ul>
+      </template>
+
+      <template v-else-if="tab === 'media'">
+        <EmptyState v-if="media.length === 0" title="还没有图片或视频" description="这位用户发的帖子里还没有图片和视频" />
+        <div v-else class="media-grid">
+          <button
+            v-for="(item, i) in media"
+            :key="item.src"
+            type="button"
+            class="media-tile"
+            :aria-label="`${item.video ? '播放视频' : '查看图片'}：${item.post.title}`"
+            @click="mediaIndex = i"
+          >
+            <video v-if="item.video" :src="`${item.src}#t=0.1`" preload="metadata" muted playsinline></video>
+            <img v-else :src="item.src" alt="" loading="lazy" />
+            <span v-if="item.video" class="media-play"><BaseIcon name="i-play" :size="20" /></span>
+          </button>
+        </div>
+        <Lightbox
+          :images="media.map((m) => m.src)"
+          :videos="mediaVideos"
+          :initial-index="mediaIndex"
+          :alt="displayName"
+          @close="mediaIndex = -1"
+        />
       </template>
 
       <EmptyState
@@ -555,6 +600,45 @@ watch(userId, () => {
 }
 .posts {
   display: grid;
+}
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px 0;
+}
+.media-tile {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  background: var(--surface);
+  overflow: hidden;
+  cursor: pointer;
+}
+.media-tile img,
+.media-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+.media-tile:hover img,
+.media-tile:hover video {
+  opacity: 0.85;
+}
+.media-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
 }
 .dm-overlay {
   position: fixed;

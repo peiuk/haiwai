@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 房主条目管理：添加条目（series 季集 / film 封面图 / video 版权确认；都可带图片和一段视频）、按集号重排。
+// 房主条目管理：添加条目（series 季集 / film 封面图 / video 版权确认；都可带图片和一段视频，或一个视频外链）、按集号重排。
 // 上移/下移由 RoomItems 里的卡片按钮触发，事件经 RoomView 转发到本组件处理。
 import { ref } from "vue";
 import { useToastStore } from "../../stores/toast";
@@ -28,6 +28,7 @@ const season = ref("");
 const episode = ref("");
 const imageKeys = ref<string[]>([]);
 const videoKey = ref("");
+const videoUrl = ref("");
 const rightsConfirmed = ref(false);
 const busy = ref(false);
 
@@ -38,6 +39,7 @@ function resetForm(): void {
   episode.value = "";
   imageKeys.value = [];
   videoKey.value = "";
+  videoUrl.value = "";
   rightsConfirmed.value = false;
 }
 
@@ -52,7 +54,12 @@ async function addEntry(): Promise<void> {
     toast.show("剧集需要填写季和集");
     return;
   }
-  if (props.roomType === "video" && !rightsConfirmed.value) {
+  if (videoKey.value && videoUrl.value.trim()) {
+    toast.show("上传视频和视频外链只能选一个");
+    return;
+  }
+  // 外链播放的是原站内容，不用确认原创
+  if (props.roomType === "video" && !rightsConfirmed.value && !videoUrl.value.trim()) {
     toast.show("原创视频需要确认人物同意且无未授权内容");
     return;
   }
@@ -68,6 +75,7 @@ async function addEntry(): Promise<void> {
         rights_confirmed: props.roomType === "video" ? rightsConfirmed.value : false,
         image_keys: imageKeys.value,
         video_key: videoKey.value || null,
+        video_url: videoUrl.value.trim() || null,
       }),
     );
     toast.show("条目已添加");
@@ -116,7 +124,7 @@ defineExpose({ moveEntry, reorderByEpisode });
         <TextField id="entry-season" v-model="season" label="季" type="number" inputmode="numeric" />
         <TextField id="entry-episode" v-model="episode" label="集" type="number" inputmode="numeric" />
       </div>
-      <Checkbox v-else-if="roomType === 'video'" id="entry-rights" v-model="rightsConfirmed" label="确认是本人原创视频，已取得人物同意，且不含未授权音乐或影视片段" />
+      <Checkbox v-else-if="roomType === 'video' && !videoUrl.trim()" id="entry-rights" v-model="rightsConfirmed" label="确认是本人原创视频，已取得人物同意，且不含未授权音乐或影视片段" />
 
       <MultiUploadField
         id="entry-images"
@@ -133,6 +141,15 @@ defineExpose({ moveEntry, reorderByEpisode });
         accept="video/mp4,video/webm,video/quicktime"
         :max-mb="100"
         hint="mp4 / webm / mov，不超过 100MB"
+      />
+      <TextField
+        id="entry-video-url"
+        v-model="videoUrl"
+        label="或者贴视频外链（可选）"
+        type="url"
+        inputmode="url"
+        placeholder="https://www.youtube.com/watch?v=… 或 https://www.bilibili.com/video/BV…"
+        hint="支持 YouTube、哔哩哔哩，和上传视频二选一；大家点开后在站内播放"
       />
 
       <div class="form-actions">

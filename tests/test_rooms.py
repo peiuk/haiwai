@@ -935,3 +935,60 @@ def test_my_rooms_lists_rooms_i_can_post_to(client):
     assert set(ids) == {mine, shared}
     assert others_only not in ids
     assert client.get("/api/v1/channels/mine").status_code == 401
+
+
+def test_entries_and_room_posts_take_video_links(client):
+    """电影 / 视频 / 剧集条目和综合讨论帖子都能用视频外链；外链和上传二选一，白名单外的平台拒绝。"""
+    owner = register(client, "link-owner@example.com")
+    verify(client, owner, "+447700900215")
+    parent_id = official_channel(client)
+
+    def room(name: str, room_type: str) -> str:
+        room_id = client.post(
+            "/api/v1/channels", headers=headers(owner), json={"name": name, "parent_channel_id": parent_id, "room_type": room_type}
+        ).json()["channel_id"]
+        assert client.post(
+            f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"}
+        ).status_code == 200
+        return room_id
+
+    def entry(room_id: str, **extra):
+        return client.post(f"/api/v1/channels/{room_id}/entries", headers=headers(owner), json={"title": "预告", "body": "看看", **extra})
+
+    film = room("外链片单", "film")
+    added = entry(film, video_url="https://www.bilibili.com/video/BV1GJ411x7h7?p=1")
+    assert added.status_code == 200, added.text
+    row = client.get(f"/api/v1/channels/{film}/items").json()["items"][0]
+    assert row["type"] == "embed" and row["embed_status"] == "embeddable"
+    assert row["canonical_url"] == "https://www.bilibili.com/video/BV1GJ411x7h7"
+    consent = client.get(f"/api/v1/embed/{added.json()['content_id']}/consent", headers=headers(owner)).json()
+    assert consent["provider_code"] == "bilibili"
+
+    clip = upload(client, owner, "video/mp4", b"\x00\x00\x00\x18ftyp")
+    both = entry(film, video_key=clip, video_url="https://www.youtube.com/watch?v=abcdefghijk")
+    assert both.status_code == 400
+    assert entry(film, video_url="https://vimeo.com/123").json()["code"] == "EMBED_PROVIDER_NOT_ALLOWED"
+
+    # 视频房间：外链不是本人原创，不用勾原创确认
+    video = room("外链视频", "video")
+    assert entry(video, video_url="https://www.youtube.com/watch?v=abcdefghijk").status_code == 200
+    series = room("外链剧集", "series")
+    assert entry(series, season=1, episode=1, video_url="https://www.youtube.com/watch?v=abcdefghijk").status_code == 200
+
+    general = room("外链讨论", "general")
+    posted = client.post(
+        "/api/v1/contents",
+        headers=headers(owner),
+        json={"channel_id": general, "title": "推荐一个视频", "body": "大家看看", "video_url": "https://www.youtube.com/watch?v=abcdefghijk"},
+    )
+    assert posted.status_code == 200, posted.text
+    session = client.session_factory()
+    saved = session.get(Content, posted.json()["content_id"])
+    assert saved.type == "embed" and saved.embed_provider_code == "youtube"
+    session.close()
+    mixed = client.post(
+        "/api/v1/contents",
+        headers=headers(owner),
+        json={"channel_id": general, "title": "两个都填", "body": "x", "post_type": "video", "rights_confirmed": True, "video_key": clip, "video_url": "https://www.youtube.com/watch?v=abcdefghijk"},
+    )
+    assert mixed.status_code == 400

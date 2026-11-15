@@ -71,6 +71,12 @@ const cityTopic = ref("");
 const cityInited = ref(false);
 const aiWords = ref<string[]>([]);
 const videoKey = ref("");
+// 发视频两种方式：上传原创视频文件，或贴 YouTube / 哔哩哔哩外链（站内播放，不用确认原创）
+const videoSource = ref<"upload" | "link">("upload");
+const videoUrl = ref("");
+const videoReady = computed(() =>
+  videoSource.value === "link" ? Boolean(videoUrl.value.trim()) : Boolean(videoKey.value && rightsConfirmed.value),
+);
 const imageKeys = ref<string[]>([]);
 const rightsConfirmed = ref(false);
 const busy = ref(false);
@@ -103,7 +109,7 @@ const countOver = computed(() => count.value > MAX_LEN);
 const canPublish = computed(() => {
   if (currentType.value === "info" || busy.value || countOver.value) return false;
   if (!body.value.trim() || body.value.trim().length < 2) return false;
-  if (currentType.value === "video" && (!videoKey.value || !rightsConfirmed.value)) return false;
+  if (currentType.value === "video" && !videoReady.value) return false;
   if (currentType.value === "topic" && userKeywords.value.length === 0) return false;
   return true;
 });
@@ -213,8 +219,8 @@ async function submit(): Promise<void> {
     submitError.value = "写点内容再发布";
     return;
   }
-  if (currentType.value === "video" && (!videoKey.value || !rightsConfirmed.value)) {
-    submitError.value = "发视频需要上传视频文件，并勾选版权确认";
+  if (currentType.value === "video" && !videoReady.value) {
+    submitError.value = videoSource.value === "link" ? "请贴上视频链接" : "发视频需要上传视频文件，并勾选版权确认";
     return;
   }
   if (currentType.value === "topic" && userKeywords.value.length === 0) {
@@ -226,7 +232,7 @@ async function submit(): Promise<void> {
     const payload: Record<string, unknown> = {
       title: title.value.trim() || body.value.trim().slice(0, 40),
       body: body.value.trim(),
-      post_type: currentType.value === "video" ? "video" : "text",
+      post_type: currentType.value === "video" && videoSource.value === "upload" ? "video" : "text",
       keywords: [...userKeywords.value, ...aiWords.value],
     };
     // 城市话题：有则默认随帖（后端也会用 city_label 兜底）；用户删除了则显式传空串。
@@ -234,7 +240,9 @@ async function submit(): Promise<void> {
     else if (cityInited.value) payload.city_topic = "";
     if (channelId.value) payload.channel_id = channelId.value;
     if (imageKeys.value.length) payload.image_keys = imageKeys.value;
-    if (currentType.value === "video") {
+    if (currentType.value === "video" && videoSource.value === "link") {
+      payload.video_url = videoUrl.value.trim();
+    } else if (currentType.value === "video") {
       payload.video_key = videoKey.value;
       payload.rights_confirmed = rightsConfirmed.value;
     }
@@ -256,6 +264,7 @@ async function submit(): Promise<void> {
     topics.value = [];
     aiWords.value = [];
     videoKey.value = "";
+    videoUrl.value = "";
     imageKeys.value = [];
     rightsConfirmed.value = false;
     // 发布成功后恢复默认城市话题（下次发帖仍默认带上）
@@ -324,6 +333,8 @@ function saveDraft(): void {
       cityTopic: cityTopic.value,
       imageKeys: imageKeys.value,
       videoKey: videoKey.value,
+      videoSource: videoSource.value,
+      videoUrl: videoUrl.value,
       rightsConfirmed: rightsConfirmed.value,
     };
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
@@ -337,6 +348,7 @@ function restoreDraft(): void {
     const draft = JSON.parse(raw) as {
       body: string; title: string; topics: string[]; type: ContentType; channelId: string;
       cityTopic?: string; imageKeys?: string[]; videoKey?: string; rightsConfirmed?: boolean;
+      videoSource?: "upload" | "link"; videoUrl?: string;
     };
     body.value = draft.body ?? "";
     title.value = draft.title ?? "";
@@ -346,6 +358,8 @@ function restoreDraft(): void {
     if (draft.cityTopic) cityTopic.value = draft.cityTopic;
     if (Array.isArray(draft.imageKeys)) imageKeys.value = draft.imageKeys;
     if (draft.videoKey) videoKey.value = draft.videoKey;
+    if (draft.videoSource) videoSource.value = draft.videoSource;
+    if (draft.videoUrl) videoUrl.value = draft.videoUrl;
     if (draft.rightsConfirmed) rightsConfirmed.value = draft.rightsConfirmed;
     draftSaved.value = true;
   } catch {
@@ -376,10 +390,10 @@ watch(() => route.query.channel, (value) => {
 
 // 输入变化 → 防抖保存草稿
 watch(
-  [body, title, topics, currentType, channelId, cityTopic, imageKeys, videoKey, rightsConfirmed],
+  [body, title, topics, currentType, channelId, cityTopic, imageKeys, videoKey, videoSource, videoUrl, rightsConfirmed],
   () => {
     const hasContent =
-      body.value.trim() || title.value.trim() || topics.value.length || imageKeys.value.length || videoKey.value;
+      body.value.trim() || title.value.trim() || topics.value.length || imageKeys.value.length || videoKey.value || videoUrl.value;
     // 内容全删掉时连草稿一起删：否则下次进来会恢复出已经删掉的文字
     if (hasContent) saveDraft();
     else clearDraft();
@@ -454,7 +468,7 @@ watch(
         ></textarea>
 
         <!-- 视频提示 -->
-        <NoticeBar v-if="currentType === 'video'" variant="warn">
+        <NoticeBar v-if="currentType === 'video' && videoSource === 'upload'" variant="warn">
           原创视频才允许上传文件；上传前请确认人物同意、无未授权音乐或影视片段。
         </NoticeBar>
 
@@ -477,6 +491,21 @@ watch(
 
         <!-- 原创视频字段 -->
         <div v-if="currentType === 'video'" class="extra-fields">
+          <div class="video-source" role="group" aria-label="视频来源">
+            <button type="button" class="video-source-btn" :class="{ active: videoSource === 'upload' }" :aria-pressed="videoSource === 'upload'" @click="videoSource = 'upload'">上传视频</button>
+            <button type="button" class="video-source-btn" :class="{ active: videoSource === 'link' }" :aria-pressed="videoSource === 'link'" @click="videoSource = 'link'">视频外链</button>
+          </div>
+          <TextField
+            v-if="videoSource === 'link'"
+            id="publish-video-url"
+            v-model="videoUrl"
+            label="视频链接"
+            type="url"
+            inputmode="url"
+            placeholder="https://www.youtube.com/watch?v=… 或 https://www.bilibili.com/video/BV…"
+            hint="支持 YouTube、哔哩哔哩；贴原站完整地址，不要短链。大家点开后在站内播放"
+          />
+          <template v-else>
           <UploadField
             id="publish-video"
             v-model="videoKey"
@@ -486,6 +515,7 @@ watch(
             hint="mp4 / webm / mov，最大 100MB；上传后才会随帖子提交"
           />
           <Checkbox id="publish-rights" v-model="rightsConfirmed" label="我确认这是原创视频：已取得出镜人物同意，且不含未授权音乐或影视片段" />
+          </template>
         </div>
 
         <!-- 图片（发图文/话题时，多选最多 4 张）-->
@@ -928,5 +958,28 @@ watch(
 @media (max-width: 480px) {
   .compose { gap: 10px; padding: 16px 14px 24px; }
   .body-input { min-height: 160px; }
+}
+.video-source {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  width: fit-content;
+}
+.video-source-btn {
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+.video-source-btn.active {
+  background: var(--accent-soft);
+  color: var(--text);
 }
 </style>

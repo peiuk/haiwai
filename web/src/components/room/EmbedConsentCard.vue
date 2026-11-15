@@ -24,6 +24,8 @@ const props = defineProps<{
   sourceUrl: string | null;
   displayName?: string;
   providerNotice?: string;
+  /** 嵌在条目 / 帖子卡里：不重复标题、来源和举报（外层卡片已有） */
+  bare?: boolean;
 }>();
 
 const auth = useAuthStore();
@@ -121,8 +123,8 @@ onMounted(loadConsent);
 </script>
 
 <template>
-  <article class="embed-card">
-    <header class="embed-head">
+  <article class="embed-card" :class="{ 'embed-card--bare': bare }">
+    <header v-if="!bare" class="embed-head">
       <h3 class="embed-title">{{ title }}</h3>
       <BaseTag :variant="statusBadge.variant">{{ statusBadge.text }}</BaseTag>
     </header>
@@ -151,7 +153,7 @@ onMounted(loadConsent);
         <BaseButton type="button" variant="outline" :disabled="loading" @click="openConsent">
           {{ loading ? "检查同意状态…" : "查看播放选项" }}
         </BaseButton>
-        <p class="embed-scope-note">
+        <p v-if="!bare" class="embed-scope-note">
           仅在已订阅频道出现 · 不进「为你推荐」、不置顶、不推送、不进每日精选
         </p>
       </div>
@@ -200,7 +202,7 @@ onMounted(loadConsent);
     <p v-if="error" class="embed-error" role="alert">{{ error }}</p>
 
     <!-- 来源与许可 + 举报常驻（§7.1 / §7.4） -->
-    <footer class="embed-foot">
+    <footer v-if="!bare" class="embed-foot">
       <SourceBlock
         :source-name="displayName"
         licence-ref="官方外链"
@@ -220,6 +222,12 @@ onMounted(loadConsent);
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
+}
+.embed-card--bare {
+  margin-top: var(--sp-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 .embed-head {
   display: flex;
