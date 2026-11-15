@@ -3,9 +3,11 @@
 // 四种形态（general/series/film/video）通过 RoomItems 内部按 room_type 渲染。
 import { computed, onMounted, ref, watch } from "vue";
 import { setDocumentTitle } from "../i18n/uiLang";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import RoomComments from "../components/RoomComments.vue";
 import RoomItems from "../components/room/RoomItems.vue";
+import RoomMembers from "../components/room/RoomMembers.vue";
+import Modal from "../components/base/Modal.vue";
 import RoomManager from "../components/room/RoomManager.vue";
 import RoomSubmissions from "../components/room/RoomSubmissions.vue";
 import { jsonBody, request, type MeProfile, type RoomDetail } from "../api";
@@ -115,6 +117,7 @@ async function approveJoin(requestId: string): Promise<void> {
     await request(`/api/v1/channels/${roomId}/join-requests/${requestId}/approve`, { method: "POST" });
     joinRequests.value = joinRequests.value.filter((item) => item.request_id !== requestId);
     toast.show("已通过加入申请");
+    void membersRef.value?.reload();
     void load();
   } catch (err) {
     toast.show(err instanceof Error ? err.message : "审核失败，请重试");
@@ -175,6 +178,25 @@ async function saveEdit(): Promise<void> {
     toast.show(err instanceof Error ? err.message : "保存没有成功");
   } finally {
     saving.value = false;
+  }
+}
+
+// ---- 房主删除房间 ----
+const router = useRouter();
+const membersRef = ref<InstanceType<typeof RoomMembers> | null>(null);
+const deleteOpen = ref(false);
+const deleting = ref(false);
+
+async function deleteRoom(): Promise<void> {
+  deleting.value = true;
+  try {
+    await request(`/api/v1/channels/${roomId}`, { method: "DELETE" });
+    toast.show("房间已删除");
+    void router.replace("/profile");
+  } catch (err) {
+    toast.show(err instanceof Error ? err.message : "删除没有成功");
+  } finally {
+    deleting.value = false;
   }
 }
 
@@ -249,10 +271,20 @@ onMounted(load);
             hint="显示在房间页顶部，建议横图"
           />
           <div class="room-edit__actions">
+            <BaseButton class="room-edit__delete" size="sm" variant="danger" type="button" @click="deleteOpen = true">删除房间</BaseButton>
             <BaseButton size="sm" variant="outline" type="button" @click="editing = false">取消</BaseButton>
             <BaseButton size="sm" type="submit" :loading="saving">保存</BaseButton>
           </div>
         </form>
+        <Modal :open="deleteOpen" title="删除这个房间？" labelledby="delete-room-title" @close="deleteOpen = false">
+          <p class="room-delete-note">
+            房间「<span data-ugc>{{ detail.name_hans }}</span>」会被彻底删除：里面的帖子下架，留言和成员关系清掉。此操作不可撤销。
+          </p>
+          <div class="room-edit__actions">
+            <BaseButton variant="ghost" :disabled="deleting" @click="deleteOpen = false">取消</BaseButton>
+            <BaseButton variant="danger" :loading="deleting" @click="deleteRoom">确认删除</BaseButton>
+          </div>
+        </Modal>
       </header>
 
       <p v-if="pending && canModerate" class="notice room-pending" role="status">
@@ -285,6 +317,7 @@ onMounted(load);
             <BaseButton size="sm" :loading="reviewingId === item.request_id" :disabled="Boolean(reviewingId)" @click="approveJoin(item.request_id)">通过</BaseButton>
           </div>
         </div>
+        <RoomMembers :ref="(el) => (membersRef = el as typeof membersRef)" :room-id="roomId" @changed="load" />
       </section>
 
       <template v-if="!detail.region_blocked && (!detail.is_private || detail.is_owner || detail.is_joined)">
@@ -381,6 +414,15 @@ onMounted(load);
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-2);
+}
+.room-edit__delete {
+  margin-right: auto;
+}
+.room-delete-note {
+  margin: 0 0 var(--sp-4);
+  color: var(--muted);
+  font-size: var(--fs-14);
+  line-height: 1.6;
 }
 .room-pending {
   margin: var(--sp-3) 0;
