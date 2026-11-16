@@ -6,6 +6,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 const route = useRoute();
+const contact = (import.meta.env.VITE_SUPPORT_CONTACT ?? "").trim();
 const router = useRouter();
 
 const SECTIONS = [
@@ -84,6 +85,7 @@ onMounted(() => {
 
       <h3>8. 联系与管辖</h3>
       <p>本条款受英国法律管辖。如有疑问或争议，请通过平台公示的联系渠道与我们联系。</p>
+      <p v-if="contact">联系方式：<span data-no-hant>{{ contact }}</span></p>
     </article>
 
     <article id="privacy" class="legal-section">
@@ -110,6 +112,7 @@ onMounted(() => {
 
       <h3>7. 联系我们</h3>
       <p>如对本政策或数据保护有任何疑问，请通过平台公示的联系渠道联系我们的数据保护负责人。</p>
+      <p v-if="contact">联系方式：<span data-no-hant>{{ contact }}</span></p>
     </article>
 
     <article id="cookie" class="legal-section">

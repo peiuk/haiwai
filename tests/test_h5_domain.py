@@ -822,7 +822,7 @@ def test_room_update_notifies_subscribers_except_muted(client):
     assert joined["role"] == "member"
     assert joined["parent_name_hans"] == "生活"
     assert joined["room_type"] == "general"
-    assert joined["room_type_label"] == "通用"
+    assert joined["room_type_label"] == "综合讨论"
     assert joined["entry_count"] == 0
     assert member_list["owned_count"] == 0
     assert member_list["room_limit"] == 20

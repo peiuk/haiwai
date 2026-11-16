@@ -23,6 +23,7 @@ import TextField from "../base/TextField.vue";
 const auth = useAuthStore();
 const theme = useThemeStore();
 const toast = useToastStore();
+const supportContact = (import.meta.env.VITE_SUPPORT_CONTACT ?? "").trim();
 
 const mode = ref<"login" | "register">("login");
 const email = ref("");
@@ -195,7 +196,7 @@ onMounted(loadProfile);
         <BaseButton type="submit" :loading="busy" class="submit-btn">
           {{ mode === "login" ? "登录" : "注册并登录" }}
         </BaseButton>
-        <p v-if="mode === 'login'" class="account-meta">忘记密码？请联系平台管理员，对方会给你一个一次性的重置链接。</p>
+        <p v-if="mode === 'login'" class="account-meta">忘记密码？请联系{{ supportContact ? `平台（${supportContact}）` : "平台管理员" }}，对方会给你一个一次性的重置链接。</p>
       </form>
     </template>
 

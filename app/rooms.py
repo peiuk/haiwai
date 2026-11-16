@@ -7,7 +7,8 @@ from app.core.errors import APIError
 from app.models import Channel, ChannelItem, ChannelSubscription, Content, Notification, RoomBan, RoomPostPush
 
 ROOM_LIMIT = 20
-ROOM_TYPE_LABELS = {"general": "通用", "series": "剧集", "film": "电影", "video": "视频"}
+# 和前端建房 / 改房表单（web/src/utils/room.ts）用同一套叫法
+ROOM_TYPE_LABELS = {"general": "综合讨论", "series": "剧集系列", "film": "电影", "video": "视频"}
 SORT_BASIS = {"general": "按时间", "series": "按集号", "film": "按片单顺序", "video": "按加入顺序"}
 
 

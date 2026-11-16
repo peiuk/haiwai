@@ -139,7 +139,7 @@ defineExpose({ reload: () => load(true) });
     <p v-if="loading" class="empty">加载中…</p>
     <Skeleton v-else-if="loadingMore && items.length === 0" />
     <ErrorState v-else-if="error" :message="error" retry-label="重试" @retry="load(true)" />
-    <EmptyState v-else-if="items.length === 0" title="还没有条目" description="房主添加条目后会显示在这里" />
+    <EmptyState v-else-if="items.length === 0" title="还没有条目" :description="isOwner ? '点上面的「发帖」添加第一条内容' : '房主添加条目后会显示在这里'" />
 
     <ul v-else class="entry-list">
       <li v-for="item in items" :key="item.content_id">
