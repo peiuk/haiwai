@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 操作日志：按动作筛选，往下加载更多。
 import { ref } from "vue";
+import { RouterLink } from "vue-router";
 import { toMessage } from "../api";
 import { adminDownload, adminMe, adminRequest } from "./adminApi";
 import { ACTION_LABELS, TARGET_LABELS, exact, when } from "./shared";
@@ -11,6 +12,8 @@ type Row = {
   actor_name: string;
   target_type: string | null;
   target_id: string | null;
+  /** 对象的可读名字：用户名 / 帖子标题 / 频道名 / 留言开头；对象已不存在时为空 */
+  target_label?: string;
   detail: string;
   ip: string;
   user_agent: string;
@@ -95,6 +98,12 @@ async function exportCsv(): Promise<void> {
               <td>
                 <template v-if="item.target_type">
                   {{ TARGET_LABELS[item.target_type] ?? item.target_type }}
+                  <RouterLink
+                    v-if="item.target_label && item.target_id && (item.target_type === 'user' || item.target_type === 'content')"
+                    :to="item.target_type === 'user' ? `/admin/users/${item.target_id}` : `/admin/contents/${item.target_id}`"
+                    data-ugc
+                  >{{ item.target_label }}</RouterLink>
+                  <span v-else-if="item.target_label" data-ugc>{{ item.target_label }}</span>
                   <span class="adm-sub adm-mono">{{ item.target_id }}</span>
                 </template>
                 <template v-else>—</template>

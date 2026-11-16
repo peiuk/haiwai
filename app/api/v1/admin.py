@@ -182,7 +182,12 @@ def _cases(session: Session, where) -> list[dict[str, object]]:
 
 _PENDING_CONTENT = (Content.status == "pending", Content.deleted_at.is_(None))
 _PENDING_COMMENT = (RoomComment.status == "pending", RoomComment.removed_at.is_(None))
-_PENDING_CHANNEL = (Channel.review_status == "pending", Channel.owner_id.is_not(None))
+_PENDING_CHANNEL = (
+    Channel.review_status == "pending",
+    Channel.owner_id.is_not(None),
+    # 房主已注销的不用再审（注销时会一并标成被拒；这条兜住之前留下的）
+    Channel.owner_id.not_in(select(User.id).where(User.deleted_at.is_not(None))),
+)
 
 
 INSIGHT_SECONDS = 60
@@ -882,6 +887,28 @@ def set_comment_status(
     return {"comment_id": comment.id, "status": comment.status}
 
 
+def _target_labels(session: Session, rows) -> dict[tuple[str, str], str]:
+    """日志里「对象」的可读名字（用户名 / 帖子标题 / 频道名 / 留言开头），每种类型一次查完。原来只显示一串 id。"""
+    wanted: dict[str, set[str]] = {}
+    for row in rows:
+        if row.target_type and row.target_id:
+            wanted.setdefault(row.target_type, set()).add(row.target_id)
+    lookups = {
+        "user": (User.id, User.display_name),
+        "content": (Content.id, Content.title),
+        "channel": (Channel.id, Channel.name_hans),
+        "comment": (RoomComment.id, RoomComment.body),
+    }
+    labels: dict[tuple[str, str], str] = {}
+    for kind, ids in wanted.items():
+        if kind not in lookups:
+            continue
+        key, text = lookups[kind]
+        for target_id, label in session.execute(select(key, text).where(key.in_(ids))).all():
+            labels[(kind, target_id)] = (label or "")[:40]
+    return labels
+
+
 @guarded.get("/audit")
 def list_audit(action: str = "", cursor: str = "", session: Session = Depends(get_db)) -> dict[str, object]:
     query = select(AuditLog)
@@ -894,6 +921,7 @@ def list_audit(action: str = "", cursor: str = "", session: Session = Depends(ge
     rows = session.scalars(query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(LIMIT + 1)).all()
     page = rows[:LIMIT]
     names = _names(session, [row.actor_id for row in page])
+    labels = _target_labels(session, page)
     return {
         "items": [
             {
@@ -902,6 +930,7 @@ def list_audit(action: str = "", cursor: str = "", session: Session = Depends(ge
                 "actor_name": names.get(row.actor_id or "", ""),
                 "target_type": row.target_type,
                 "target_id": row.target_id,
+                "target_label": labels.get((row.target_type or "", row.target_id or ""), ""),
                 "detail": row.detail or "",
                 "ip": row.ip or "",
                 "user_agent": row.user_agent or "",

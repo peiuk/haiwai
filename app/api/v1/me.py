@@ -852,6 +852,8 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
     # （不删的话文件仍留在服务器，知道原链接的人还能打开）。
     for room in session.scalars(select(Channel).where(Channel.owner_id == user.id, Channel.kind == "room")).all():
         room.is_active = False
+        if room.review_status == "pending":
+            room.review_status = "rejected"  # 还没审过的房间撤掉：留在后台待审队列里，管理员一点「通过」就会以「已注销」的名义上线
     # 刷新令牌记录也一并清掉：不删的话它们带着用户 id 一直留到有人拿来刷新为止。
     session.execute(delete(RefreshSession).where(RefreshSession.user_id == user.id))
     # 关注 / 拉黑关系也删：账号只是软删除，外键不会连带删，不删的话别人的关注者数里还算着这个人
