@@ -9,10 +9,21 @@ from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
+from app.core.errors import APIError
 from app.models import BlockedTerm, Content, ModerationCase, SiteSetting, User, utcnow
 
 TRUSTED_AFTER_DAYS = 7
 AUTO_HIDE_REPORTS = 3  # 同一条内容有这么多条未处理的举报，就先隐藏等管理员看
+HOURLY_POST_LIMIT = 5
+
+
+def check_hourly_limit(session: Session, user_id: str) -> None:
+    """发帖、转发、房间公告 / 条目、投稿共用：一个人一小时最多发 HOURLY_POST_LIMIT 条。"""
+    count = session.scalar(
+        select(func.count()).select_from(Content).where(Content.author_id == user_id, Content.created_at >= utcnow() - timedelta(hours=1))
+    )
+    if (count or 0) >= HOURLY_POST_LIMIT:
+        raise APIError(429, "RATE_LIMITED", f"每小时最多发布 {HOURLY_POST_LIMIT} 条")
 
 
 def blocked_term_in(session: Session, *texts: str | None) -> str | None:

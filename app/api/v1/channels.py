@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.uploads import owned_upload
-from app.core.pagination import decode_cursor, encode_cursor
+from app.core.pagination import decode_cursor, encode_cursor, paginate_rows
 from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, content_titles, listing_map, reaction_flags, repost_context
 from app.recommend import country_blocked, effective_region
 from app.reports import ReportBody, report_receipt
@@ -16,7 +16,7 @@ from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.regions import open_regions
 from app.embed import embed_fields
-from app.guard import blocked_term_in
+from app.guard import blocked_term_in, check_hourly_limit
 from app.models import (
     Channel,
     ChannelCollaborator,
@@ -336,7 +336,7 @@ def channel_items(
     visible = Content.status == "published"
     if user is not None:
         visible = or_(Content.status == "published", and_(Content.status == "pending", Content.author_id == user.id))
-    rows = session.scalars(
+    query = (
         select(ChannelItem)
         .join(Content, Content.id == ChannelItem.content_id)
         .where(
@@ -347,23 +347,34 @@ def channel_items(
             *([ChannelItem.season == season] if season is not None else []),
         )
         .options(joinedload(ChannelItem.content))
-        .order_by(
-            ChannelItem.pinned.desc(),
-            ChannelItem.sort_key.asc() if channel.room_type in {"series", "film", "video"} else ChannelItem.added_at.desc(),
-            ChannelItem.added_at.asc() if channel.room_type in {"series", "film", "video"} else ChannelItem.added_at.desc(),
-        )
-    ).unique().all()
+    )
     bounded = min(max(limit, 1), 50)
-    start = 0
-    if cursor:
-        parts = decode_cursor(cursor)
-        if parts and len(parts) == 2:
-            cursor_id, cursor_at = parts[0], parts[1]
-            for index, row in enumerate(rows):
-                if row.content_id == cursor_id and row.added_at.isoformat() == cursor_at:
-                    start = index + 1
-                    break
-    page_rows = rows[start : start + bounded]
+    parts = decode_cursor(cursor) if cursor else None
+    if channel.room_type in {"series", "film", "video"}:
+        # 剧集 / 片单 / 视频房间按集号、片单顺序排，条目本来就不多：整份读出来再按游标截取
+        rows = session.scalars(
+            query.order_by(ChannelItem.pinned.desc(), ChannelItem.sort_key.asc(), ChannelItem.added_at.asc())
+        ).unique().all()
+        page, next_cursor = paginate_rows(list(rows), cursor, bounded, "content_id", "added_at")
+    else:
+        # 按时间的频道（官方频道会一直变长）：在数据库里从游标那条往后取一页，不再把全部帖子读进内存
+        anchor = session.get(ChannelItem, (channel.id, parts[0])) if parts and len(parts) == 2 else None
+        if anchor is not None:
+            later = and_(
+                ChannelItem.pinned.is_(anchor.pinned),
+                or_(
+                    ChannelItem.added_at < anchor.added_at,
+                    and_(ChannelItem.added_at == anchor.added_at, ChannelItem.content_id < anchor.content_id),
+                ),
+            )
+            # 置顶的排在最前：游标停在置顶条目上时，后面还有全部非置顶的
+            query = query.where(or_(ChannelItem.pinned.is_(False), later) if anchor.pinned else later)
+        rows = session.scalars(
+            query.order_by(ChannelItem.pinned.desc(), ChannelItem.added_at.desc(), ChannelItem.content_id.desc()).limit(bounded + 1)
+        ).unique().all()
+        page = list(rows[:bounded])
+        next_cursor = encode_cursor(page[-1].content_id, page[-1].added_at.isoformat()) if len(rows) > bounded else None
+    page_rows = page
     listings = listing_map(session, [row.content_id for row in page_rows if row.content.type == "listing"])
     authors = author_names(session, [row.content.author_id for row in page_rows])
     flags = reaction_flags(session, user.id if user else None, [row.content_id for row in page_rows])
@@ -439,9 +450,8 @@ def channel_items(
         "progress_scope": "self",
         "sort_basis": SORT_BASIS.get(channel.room_type, "按时间") if channel.kind == "room" else "按时间",
     }
-    if start + bounded < len(rows) and page_rows:
-        last = page_rows[-1]
-        payload["next_cursor"] = encode_cursor(last.content_id, last.added_at.isoformat())
+    if next_cursor:
+        payload["next_cursor"] = next_cursor
     return payload
 
 
@@ -810,6 +820,7 @@ def add_entry(
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
     channel = _catalog_room(session, channel_id, user)
+    check_hourly_limit(session, user.id)
     video_url = (body.video_url or "").strip()
     if video_url and body.video_key:
         raise APIError(400, "VALIDATION_FAILED", "上传视频和视频外链只能选一个")
@@ -855,8 +866,9 @@ def add_entry(
     if body.video_key:
         _owned_media(session, user, body.video_key, "video/", "视频")
     now = utcnow()
-    # 房间还在审核：条目先待审，管理员通过任一条后房间自动上线（同公告）。直接发布会经搜索、主页漏出去
-    waiting = not channel.is_active
+    # 房间还在审核：条目先待审，管理员通过任一条后房间自动上线（同公告）。直接发布会经搜索、主页漏出去。
+    # 命中敏感词也先待审：房主发的内容和普通发帖同一条规则
+    waiting = not channel.is_active or blocked_term_in(session, body.title, body.body) is not None
     content = Content(
         type="post",
         status="pending" if waiting else "published",
@@ -1021,8 +1033,10 @@ def create_announcement(
     channel = _editor_channel(session, channel_id, user)
     if country_blocked(session, user, channel):
         raise APIError(403, "REGION_BLOCKED", "当前国家看不到这个频道")
+    check_hourly_limit(session, user.id)
     now = utcnow()
-    waiting = not channel.is_active
+    # 房间在审核中，或公告命中敏感词：先待审，管理员通过后才公开、才通知成员
+    waiting = not channel.is_active or blocked_term_in(session, body.title, body.body) is not None
     content = Content(
         type="announcement",
         status="pending" if waiting else "published",
@@ -1035,7 +1049,7 @@ def create_announcement(
     )
     session.add(content)
     session.flush()
-    session.add(ChannelItem(channel_id=channel.id, content_id=content.id, pinned=not waiting, added_at=now))
+    session.add(ChannelItem(channel_id=channel.id, content_id=content.id, pinned=channel.is_active, added_at=now))
     if not waiting:
         notify_room_update(session, channel, content)
     write_audit(session, user.id, "announcement.create", "content", content.id)
@@ -1100,6 +1114,7 @@ def create_submission(
     require_not_banned(session, [channel.id], user.id)
     if country_blocked(session, user, channel):
         raise APIError(403, "REGION_BLOCKED", "当前国家看不到这个频道")
+    check_hourly_limit(session, user.id)
     now = utcnow()
     content = Content(
         type="post",
@@ -1140,6 +1155,9 @@ def decide_submission(
         raise APIError(403, "FORBIDDEN", "自己发的内容由平台审核，不能在房间里通过")
     now = utcnow()
     if body.decision == "accept":
+        # 房主放行也不能绕过平台的敏感词 / 链接黑名单
+        if blocked_term_in(session, content.title, content.body):
+            raise APIError(422, "BLOCKED_TERM", "这条投稿包含不允许的词或链接，只能拒绝")
         content.status = "published"
         content.published_at = now
         item.added_at = now

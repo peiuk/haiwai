@@ -1,6 +1,6 @@
 import re
 import secrets
-from datetime import timedelta, timezone
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -25,7 +25,7 @@ from app.core.security import (
     refresh_expiry,
     verify_password,
 )
-from app.models import Channel, ChannelSubscription, ConsentRecord, PasswordReset, RateHit, RefreshSession, User, utcnow
+from app.models import Channel, ChannelSubscription, ConsentRecord, PasswordReset, RateHit, RefreshSession, User, as_utc, utcnow
 
 DEV_PHONE_CODE = "246810"
 
@@ -43,11 +43,6 @@ def throttle(session: Session, key: str, limit: int, window_seconds: int) -> Non
     session.add(RateHit(key=key, at=now))
     session.commit()
 
-
-def _aware_datetime(value) -> object:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 router = APIRouter(prefix="/auth")
 bearer = HTTPBearer(auto_error=False)
@@ -207,7 +202,7 @@ def issue_tokens(session: Session, user_id: str, admin: bool = False) -> dict[st
 
 def lift_expired_suspension(user: User) -> None:
     """限时封禁到期：恢复正常。登录和续期时检查，不用另起定时任务。"""
-    if user.status == "suspended" and user.suspended_until is not None and _aware_datetime(user.suspended_until) <= utcnow():
+    if user.status == "suspended" and user.suspended_until is not None and as_utc(user.suspended_until) <= utcnow():
         user.status = "active"
         user.suspended_until = None
         user.suspend_reason = None
@@ -318,7 +313,7 @@ def login(body: LoginBody, request: Request, session: Session = Depends(get_db))
         raise APIError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")
     lift_expired_suspension(user)
     if user.status != "active":  # 密码对了才告诉对方账号被限制，不泄露账号是否存在
-        until = f"到 {_aware_datetime(user.suspended_until):%Y-%m-%d %H:%M} (UTC)" if user.suspended_until else ""
+        until = f"到 {as_utc(user.suspended_until):%Y-%m-%d %H:%M} (UTC)" if user.suspended_until else ""
         why = f"。原因：{user.suspend_reason}" if user.suspend_reason else ""
         raise APIError(403, "ACCOUNT_SUSPENDED", f"这个账号已被限制{until}，无法登录{why}")
     if needs_rehash(user.password_hash):
@@ -339,7 +334,7 @@ def reset_password(body: ResetPasswordBody, session: Session = Depends(get_db)) 
     digest = hash_refresh_token(body.token.strip())
     throttle(session, f"reset:{digest[:16]}", limit=10, window_seconds=15 * 60)
     row = session.scalar(select(PasswordReset).where(PasswordReset.token_hash == digest))
-    if row is None or row.used_at is not None or _aware_datetime(row.expires_at) < utcnow():
+    if row is None or row.used_at is not None or as_utc(row.expires_at) < utcnow():
         raise APIError(400, "INVALID_RESET_TOKEN", "这个重置链接已经失效，请重新获取")
     user = session.get(User, row.user_id)
     if user is None or user.deleted_at is not None:
@@ -362,7 +357,7 @@ def refresh_session(body: RefreshBody, session: Session = Depends(get_db)) -> di
     row = session.scalar(select(RefreshSession).where(RefreshSession.token_hash == digest))
     if row is None:
         raise APIError(401, "INVALID_REFRESH", "登录已失效，请重新登录")
-    if _aware_datetime(row.expires_at) < utcnow():
+    if as_utc(row.expires_at) < utcnow():
         session.delete(row)
         session.commit()
         raise APIError(401, "INVALID_REFRESH", "登录已失效，请重新登录")

@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
@@ -11,7 +11,7 @@ from app.api.v1.uploads import delete_object, owned_upload
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
-from app.core.pagination import decode_cursor, encode_cursor, paginate_rows
+from app.core.pagination import decode_cursor, encode_cursor
 from app.core.regions import open_regions
 from app.feed import build_following_feed, paginate_feed
 from app.keywords import clean_city_topic
@@ -36,8 +36,10 @@ from app.models import (
     UploadObject,
     User,
     UserBlock,
+    UserFollow,
     RegionOpenRequest,
     UserRegionPref,
+    as_utc,
     utcnow,
 )
 
@@ -159,18 +161,12 @@ def _content_paused(session: Session, user: User, content_id: str) -> bool:
     return all(country_blocked(session, user, channel) for channel in channels)
 
 
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
-
-
 def _mark_seen_divider(items: list[dict[str, object]], seen_at: datetime | None) -> int:
     fresh_count = 0
     placed = False
     for item in items:
-        added = _as_utc(datetime.fromisoformat(str(item["added_at"])))
-        fresh = not item.get("pinned") and seen_at is not None and added > _as_utc(seen_at)
+        added = as_utc(datetime.fromisoformat(str(item["added_at"])))
+        fresh = not item.get("pinned") and seen_at is not None and added > as_utc(seen_at)
         if fresh:
             fresh_count += 1
         item["show_divider_before"] = False
@@ -408,14 +404,24 @@ def my_notifications(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
-    rows = list(
-        session.scalars(
-            select(Notification).where(Notification.user_id == user.id).order_by(Notification.created_at.desc())
-        ).all()
-    )
-    unread = sum(1 for row in rows if row.read_at is None)
+    # 通知只增不减：在数据库里按 (时间, id) 从游标往后取一页，未读数也在数据库里数，不再把全部通知读进内存
+    unread = session.scalar(
+        select(func.count()).select_from(Notification).where(Notification.user_id == user.id, Notification.read_at.is_(None))
+    ) or 0
     bounded = min(max(limit, 1), 50)
-    page, next_cursor = paginate_rows(rows, cursor, bounded, "id", "created_at")
+    query = select(Notification).where(Notification.user_id == user.id)
+    parts = decode_cursor(cursor) if cursor else None
+    anchor = session.get(Notification, parts[0]) if parts and len(parts) == 2 else None
+    if anchor is not None and anchor.user_id == user.id:
+        query = query.where(
+            or_(
+                Notification.created_at < anchor.created_at,
+                and_(Notification.created_at == anchor.created_at, Notification.id < anchor.id),
+            )
+        )
+    rows = session.scalars(query.order_by(Notification.created_at.desc(), Notification.id.desc()).limit(bounded + 1)).all()
+    page = rows[:bounded]
+    next_cursor = encode_cursor(page[-1].id, page[-1].created_at.isoformat()) if len(rows) > bounded else None
     payload: dict[str, object] = {
         "items": [
             {
@@ -844,6 +850,9 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
         room.is_active = False
     # 刷新令牌记录也一并清掉：不删的话它们带着用户 id 一直留到有人拿来刷新为止。
     session.execute(delete(RefreshSession).where(RefreshSession.user_id == user.id))
+    # 关注 / 拉黑关系也删：账号只是软删除，外键不会连带删，不删的话别人的关注者数里还算着这个人
+    session.execute(delete(UserFollow).where(or_(UserFollow.user_id == user.id, UserFollow.target_id == user.id)))
+    session.execute(delete(UserBlock).where(or_(UserBlock.user_id == user.id, UserBlock.target_id == user.id)))
     for upload in session.scalars(select(UploadObject).where(UploadObject.owner_id == user.id)).all():
         delete_object(upload.key)
         session.delete(upload)

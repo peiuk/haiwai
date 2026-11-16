@@ -1,12 +1,12 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.pagination import decode_cursor, encode_cursor
 from app.keywords import load_keywords
-from app.models import Channel, ChannelItem, ChannelSubscription, Content, ContentReaction, ListingExt, User
+from app.models import Channel, ChannelItem, ChannelSubscription, Content, ContentReaction, ListingExt, User, as_utc, utcnow
 from app.privacy import viewable
 
 MAX_LISTING_IMAGES = 4
@@ -30,12 +30,6 @@ def image_keys_of(content: Content) -> list[str]:
         if key not in unique:
             unique.append(key)
     return unique[:MAX_LISTING_IMAGES]
-
-
-def _aware(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 
 def listing_map(session: Session, content_ids: list[str]) -> dict[str, ListingExt]:
@@ -88,11 +82,7 @@ def reaction_flags(session: Session, user_id: str | None, content_ids: list[str]
 
 
 def _expired(expires_at: datetime | None) -> bool:
-    if expires_at is None:
-        return False
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    return expires_at < datetime.now(timezone.utc)
+    return expires_at is not None and as_utc(expires_at) < utcnow()
 
 
 def embed_card(content: Content) -> dict[str, str | None] | None:
@@ -244,7 +234,7 @@ def build_following_feed(session: Session, user_id: str) -> list[dict[str, objec
         is_unread = False
         for added_at, channel_id in unread_context.get(key, []):
             read_at = last_read.get(channel_id)
-            if read_at is None or _aware(added_at) > _aware(read_at):
+            if read_at is None or as_utc(added_at) > as_utc(read_at):
                 is_unread = True
                 break
         entry["is_unread"] = is_unread

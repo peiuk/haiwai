@@ -40,13 +40,21 @@ function watchSlides(): void {
   list.value.querySelectorAll(".mf-slide").forEach((slide) => observer?.observe(slide));
 }
 
+// 手机返回手势：打开时压一条历史记录，返回就只关掉全屏、不离开主页。
+// 带上原有的 history.state，vue-router 靠它记位置；用按钮 / Esc / 点标题关掉时把这条记录退掉。
+function onPop(): void {
+  if (props.start >= 0) emit("close");
+}
+
 watch(
   () => props.start,
-  async (start) => {
+  async (start, before) => {
     if (start < 0) {
       observer?.disconnect();
+      if (history.state?.mediaFeed) history.back();
       return;
     }
+    if (before === undefined || before < 0) history.pushState({ ...history.state, mediaFeed: true }, "");
     current.value = start;
     await nextTick();
     if (list.value) list.value.scrollTop = start * list.value.clientHeight;
@@ -70,9 +78,13 @@ function onKey(e: KeyboardEvent): void {
   else if (e.key === "ArrowUp") (e.preventDefault(), step(-1));
 }
 
-onMounted(() => window.addEventListener("keydown", onKey));
+onMounted(() => {
+  window.addEventListener("keydown", onKey);
+  window.addEventListener("popstate", onPop);
+});
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKey);
+  window.removeEventListener("popstate", onPop);
   observer?.disconnect();
 });
 </script>

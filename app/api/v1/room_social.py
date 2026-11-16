@@ -1,5 +1,5 @@
 import re
-from datetime import timedelta, timezone
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator, model_validator
@@ -32,6 +32,7 @@ from app.models import (
     RoomJoinRequest,
     User,
     UserFollow,
+    as_utc,
     utcnow,
 )
 
@@ -155,12 +156,6 @@ def _can_view(session: Session, room: Channel, user: User | None) -> bool:
     return not room.is_private or is_room_member(session, room, user)
 
 
-def _aware(value):
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
-
-
 @router.get("/{channel_id}/comments")
 def list_comments(
     channel_id: str,
@@ -262,9 +257,9 @@ def create_comment(
     recent = session.scalars(
         select(RoomComment.created_at).where(RoomComment.room_id == room.id, RoomComment.author_id == user.id)
     ).all()
-    if sum(1 for created_at in recent if _aware(created_at) >= now - timedelta(minutes=1)) >= 5:
+    if sum(1 for created_at in recent if as_utc(created_at) >= now - timedelta(minutes=1)) >= 5:
         raise APIError(429, "RATE_LIMITED", "留言太频繁")
-    if sum(1 for created_at in recent if _aware(created_at) >= now - timedelta(hours=1)) >= 20:
+    if sum(1 for created_at in recent if as_utc(created_at) >= now - timedelta(hours=1)) >= 20:
         raise APIError(429, "RATE_LIMITED", "这个小时的留言已达上限")
     comment = RoomComment(
         room_id=room.id,

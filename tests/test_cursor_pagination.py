@@ -123,6 +123,39 @@ def test_room_comments_cursor_pagination(client):
     assert len(all_rows) == 4
 
 
+def test_channel_items_page_in_database_with_pinned_first(client):
+    """按时间的频道在数据库里翻页：置顶的排最前，逐页不重复、不漏，末页没有 next_cursor。"""
+    now = datetime.now(timezone.utc)
+    session = client.session_factory()
+    channel = Channel(code="items-cursor", name_hans="翻页频道", name_hant="翻頁頻道", kind="official_curated", region_code="UK", is_active=True)
+    session.add(channel)
+    session.flush()
+    contents = [Content(type="post", status="published", title=f"帖子 {index}", summary="") for index in range(5)]
+    session.add_all(contents)
+    session.flush()
+    session.add_all(
+        ChannelItem(channel_id=channel.id, content_id=item.id, added_at=now - timedelta(minutes=index), pinned=index == 4)
+        for index, item in enumerate(contents)
+    )
+    session.commit()
+    channel_id = channel.id
+    expected = [contents[4].id] + [item.id for item in contents[:4]]
+    session.close()
+
+    for limit in (1, 2):  # limit=1 时游标会停在置顶那条上
+        seen: list[str] = []
+        cursor = None
+        for _ in range(5):
+            url = f"/api/v1/channels/{channel_id}/items?limit={limit}" + (f"&cursor={cursor}" if cursor else "")
+            body = client.get(url).json()
+            seen += [item["content_id"] for item in body["items"]]
+            cursor = body.get("next_cursor")
+            if not cursor:
+                break
+        assert seen == expected
+        assert cursor is None
+
+
 def test_my_channels_quota_and_pagination(client):
     token = register(client, "cursor-rooms@example.com")
     headers = auth_header(token)

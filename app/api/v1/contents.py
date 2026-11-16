@@ -12,7 +12,7 @@ from app.api.v1.uploads import owned_upload
 from app.api.v1.me import active_channel
 from app.api.v1.room_social import apply_comment_like, comment_like_state, mention_count, mention_users, publish_comment
 from app.core.audit import write_audit
-from app.guard import blocked_term_in, first_status, hide_if_widely_reported, review_on
+from app.guard import blocked_term_in, check_hourly_limit, first_status, hide_if_widely_reported, review_on
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.keywords import clean_city_topic, collect_keywords, dump_keywords, load_keywords, resolve_keywords
@@ -36,7 +36,6 @@ from app.models import (
 )
 
 router = APIRouter()
-HOURLY_POST_LIMIT = 5
 REVIEW_LIMIT = 3
 
 
@@ -118,16 +117,6 @@ def _approved_posts(session: Session, user_id: str) -> int:
     )
 
 
-def _check_hourly_limit(session: Session, user_id: str) -> None:
-    # 只数最近一小时的条数：原来把作者全部帖子的时间都读出来再在 Python 里过滤，帖子越多越慢。
-    cutoff = utcnow() - timedelta(hours=1)
-    count = session.scalar(
-        select(func.count()).select_from(Content).where(Content.author_id == user_id, Content.created_at >= cutoff)
-    )
-    if (count or 0) >= HOURLY_POST_LIMIT:
-        raise APIError(429, "RATE_LIMITED", "每小时最多发布 5 条")
-
-
 @router.post("/contents")
 def create_post(
     body: PostBody,
@@ -145,6 +134,7 @@ def create_post(
             and channel.kind == "room"
             and channel.visibility == "public"
             and not channel.is_active
+            and channel.review_status == "pending"  # 被拒、被下架的房间不算：房主不能接着往里发、再通知原来的成员
             and (
                 channel.owner_id == user.id
                 or session.get(ChannelCollaborator, (channel.id, user.id)) is not None
@@ -167,7 +157,7 @@ def create_post(
     if video_url and body.post_type == "video":
         raise APIError(400, "VALIDATION_FAILED", "上传视频和视频外链只能选一个")
     embed = embed_fields(video_url) if video_url else {}
-    _check_hourly_limit(session, user.id)
+    check_hourly_limit(session, user.id)
     prior = _approved_posts(session, user.id)
     now = utcnow()
     # 后台关了帖子审核时，新用户的前几条也直接发布；敏感词照样拦
@@ -592,7 +582,7 @@ def repost_content(
     )
     if existing is not None:
         return {"content_id": existing.id, "status": existing.status}
-    _check_hourly_limit(session, user.id)
+    check_hourly_limit(session, user.id)
     now = utcnow()
     note = body.body or original.summary or ""
     # 和发帖同一套规则：新用户前几条要审，附言命中敏感词也先待审（原来转发一律直接公开）

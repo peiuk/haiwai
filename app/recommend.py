@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.feed import author_names, card_extras, content_titles, reaction_flags, repost_context
@@ -53,23 +53,21 @@ def country_blocked(session: Session, user: User | None, channel) -> bool:
 def _cooccurrence(session: Session, subscribed: set[str]) -> dict[str, float]:
     if not subscribed:
         return {}
-    peer_ids = set(
-        session.scalars(select(ChannelSubscription.user_id).where(ChannelSubscription.channel_id.in_(subscribed))).all()
-    )
-    if not peer_ids:
-        return {}
-    counts: dict[str, set[str]] = {}
-    pairs = session.execute(
-        select(ChannelSubscription.user_id, ChannelSubscription.channel_id).where(ChannelSubscription.user_id.in_(peer_ids))
-    ).all()
-    for user_id, channel_id in pairs:
-        if channel_id in subscribed:
-            continue
-        counts.setdefault(channel_id, set()).add(user_id)
-    largest = max((len(users) for users in counts.values()), default=0)
+    # 在数据库里数：和我加入同一频道的人，还加入了哪些别的频道、各有几个人。
+    # 原来把这些人的全部订阅读进内存再数，几乎人人都加入官方频道，等于每次请求把订阅表整张读一遍。
+    peers = select(ChannelSubscription.user_id).where(ChannelSubscription.channel_id.in_(subscribed))
+    counts = {
+        channel_id: int(count)
+        for channel_id, count in session.execute(
+            select(ChannelSubscription.channel_id, func.count())
+            .where(ChannelSubscription.user_id.in_(peers), ChannelSubscription.channel_id.not_in(subscribed))
+            .group_by(ChannelSubscription.channel_id)
+        ).all()
+    }
+    largest = max(counts.values(), default=0)
     if largest == 0:
         return {}
-    return {channel_id: len(users) / largest for channel_id, users in counts.items()}
+    return {channel_id: count / largest for channel_id, count in counts.items()}
 
 
 def for_you(session: Session, user: User | None, limit: int | None = 12, order: str = "ranked") -> list[dict[str, object]]:

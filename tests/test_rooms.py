@@ -1092,3 +1092,77 @@ def test_owner_bans_a_member_and_deletes_the_room(client):
         assert session.get(Channel, room_id) is None
         assert session.get(Content, content_id).status == "deleted"
         assert session.scalar(select(RoomJoinRequest).where(RoomJoinRequest.room_id == room_id)) is None
+
+
+def test_owner_posts_in_own_room_follow_banned_words_and_hourly_cap(client):
+    """房主发公告、放行投稿，和普通发帖同一套规则：敏感词先待审 / 不能放行，每小时最多 5 条。"""
+    from app.models import BlockedTerm
+
+    parent_id = official_channel(client)
+    owner = register(client, "gate-owner@example.com")
+    verify(client, owner, "+447700900371")
+    member = register(client, "gate-member@example.com")
+    verify(client, member, "+447700900372")
+    with client.session_factory() as session:
+        session.add(BlockedTerm(term="坏词"))
+        session.commit()
+    room_id = client.post("/api/v1/channels", headers=headers(owner), json={"name": "规则房间", "parent_channel_id": parent_id}).json()["channel_id"]
+    client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"})
+    base = f"/api/v1/channels/{room_id}"
+
+    held = client.post(f"{base}/announcements", headers=headers(owner), json={"title": "坏词公告", "body": "内容"}).json()
+    assert held["status"] == "pending"
+    guest_ids = [item["content_id"] for item in client.get(f"{base}/items").json()["items"]]
+    assert held["content_id"] not in guest_ids
+
+    submitted = client.post(f"{base}/submissions", headers=headers(member), json={"title": "投稿", "body": "带坏词的投稿"}).json()
+    accept = client.post(f"{base}/submissions/{submitted['content_id']}/decision", headers=headers(owner), json={"decision": "accept"})
+    assert (accept.status_code, accept.json()["code"]) == (422, "BLOCKED_TERM")
+
+    for index in range(4):  # 加上上面那条，正好 5 条
+        assert client.post(f"{base}/announcements", headers=headers(owner), json={"title": f"公告{index}", "body": "内容"}).status_code == 200
+    over = client.post(f"{base}/announcements", headers=headers(owner), json={"title": "第六条", "body": "内容"})
+    assert (over.status_code, over.json()["code"]) == (429, "RATE_LIMITED")
+
+
+def test_taken_down_room_hides_its_posts_and_owner_cannot_post_on(client):
+    """举报后下架房间：房间里的帖子在搜索、主页、按链接、官方频道（推送的副本）都看不到，只有房主还能看；房主也不能再往里发帖。"""
+    parent_id = official_channel(client)
+    owner = register(client, "down-owner@example.com")
+    verify(client, owner, "+447700900381")
+    viewer = register(client, "down-viewer@example.com")
+    room_id = client.post("/api/v1/channels", headers=headers(owner), json={"name": "要下架的房间", "parent_channel_id": parent_id}).json()["channel_id"]
+    client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"})
+    content_id = client.post(
+        f"/api/v1/channels/{room_id}/announcements", headers=headers(owner), json={"title": "下架测试公告", "body": "内容"}
+    ).json()["content_id"]
+    assert client.post(f"/api/v1/channels/{room_id}/pushes/{content_id}", headers=headers(owner)).status_code == 200
+    owner_id = client.get("/api/v1/me", headers=headers(owner)).json()["user_id"]
+
+    def visible() -> list[bool]:
+        return [
+            content_id in {item["content_id"] for item in client.get("/api/v1/search", params={"q": "下架测试公告"}).json()["contents"]},
+            content_id in {item["content_id"] for item in client.get(f"/api/v1/users/{owner_id}/posts").json()["items"]},
+            content_id in {item["content_id"] for item in client.get(f"/api/v1/channels/{parent_id}/items").json()["items"]},
+            client.get(f"/api/v1/contents/{content_id}").status_code == 200,
+        ]
+
+    assert visible() == [True] * 4
+    case_id = client.post(f"/api/v1/channels/{room_id}/report", headers=headers(viewer), json={"reason": "scam"}).json()["case_id"]
+    removed = client.post(f"/api/v1/moderation/cases/{case_id}/decision", headers=headers(viewer), json={"decision": "remove"})
+    assert removed.status_code == 200, removed.text
+
+    assert visible() == [False] * 4
+    assert client.get(f"/api/v1/contents/{content_id}", headers=headers(owner)).status_code == 200
+    again = client.post("/api/v1/contents", headers=headers(owner), json={"channel_id": room_id, "title": "接着发", "body": "下架了还发"})
+    assert (again.status_code, again.json()["code"]) == (404, "CHANNEL_NOT_FOUND")
+
+
+def test_erased_account_no_longer_counts_as_follower(client):
+    star = register(client, "follow-star@example.com")
+    fan = register(client, "follow-fan@example.com")
+    star_id = client.get("/api/v1/me", headers=headers(star)).json()["user_id"]
+    assert client.put(f"/api/v1/me/follows/{star_id}", headers=headers(fan)).status_code == 200
+    assert client.get(f"/api/v1/users/{star_id}").json()["follower_count"] == 1
+    assert client.delete("/api/v1/me", headers=headers(fan)).status_code == 200
+    assert client.get(f"/api/v1/users/{star_id}").json()["follower_count"] == 0

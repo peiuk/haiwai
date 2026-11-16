@@ -9,6 +9,11 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def as_utc(value: datetime) -> datetime:
+    """SQLite 读出来的时间不带时区：当作 UTC，才能和 utcnow() 比较。"""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
 def new_id() -> str:
     return str(uuid.uuid4())
 
