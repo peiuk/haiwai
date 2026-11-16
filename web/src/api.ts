@@ -358,6 +358,8 @@ export type RoomComment = {
 export type CommentsResponse = {
   items: RoomComment[];
   next_cursor?: string;
+  /** 帖子回复总数（帖子详情的回复按页取，标题上显示总数） */
+  total?: number;
 };
 
 export type RoomDetail = {

@@ -67,6 +67,33 @@ const loading = ref(false);
 const error = ref("");
 
 const comments = ref<RoomComment[]>([]);
+// 回复按页取（每页 50 条，按发布顺序）：热门帖几千条回复不能一次全拉
+const repliesCursor = ref<string | null>(null);
+const repliesTotal = ref(0);
+const loadingMoreReplies = ref(false);
+
+function repliesUrl(cursor: string | null): string {
+  const base = `/api/v1/contents/${props.contentId}/comments`;
+  return cursor ? `${base}?cursor=${encodeURIComponent(cursor)}` : base;
+}
+
+function takeReplies(page: CommentsResponse, append: boolean): void {
+  comments.value = append ? [...comments.value, ...page.items] : page.items;
+  repliesCursor.value = page.next_cursor ?? null;
+  repliesTotal.value = page.total ?? comments.value.length;
+}
+
+async function loadMoreReplies(): Promise<void> {
+  if (!repliesCursor.value || loadingMoreReplies.value) return;
+  loadingMoreReplies.value = true;
+  try {
+    takeReplies(await request<CommentsResponse>(repliesUrl(repliesCursor.value)), true);
+  } catch (err) {
+    toast.show(err instanceof Error ? err.message : "更多回复暂时加载不了");
+  } finally {
+    loadingMoreReplies.value = false;
+  }
+}
 const draft = ref("");
 const imageKey = ref("");
 const imageBusy = ref(false);
@@ -143,7 +170,7 @@ function removeImage(): void {
 async function loadDetail(): Promise<void> {
   if (!props.contentId) {
     detail.value = null;
-    comments.value = [];
+    takeReplies({ items: [] }, false);
     return;
   }
   loading.value = true;
@@ -151,10 +178,10 @@ async function loadDetail(): Promise<void> {
   try {
     const [body, replies] = await Promise.all([
       request<ContentDetail>(`/api/v1/contents/${props.contentId}`),
-      request<CommentsResponse>(`/api/v1/contents/${props.contentId}/comments`).catch(() => ({ items: [] })),
+      request<CommentsResponse>(repliesUrl(null)).catch((): CommentsResponse => ({ items: [] })),
     ]);
     detail.value = body;
-    comments.value = replies.items;
+    takeReplies(replies, false);
   } catch (err) {
     error.value = err instanceof Error ? err.message : "内容加载失败";
   } finally {
@@ -250,8 +277,11 @@ async function postComment(): Promise<void> {
     imageKey.value = "";
     imageName.value = "";
     emojiOpen.value = false;
-    const replies = await request<CommentsResponse>(`/api/v1/contents/${props.contentId}/comments`);
-    comments.value = replies.items;
+    // 新回复排在最后：从头把每一页都取到底，自己刚发的那条才看得到（发回复不常有，多取几页没关系）
+    takeReplies(await request<CommentsResponse>(repliesUrl(null)), false);
+    while (repliesCursor.value) {
+      takeReplies(await request<CommentsResponse>(repliesUrl(repliesCursor.value)), true);
+    }
   } catch (err) {
     toast.show(err instanceof Error ? err.message : "回复没有成功");
   } finally {
@@ -431,7 +461,7 @@ watch(detail, async (value) => {
               </div>
             </article>
 
-            <div class="cd-replies-head"><h4>回复</h4><span>{{ comments.length }}</span></div>
+            <div class="cd-replies-head"><h4>回复</h4><span>{{ repliesTotal }}</span></div>
             <p v-if="comments.length === 0" class="cd-no-replies">还没有回复，来写下第一条。</p>
             <ul v-else class="cd-list">
               <li v-for="comment in comments" :key="comment.id" class="cd-item">
@@ -466,6 +496,13 @@ watch(detail, async (value) => {
                 </div>
               </li>
             </ul>
+            <button
+              v-if="repliesCursor"
+              type="button"
+              class="cd-more-replies"
+              :disabled="loadingMoreReplies"
+              @click="loadMoreReplies"
+            >{{ loadingMoreReplies ? "加载中…" : `查看更多回复（还有 ${repliesTotal - comments.length} 条）` }}</button>
 
             <!-- 回复框固定在底部：先看正文和回复，再决定要不要回 -->
             <form class="cd-compose" @submit.prevent="postComment">
@@ -738,6 +775,7 @@ watch(detail, async (value) => {
 .cd-replies-head { display: flex; align-items: center; gap: 8px; padding: var(--sp-4) var(--sp-4) 6px; }
 .cd-replies-head h4 { margin: 0; font-size: var(--fs-15); }
 .cd-replies-head span { color: var(--muted); font-size: var(--fs-13); }
+.cd-more-replies { display: block; width: 100%; min-height: 44px; padding: 10px var(--sp-4); border: 0; border-top: 1px solid var(--line); background: none; color: var(--primary); font-size: var(--fs-14); cursor: pointer; }
 .cd-no-replies { margin: 0; padding: 14px var(--sp-4) 28px; color: var(--muted); font-size: var(--fs-14); }
 .cd-list {
   margin: 0;

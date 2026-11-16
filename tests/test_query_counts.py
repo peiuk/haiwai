@@ -42,4 +42,43 @@ def test_reply_list_queries_do_not_grow_with_replies(client):
     assert queries <= 12, queries
     replies = client.get(f"/api/v1/contents/{post_id}/comments").json()["items"]
     assert len(replies) == 40 and all(len(item["mentions"]) == 1 for item in replies)
-    assert replies[0]["author_name"] == "人0"
+    assert {item["author_name"] for item in replies} == {f"人{i}" for i in range(40)}  # 作者名整批查也都对得上
+
+
+def test_reply_list_pages_through_every_reply_once_in_order(client):
+    from datetime import datetime, timedelta, timezone
+
+    session = client.session_factory()
+    room = Channel(code="pg-room", name_hans="房间", name_hant="房間", kind="room", region_code="GLOBAL", is_active=True)
+    channel = Channel(code="pg", name_hans="频道", name_hant="頻道", kind="official_curated", region_code="GLOBAL", is_active=True)
+    author = User(email="pg@example.com", password_hash="x", display_name="作者")
+    session.add_all([room, channel, author])
+    session.flush()
+    post = Content(type="post", status="published", author_id=author.id, title="很多回复", summary="摘要")
+    session.add(post)
+    session.flush()
+    session.add(ChannelItem(channel_id=channel.id, content_id=post.id))
+    start = datetime.now(timezone.utc) - timedelta(hours=3)
+    for index in range(120):
+        # 每两条同一时间：游标要靠 id 分开同一时刻的回复，不能漏也不能重
+        session.add(RoomComment(room_id=room.id, content_id=post.id, author_id=author.id, body=f"第{index}条",
+                                status="published", created_at=start + timedelta(seconds=index // 2)))
+    session.commit()
+    post_id = post.id
+    session.close()
+
+    seen: list[str] = []
+    cursor = None
+    pages = 0
+    while True:
+        params = {"cursor": cursor} if cursor else {}
+        body = client.get(f"/api/v1/contents/{post_id}/comments", params=params).json()
+        assert body["total"] == 120
+        seen.extend(item["body"] for item in body["items"])
+        pages += 1
+        cursor = body.get("next_cursor")
+        if not cursor:
+            break
+    assert pages == 3 and len(seen) == 120 and len(set(seen)) == 120
+    times = [int(text[1:-1]) // 2 for text in seen]
+    assert times == sorted(times)  # 按发布顺序

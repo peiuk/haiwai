@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator, model_validator
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.embed import embed_fields
@@ -22,6 +22,7 @@ from app.core.audit import write_audit
 from app.guard import blocked_term_in, check_hourly_limit, first_status, hide_if_widely_reported, review_on
 from app.core.db import get_db
 from app.core.errors import APIError
+from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.keywords import clean_city_topic, collect_keywords, dump_keywords, load_keywords, resolve_keywords
 from app.privacy import can_view_content, is_private_room_content, require_not_blocked_by
 from app.reports import ReportBody, report_receipt
@@ -434,20 +435,30 @@ def _visible_content(session: Session, content_id: str, user: User | None) -> Co
 @router.get("/contents/{content_id}/comments")
 def list_replies(
     content_id: str,
+    cursor: str | None = None,
+    limit: int = 50,
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
-) -> dict[str, list[dict[str, object]]]:
+) -> dict[str, object]:
     content = _visible_content(session, content_id, user)
-    rows = session.scalars(
-        select(RoomComment)
-        .where(
-            RoomComment.content_id == content.id,
-            RoomComment.removed_at.is_(None),
-            (RoomComment.status == "published")
-            | ((RoomComment.status == "pending") & (RoomComment.author_id == (user.id if user else ""))),
+    visible = (
+        RoomComment.content_id == content.id,
+        RoomComment.removed_at.is_(None),
+        (RoomComment.status == "published")
+        | ((RoomComment.status == "pending") & (RoomComment.author_id == (user.id if user else ""))),
+    )
+    # 按发布顺序一页页给（热门帖几千条回复不能一次全返回）；total 给标题上的「回复 N」用
+    bounded = min(max(limit, 1), 100)
+    query = select(RoomComment).where(*visible)
+    parts = decode_cursor(cursor) if cursor else None
+    after_at = parse_added_at(parts[1]) if parts and len(parts) == 2 else None
+    if parts and after_at is not None:
+        query = query.where(
+            or_(RoomComment.created_at > after_at, and_(RoomComment.created_at == after_at, RoomComment.id > parts[0]))
         )
-        .order_by(RoomComment.created_at)
-    ).all()
+    page_rows = session.scalars(query.order_by(RoomComment.created_at, RoomComment.id).limit(bounded + 1)).all()
+    rows = page_rows[:bounded]
+    total = int(session.scalar(select(func.count()).select_from(RoomComment).where(*visible)) or 0)
     items: list[dict[str, object]] = []
     counts, liked = comment_like_state(session, user, [row.id for row in rows])
     # 作者和 @ 到的人都整批查：原来每条回复各查一次，热门帖几百条回复就是几百次查询
@@ -472,7 +483,10 @@ def list_replies(
                 "created_at": row.created_at.isoformat(),
             }
         )
-    return {"items": items}
+    payload: dict[str, object] = {"items": items, "total": total}
+    if len(page_rows) > bounded:
+        payload["next_cursor"] = encode_cursor(rows[-1].id, rows[-1].created_at.isoformat())
+    return payload
 
 
 @router.post("/contents/{content_id}/comments")
