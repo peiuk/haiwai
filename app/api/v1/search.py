@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import optional_user
 from app.core.db import get_db
 from app.core.regions import open_regions
-from app.feed import embed_card, image_keys_of, reaction_flags
+from app.feed import author_names, embed_card, home_channels, image_keys_of, reaction_flags
 from app.keywords import load_keywords
 from app.privacy import viewable
 from app.models import Channel, ChannelItem, Content, User, utcnow
@@ -110,13 +110,13 @@ def search(
     results: list[dict[str, object]] = []
     # 结果页直接用信息流卡片展示，带上当前用户的点赞 / 收藏状态
     flags = reaction_flags(session, viewer.id if viewer else None, [row.id for row in contents])
+    # 频道和作者整批查：原来每条结果各查三次库
+    placed_in = home_channels(session, [row.id for row in contents])
+    authors = author_names(session, [row.author_id for row in contents])
     for row in contents:
         liked, favorited = flags.get(row.id, (False, False))
-        placed = session.scalar(
-            select(ChannelItem).where(ChannelItem.content_id == row.id, ChannelItem.origin_room_id.is_(None))
-        )
-        channel = session.get(Channel, placed.channel_id) if placed is not None else None
-        author = session.get(User, row.author_id) if row.author_id else None
+        channel = placed_in.get(row.id)
+        author_name, author_handle, author_avatar = authors.get(row.author_id or "", ("", "", ""))
         results.append(
             {
                 "content_id": row.id,
@@ -127,9 +127,9 @@ def search(
                 "licence_ref": row.licence_ref or "",
                 "canonical_url": row.canonical_url,
                 "author_id": row.author_id,
-                "author_name": author.display_name if author else "",
-                "author_handle": author.handle or "" if author else "",
-                "author_avatar": author.avatar_key or "" if author else "",
+                "author_name": author_name,
+                "author_handle": author_handle,
+                "author_avatar": author_avatar,
                 "channel_id": channel.id if channel else None,
                 "channel_name": channel.name_hans if channel else "",
                 "keywords": load_keywords(row.keywords_json),

@@ -10,7 +10,14 @@ from app.embed import embed_fields
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.uploads import owned_upload
 from app.api.v1.me import active_channel
-from app.api.v1.room_social import apply_comment_like, comment_like_state, mention_count, mention_users, publish_comment
+from app.api.v1.room_social import (
+    apply_comment_like,
+    comment_like_state,
+    mention_count,
+    mention_handles,
+    mentioned_handles,
+    publish_comment,
+)
 from app.core.audit import write_audit
 from app.guard import blocked_term_in, check_hourly_limit, first_status, hide_if_widely_reported, review_on
 from app.core.db import get_db
@@ -20,7 +27,7 @@ from app.privacy import can_view_content, is_private_room_content, require_not_b
 from app.reports import ReportBody, report_receipt
 from app.recommend import country_blocked, is_roaming
 from app.rooms import drop_pushes, notify_room_update, require_not_banned
-from app.feed import MAX_LISTING_IMAGES, image_keys_of
+from app.feed import author_names, MAX_LISTING_IMAGES, image_keys_of
 from app.models import (
     Channel,
     ChannelCollaborator,
@@ -443,16 +450,19 @@ def list_replies(
     ).all()
     items: list[dict[str, object]] = []
     counts, liked = comment_like_state(session, user, [row.id for row in rows])
+    # 作者和 @ 到的人都整批查：原来每条回复各查一次，热门帖几百条回复就是几百次查询
+    authors = author_names(session, [row.author_id for row in rows])
+    real_handles = mentioned_handles(session, [row.body for row in rows])
     for row in rows:
-        author = session.get(User, row.author_id)
+        author_name, author_handle, author_avatar = authors.get(row.author_id, ("", "", ""))
         items.append(
             {
                 "id": row.id,
                 "author_id": row.author_id,
-                "author_name": author.display_name if author else "",
-                "author_handle": author.handle or "" if author else "",
-                "author_avatar": author.avatar_key or "" if author else "",
-                "mentions": [person.handle or "" for person in mention_users(session, row.body)],
+                "author_name": author_name,
+                "author_handle": author_handle,
+                "author_avatar": author_avatar,
+                "mentions": [handle for handle in mention_handles(row.body) if handle in real_handles],
                 "like_count": counts.get(row.id, 0),
                 "liked": row.id in liked,
                 "body": row.body,

@@ -47,6 +47,21 @@ def author_names(session: Session, author_ids: list[str | None]) -> dict[str, tu
     return {row.id: (row.display_name, row.handle or "", row.avatar_key or "") for row in rows}
 
 
+def home_channels(session: Session, content_ids: list[str]) -> dict[str, Channel]:
+    """每条内容发在哪个频道（不算房间推送的副本），一次查完。卡片上的频道名、转发都用它。"""
+    if not content_ids:
+        return {}
+    placed: dict[str, Channel] = {}
+    rows = session.execute(
+        select(ChannelItem.content_id, Channel)
+        .join(Channel, Channel.id == ChannelItem.channel_id)
+        .where(ChannelItem.content_id.in_(content_ids), ChannelItem.origin_room_id.is_(None))
+    ).all()
+    for content_id, channel in rows:
+        placed.setdefault(content_id, channel)
+    return placed
+
+
 def repost_context(session: Session, user_id: str | None, contents: list[Content]) -> tuple[dict[str, str], set[str]]:
     original_ids = [content.repost_of_id for content in contents if content.repost_of_id]
     titles: dict[str, str] = {}

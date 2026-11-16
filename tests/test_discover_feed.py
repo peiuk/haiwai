@@ -176,3 +176,47 @@ def test_guest_region_header_scopes_guest_content(client):
     assert content_id in discover_ids({"X-Region": "UK"})
     assert content_id in foryou_ids({"X-Region": "uk"})
     assert content_id not in discover_ids({"X-Region": "ZZ"})  # 没开通的国家不算
+
+
+def test_home_rail_ranks_by_heat_in_visible_regions(client):
+    """右栏「今日 / 本周」：浏览 + 点赞×3 + 收藏×5 排序；挂两个频道只出一次；别国、超过一周的不出现。"""
+    from app.models import ContentReaction, User
+
+    session = client.session_factory()
+    now = datetime.now(timezone.utc)
+    life = global_channel(session, "rail-life", "生活")
+    life2 = global_channel(session, "rail-life2", "生活")
+    uk = Channel(code="rail-uk", name_hans="英国", name_hant="英國", kind="official_curated", region_code="UK", is_active=True)
+    session.add(uk)
+    fans = [User(email=f"fan{i}@example.com", password_hash="x", display_name=f"粉{i}") for i in range(3)]
+    session.add_all(fans)
+    session.flush()
+
+    def post(title: str, days_ago: float, views: int, *channels: str) -> str:
+        content = Content(type="post", status="published", title=title, summary="摘要", view_count=views,
+                          published_at=now - timedelta(days=days_ago))
+        session.add(content)
+        session.flush()
+        for channel_id in channels:
+            session.add(ChannelItem(channel_id=channel_id, content_id=content.id, added_at=content.published_at))
+        return content.id
+
+    viewed = post("浏览多", 0.1, 6, life)            # 6 分
+    favourite = post("收藏多", 0.2, 0, life, life2)  # 两个收藏 = 10 分，挂了两个频道
+    liked = post("点赞多", 0.3, 0, life)             # 一个赞 = 3 分
+    post("英国本地", 0.1, 50, uk.id)                 # 游客没选国家看不到
+    post("上个月的", 30, 99, life)                   # 超过一周
+    session.add_all([
+        ContentReaction(user_id=fans[0].id, content_id=favourite, favorited=True),
+        ContentReaction(user_id=fans[1].id, content_id=favourite, favorited=True),
+        ContentReaction(user_id=fans[2].id, content_id=liked, liked=True),
+    ])
+    session.commit()
+    session.close()
+
+    rail = client.get("/api/v1/discover/home-rail").json()
+    week_ids = [card["content_id"] for card in rail["week"]]
+    assert week_ids == [favourite, viewed, liked]
+    assert [card["content_id"] for card in rail["today"]] == [favourite, viewed, liked]
+    uk_rail = client.get("/api/v1/discover/home-rail", headers={"X-Region": "UK"}).json()
+    assert uk_rail["week"][0]["title"] == "英国本地"

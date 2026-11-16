@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
@@ -579,49 +579,10 @@ def _rail_card(
     return card
 
 
-def _dt_key(value: datetime | None) -> float:
-    """把可能 naive/aware 混用的 datetime 归一为 UTC 时间戳，用于安全排序与比较。"""
-    if value is None:
-        return 0.0
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.timestamp()
 
 
-def _published_rows(
-    session: Session,
-    region: str,
-    since: datetime,
-) -> list[tuple[Content, Channel]]:
-    """取某时间点之后发布的可见内容（含频道归属），排除 listing/embed/repost。"""
-    rows = session.scalars(
-        select(ChannelItem)
-        .join(Content, Content.id == ChannelItem.content_id)
-        .join(Channel, Channel.id == ChannelItem.channel_id)
-        .where(
-            Content.status == "published",
-            Content.deleted_at.is_(None),
-            Content.type.notin_(["listing", "embed", "repost"]),
-            ChannelItem.origin_room_id.is_(None),
-            # 时间窗放进 SQL：原来每次首页访问都把全部收录读进内存再按日期筛。
-            func.coalesce(Content.published_at, Content.created_at) >= since,
-        )
-        .options(joinedload(ChannelItem.content), joinedload(ChannelItem.channel))
-    ).unique().all()
-    since_key = _dt_key(since)
-    pairs: list[tuple[Content, Channel]] = []
-    for item in rows:
-        if not _visible(item.channel, region):
-            continue
-        published = _dt_key(item.content.published_at) or _dt_key(item.content.created_at)
-        if published >= since_key:
-            pairs.append((item.content, item.channel))
-    return pairs
 
 
-def _heat(content: Content, liked: int, favorited: int) -> int:
-    """热度分：浏览 1 分、点赞 3 分、收藏 5 分（收藏意图最强，权重最高）。"""
-    return (content.view_count or 0) + liked * 3 + favorited * 5
 
 
 @router.get("/discover/home-rail")
@@ -666,28 +627,54 @@ def home_rail(
     week_cutoff = now - timedelta(days=7)
 
     def ranked(since: datetime, limit: int) -> list[dict[str, object]]:
-        pairs = _published_rows(session, region, since)
-        # 同一条内容可能归属多个频道，按 content 去重（保留热度最高的一份）。
-        best: dict[str, tuple[int, Content, Channel]] = {}
-        ids = [content.id for content, _channel in pairs]
-        reactions: dict[str, tuple[int, int]] = {}
-        if ids:
-            for row in session.scalars(
-                select(ContentReaction).where(ContentReaction.content_id.in_(ids))
-            ).all():
-                liked, favorited = reactions.get(row.content_id, (0, 0))
-                reactions[row.content_id] = (liked + (1 if row.liked else 0), favorited + (1 if row.favorited else 0))
-        for content, channel in pairs:
-            score = _heat(content, *reactions.get(content.id, (0, 0)))
-            prev = best.get(content.id)
-            if prev is None or score > prev[0]:
-                best[content.id] = (score, content, channel)
-        scored = sorted(
-            best.values(),
-            key=lambda item: (item[0], _dt_key(item[1].published_at) or _dt_key(item[1].created_at)),
-            reverse=True,
+        # 热度分 = 浏览 + 点赞×3 + 收藏×5（收藏意图最强）。整个打分、排序都在数据库里做，只取前几条：
+        # 原来把时间窗里的全部内容和每一条点赞记录都读进内存再排，内容一多首页右栏就慢。
+        published = func.coalesce(Content.published_at, Content.created_at)
+        window = (
+            Content.status == "published",
+            Content.deleted_at.is_(None),
+            Content.type.notin_(["listing", "embed", "repost"]),
+            published >= since,
         )
-        return [_rail_card(session, content, channel) for _score, content, channel in scored[:limit]]
+        reacts = (
+            select(
+                ContentReaction.content_id.label("content_id"),
+                func.sum(case((ContentReaction.liked.is_(True), 1), else_=0)).label("liked"),
+                func.sum(case((ContentReaction.favorited.is_(True), 1), else_=0)).label("favorited"),
+            )
+            .where(ContentReaction.content_id.in_(select(Content.id).where(*window)))
+            .group_by(ContentReaction.content_id)
+            .subquery()
+        )
+        score = (
+            func.coalesce(Content.view_count, 0)
+            + 3 * func.coalesce(reacts.c.liked, 0)
+            + 5 * func.coalesce(reacts.c.favorited, 0)
+        )
+        rows = session.execute(
+            select(Content, Channel)
+            .select_from(ChannelItem)
+            .join(Content, Content.id == ChannelItem.content_id)
+            .join(Channel, Channel.id == ChannelItem.channel_id)
+            .outerjoin(reacts, reacts.c.content_id == Content.id)
+            .where(
+                *window,
+                ChannelItem.origin_room_id.is_(None),
+                Channel.region_code.in_(("GLOBAL", region)),  # 和 _visible 同一条规则
+            )
+            .order_by(score.desc(), published.desc(), Content.id)
+            .limit(limit * 4)  # 同一条内容可能挂在几个频道里，多取一些留给去重
+        ).all()
+        cards: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for content, channel in rows:
+            if content.id in seen:
+                continue
+            seen.add(content.id)
+            cards.append(_rail_card(session, content, channel))
+            if len(cards) == limit:
+                break
+        return cards
 
     return {
         "news": news,

@@ -68,6 +68,18 @@ def mention_users(session: Session, body: str) -> list[User]:
     return users
 
 
+def mentioned_handles(session: Session, bodies: list[str]) -> set[str]:
+    """一批留言里 @ 到的、真实存在的用户名，一次查完（列表接口原来每条留言每个 @ 各查一次库）。"""
+    wanted = {handle for body in bodies for handle in mention_handles(body)}
+    if not wanted:
+        return set()
+    return set(
+        session.scalars(
+            select(User.handle).where(User.handle.in_(wanted), User.deleted_at.is_(None), User.status == "active")
+        ).all()
+    )
+
+
 def publish_comment(session: Session, comment: RoomComment) -> None:
     """留言公开（审核通过，或关了审核直接发布）：改状态，并通知被 @ 到且关注了作者的人。"""
     comment.status = "published"
@@ -193,6 +205,7 @@ def list_comments(
     next_cursor = encode_cursor(page[-1].id, page[-1].created_at.isoformat()) if len(rows) > bounded else None
     counts, liked = comment_like_state(session, user, [row.id for row in page])
     authors = author_names(session, [row.author_id for row in page])
+    real_handles = mentioned_handles(session, [row.body for row in page])
     items: list[dict[str, object]] = []
     for row in page:
         author_name, author_handle = authors.get(row.author_id, ("", ""))[:2]  # 第三项是头像，这里不显示
@@ -207,7 +220,7 @@ def list_comments(
                 "content_id": row.content_id,
                 "parent_id": row.parent_id,
                 "mention_count": row.mention_count,
-                "mentions": [person.handle or "" for person in mention_users(session, row.body)],
+                "mentions": [handle for handle in mention_handles(row.body) if handle in real_handles],
                 "keyword_count": row.keyword_count,
                 "like_count": counts.get(row.id, 0),
                 "liked": row.id in liked,
