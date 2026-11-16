@@ -3,10 +3,16 @@
 内置英国和国际；其余国家由后台开通，存在 region 表里。
 后端校验（me.py）、内容可见性回落（recommend.py）、后台国家管理都从这里派生。
 """
+from contextvars import ContextVar
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Region
+
+# 游客在首页国家栏选的国家（前端放在 X-Region 请求头里，main.py 的中间件写进来）。
+# 只在没登录时用：登录用户以账号里的国家设置为准。
+guest_region: ContextVar[str] = ContextVar("guest_region", default="")
 
 # 代码 -> (中文名, 分站城市)。库里没有记录时的默认值；库里有同代码记录时以库为准。
 DEFAULT_REGIONS: dict[str, tuple[str, str]] = {

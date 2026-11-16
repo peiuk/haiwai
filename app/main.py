@@ -28,6 +28,7 @@ from app.core.audit import client_ip, note_server_error, request_meta
 from app.core.config import DEFAULT_SECRET_KEY, get_settings
 from app.core.db import prepare_database
 from app.core.errors import APIError, validation_message
+from app.core.regions import guest_region
 
 
 @asynccontextmanager
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
         request.state.request_id = uuid.uuid4().hex
         # 记下来源，写审计日志时用（见 core/audit.py）
         request_meta.set((client_ip(request), request.headers.get("user-agent", "")[:200] or None))
+        guest_region.set(request.headers.get("x-region", "")[:8].upper())
         try:
             response = await call_next(request)
         except Exception:

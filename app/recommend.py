@@ -4,7 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.feed import author_names, card_extras, content_titles, reaction_flags, repost_context
-from app.core.regions import is_open_region
+from app.core.regions import guest_region, is_open_region
 from app.privacy import viewable
 from app.models import Channel, ChannelItem, ChannelSubscription, Content, User, UserRegionPref
 
@@ -21,7 +21,9 @@ _REASONS = {
 
 def effective_region(session: Session, user: User | None) -> str:
     if user is None:
-        return "GLOBAL"
+        # 游客：用首页国家栏选的国家；没选或不是已开通国家就看国际
+        code = guest_region.get()
+        return code if is_open_region(session, code) else "GLOBAL"
     pref = session.get(UserRegionPref, user.id)
     if pref is None:
         return "GLOBAL"

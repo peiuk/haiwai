@@ -256,7 +256,7 @@ def get_listing(
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
     if content.status not in {"published", "withdrawn"} and (user is None or content.author_id != user.id):
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
-    region = effective_region(session, user) if user else "GLOBAL"
+    region = effective_region(session, user)
     if not _visible(channel, region):
         return {"content_id": content.id, "placeholder": True, "title": "这条信息不在当前国家"}
     payload = _public_listing(content, ext, channel)
@@ -378,7 +378,7 @@ def discover_listings(
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, list[dict[str, object]]]:
-    region = effective_region(session, user) if user else "GLOBAL"
+    region = effective_region(session, user)
     # 跟发现页内容流用同一组筛选：选了「招聘」就不该还冒出房源。新发布的排前面。
     query = (
         select(Content, Channel, ListingExt)
@@ -428,7 +428,7 @@ def discover_items(
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
-    region = effective_region(session, user) if user else "GLOBAL"
+    region = effective_region(session, user)
     bounded = min(max(limit, 1), 50)
     # 过滤、计数、分页都交给数据库：原来每次请求把全部频道条目读进内存再筛，内容越多越慢，且游客就能触发。
     visible_where = [
@@ -629,7 +629,7 @@ def home_rail(
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
-    region = effective_region(session, user) if user else "GLOBAL"
+    region = effective_region(session, user)
     now = utcnow()
 
     # 1) 最新新闻：type=news 按发布时间倒序，最多 6 条（按内容去重，一条新闻可能归属多个频道）。

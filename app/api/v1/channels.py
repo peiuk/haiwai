@@ -104,7 +104,7 @@ def recommended_channels(
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, list[dict[str, object]]]:
-    region = effective_region(session, user) if user is not None else "GLOBAL"
+    region = effective_region(session, user)
     joined: set[str] = set()
     if user is not None:
         joined = set(

@@ -1,5 +1,7 @@
 // 统一 API 请求封装与类型定义。
 // 与后端 app/api/v1/* 的返回结构保持一致（游标分页、通知、房间、留言等）。
+import { guestRegion } from "./utils/region";
+
 
 export type ApiError = {
   code: string;
@@ -109,6 +111,10 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = { ...(extra ?? {}) };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
+  } else {
+    // 游客选的国家要带给后端，否则推荐 / 发现永远只按「国际」给内容
+    const region = guestRegion();
+    if (region) headers["X-Region"] = region;
   }
   return headers;
 }
@@ -477,7 +483,7 @@ export type DiscoverResponse = {
   items: DiscoverItem[];
   updated_count: number;
   categories: string[];
-  /** 当前浏览国家（游客恒为 GLOBAL），用于渲染地区筛选 chip */
+  /** 当前浏览国家（游客按 X-Region 头里选的国家，没选是 GLOBAL），用于渲染地区筛选 chip */
   region?: { code: string; name: string };
   /** 下一页游标；没有更多时为空 */
   next_cursor?: string | null;

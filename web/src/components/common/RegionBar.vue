@@ -3,6 +3,7 @@
 // 自动定位：用浏览器语言 + 时区推断国家；命中已开通国家则用之，否则回落 GLOBAL（国际频道）。
 // 已开通国家列表由后端下发（open_regions），前端不硬编码。
 import { computed, onMounted, ref, watch } from "vue";
+import { detectCountryCode, GUEST_REGION_KEY } from "../../utils/region";
 import { jsonBody, request, type OpenRegion, type RegionPref } from "../../api";
 import { useAuthStore } from "../../stores/auth";
 import { useToastStore } from "../../stores/toast";
@@ -13,7 +14,7 @@ const toast = useToastStore();
 const emit = defineEmits<{ (e: "changed", code: string): void }>();
 
 // 游客自动定位记忆 key
-const LOCAL_KEY = "ukcn.guest-region";
+const LOCAL_KEY = GUEST_REGION_KEY;
 
 // 兜底已开通国家列表（游客/未拿到后端时用；登录后以后端 open_regions 为准）
 const DEFAULT_OPEN_REGIONS: OpenRegion[] = [
@@ -39,92 +40,6 @@ const regionLabel = computed(() => {
 const isGlobal = computed(() => (pref.value?.region_code ?? "GLOBAL") === "GLOBAL");
 const isRoaming = computed(() => pref.value?.roaming === true);
 
-// ---- 自动定位：浏览器语言 + 时区 -> 国家代码 ----
-// 常见语言/时区映射到 ISO 国家代码；未命中返回 null（走 GLOBAL 回落）。
-function detectCountryCode(): string | null {
-  // 1) 时区优先（最贴近物理位置）
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
-  const tzMap: Record<string, string> = {
-    "Europe/London": "UK",
-    "Europe/Paris": "FR",
-    "Europe/Berlin": "DE",
-    "Europe/Madrid": "ES",
-    "Europe/Rome": "IT",
-    "Europe/Amsterdam": "NL",
-    "Europe/Dublin": "IE",
-    "Europe/Lisbon": "PT",
-    "Europe/Stockholm": "SE",
-    "Europe/Oslo": "NO",
-    "Europe/Zurich": "CH",
-    "Europe/Vienna": "AT",
-    "Europe/Brussels": "BE",
-    "Europe/Warsaw": "PL",
-    "Europe/Prague": "CZ",
-    "Europe/Athens": "GR",
-    "Europe/Helsinki": "FI",
-    "Europe/Copenhagen": "DK",
-    "Europe/Budapest": "HU",
-    "Europe/Bucharest": "RO",
-    "Europe/Sofia": "BG",
-    "Europe/Luxembourg": "LU",
-    "Europe/Bratislava": "SK",
-    "Europe/Zagreb": "HR",
-    "Europe/Ljubljana": "SI",
-    "Europe/Tallinn": "EE",
-    "Europe/Riga": "LV",
-    "Europe/Vilnius": "LT",
-    "Europe/Nicosia": "CY",
-    "Europe/Valletta": "MT",
-    "Asia/Tokyo": "JP",
-    "Asia/Seoul": "KR",
-    "Asia/Shanghai": "CN",
-    "Asia/Hong_Kong": "HK",
-    "Asia/Taipei": "TW",
-    "Asia/Singapore": "SG",
-    "Asia/Bangkok": "TH",
-    "Asia/Kuala_Lumpur": "MY",
-    "Asia/Jakarta": "ID",
-    "Asia/Dubai": "AE",
-    "Asia/Kolkata": "IN",
-    "America/New_York": "US",
-    "America/Chicago": "US",
-    "America/Los_Angeles": "US",
-    "America/Toronto": "CA",
-    "America/Vancouver": "CA",
-    "Australia/Sydney": "AU",
-    "Australia/Melbourne": "AU",
-    "Pacific/Auckland": "NZ",
-  };
-  if (tzMap[tz]) return tzMap[tz];
-
-  // 2) 浏览器语言回退（en-GB -> UK）
-  const lang = navigator.language ?? "";
-  const langMap: Record<string, string> = {
-    "en-gb": "UK",
-    "en-ie": "IE",
-    "en-au": "AU",
-    "en-nz": "NZ",
-    "en-ca": "CA",
-    "fr": "FR",
-    "de": "DE",
-    "es": "ES",
-    "it": "IT",
-    "nl": "NL",
-    "pt": "PT",
-    "ja": "JP",
-    "ko": "KR",
-    "zh": "CN",
-    "zh-cn": "CN",
-    "zh-hk": "HK",
-    "zh-tw": "TW",
-    "en": "UK",
-    "en-us": "US",
-  };
-  const key = lang.toLowerCase();
-  if (langMap[key]) return langMap[key];
-  if (key.startsWith("en-")) return "UK";
-  return null;
-}
 
 // 定位结果映射到已开通国家；未命中回落 GLOBAL。
 function resolveRegion(detected: string | null): string {

@@ -148,3 +148,31 @@ def test_listings_follow_category_filter(client):
     session.commit()
     session.close()
     assert feed() == []
+
+
+def test_guest_region_header_scopes_guest_content(client):
+    """游客在首页选了国家（X-Region 头），发现页和推荐要给这个国家的内容；乱填的国家按国际处理。"""
+    session = client.session_factory()
+    uk = Channel(code="uk-life", name_hans="英国生活", name_hant="英國生活", kind="official_curated", category="生活", region_code="UK", is_active=True)
+    session.add(uk)
+    session.flush()
+    content = Content(type="news", status="published", title="英国本地新闻", summary="摘要", source_name="测试",
+                      licence_ref="OGL v3.0", canonical_url="https://example.com/uk", published_at=datetime.now(timezone.utc))
+    session.add(content)
+    session.flush()
+    session.add(ChannelItem(channel_id=uk.id, content_id=content.id, added_at=datetime.now(timezone.utc)))
+    session.commit()
+    content_id = content.id
+    session.close()
+
+    def discover_ids(extra: dict[str, str]) -> set[str]:
+        items = client.get("/api/v1/discover/items", headers=extra).json()["items"]
+        return {(item.get("post") or item.get("listing") or item)["content_id"] for item in items}
+
+    def foryou_ids(extra: dict[str, str]) -> set[str]:
+        return {item["content_id"] for item in client.get("/api/v1/me/feed?tab=foryou", headers=extra).json()["items"]}
+
+    assert content_id not in discover_ids({})  # 没选国家：只看国际
+    assert content_id in discover_ids({"X-Region": "UK"})
+    assert content_id in foryou_ids({"X-Region": "uk"})
+    assert content_id not in discover_ids({"X-Region": "ZZ"})  # 没开通的国家不算
