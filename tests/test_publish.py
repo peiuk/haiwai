@@ -99,7 +99,7 @@ def test_first_posts_wait_for_review_before_feed(client):
     assert card["source_name"] == "作者"
 
 
-def test_fourth_post_is_public_and_hourly_cap_holds(client):
+def test_posts_go_public_only_after_three_approved_and_hourly_cap_holds(client):
     token, channel_id = register_and_channel(client, "fourth@example.com")
     headers = auth(token)
     assert client.post(
@@ -108,16 +108,23 @@ def test_fourth_post_is_public_and_hourly_cap_holds(client):
         json={"phone": "+447700900222", "code": "246810"},
     ).status_code == 200
 
-    statuses = []
-    for index in range(5):
+    def post(index: int):
         response = client.post(
             "/api/v1/contents",
             headers=headers,
             json={"channel_id": channel_id, "title": f"帖子{index}", "body": "正文"},
         )
         assert response.status_code == 200, response.text
-        statuses.append(response.json()["status"])
-    assert statuses == ["pending", "pending", "pending", "published", "published"]
+        return response.json()
+
+    # 前几条只是在等审核、没通过：第 4 条也照样要审（原来数的是全部帖子，发 3 条垃圾帖就能绕过）
+    first = [post(index) for index in range(4)]
+    assert [item["status"] for item in first] == ["pending"] * 4
+    for item in first[:3]:
+        approved = client.post(f"/api/v1/moderation/{item['content_id']}/decision", headers=headers, json={"decision": "approve"})
+        assert approved.status_code == 200
+    # 通过 3 条以后才直接公开
+    assert post(4)["status"] == "published"
 
     capped = client.post(
         "/api/v1/contents",
@@ -127,8 +134,8 @@ def test_fourth_post_is_public_and_hourly_cap_holds(client):
     assert capped.status_code == 429
     assert capped.json()["code"] == "RATE_LIMITED"
 
-    titles = [item["title"] for item in client.get("/api/v1/me/feed", headers=headers).json()["items"]]
-    assert titles == ["帖子4", "帖子3"]
+    titles = {item["title"] for item in client.get("/api/v1/me/feed", headers=headers).json()["items"]}
+    assert titles == {"帖子0", "帖子1", "帖子2", "帖子4"}
 
 
 def test_phone_requirement_can_be_switched_off_for_testing(client, monkeypatch):

@@ -14,7 +14,7 @@ from app.core.errors import APIError
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.feed import author_names
 from app.guard import first_status
-from app.privacy import is_room_member
+from app.privacy import is_room_member, require_not_blocked_by
 from app.recommend import country_blocked, is_roaming
 from app.rooms import require_not_banned
 from app.reports import ReportBody, report_receipt
@@ -23,6 +23,7 @@ from app.models import (
     ChannelCollaborator,
     ChannelItem,
     ChannelSubscription,
+    Content,
     RoomBan,
     ModerationCase,
     CommentLike,
@@ -242,14 +243,19 @@ def create_comment(
     require_not_banned(session, [room.id], user.id)
     if body.content_id and body.parent_id:
         raise APIError(400, "VALIDATION_FAILED", "留言不能同时挂在帖子和另一条留言上")
+    replying_to: list[str | None] = []
     if body.content_id:
         item = session.get(ChannelItem, (room.id, body.content_id))
         if item is None:
             raise APIError(404, "CONTENT_NOT_FOUND", "这条内容不在房间里")
+        target = session.get(Content, body.content_id)
+        replying_to.append(target.author_id if target else None)
     if body.parent_id:
         parent = session.get(RoomComment, body.parent_id)
         if parent is None or parent.room_id != room.id or parent.removed_at is not None:
             raise APIError(404, "COMMENT_NOT_FOUND", "要回复的留言不存在")
+        replying_to.append(parent.author_id)
+    require_not_blocked_by(session, replying_to, user.id)
     if body.image_key:
         owned_upload(session, user, body.image_key)
     now = utcnow()

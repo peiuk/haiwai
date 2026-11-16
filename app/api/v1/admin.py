@@ -865,9 +865,10 @@ def set_comment_status(
     if comment is None:
         raise APIError(404, "COMMENT_NOT_FOUND", "留言不存在")
     if body.action == "remove":
-        if comment.status == "removed":
+        if comment.status == "removed" or comment.removed_at is not None:
             raise APIError(409, "NO_CHANGE", "这条留言已经删除")
-        comment.status = "removed"
+        # 还在待审的留言删掉就等于审核拒绝：记成 rejected，之后「恢复」不能让它没审过就公开
+        comment.status = "rejected" if comment.status == "pending" else "removed"
         comment.removed_at = utcnow()
     else:
         if comment.status != "removed" or not _was_taken_down(session, "comment", comment.id):

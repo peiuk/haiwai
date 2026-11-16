@@ -269,6 +269,15 @@ def test_remove_and_restore_comment(client):
     assert client.post(f"/api/v1/admin/comments/{gone_id}/status", headers=headers(boss), json={"action": "restore"}).status_code == 409
     assert audit_actions(client) == ["admin.comment.remove", "admin.comment.restore"]
 
+    # 待审时被删的留言算审核拒绝，「恢复」不能让它没审过就公开
+    with client.session_factory() as session:
+        waiting = RoomComment(room_id=channel_id, content_id=content_id, author_id=user_id(client, "author@example.com"), body="待审留言", status="pending")
+        session.add(waiting)
+        session.commit()
+        waiting_url = f"/api/v1/admin/comments/{waiting.id}/status"
+    assert client.post(waiting_url, headers=headers(boss), json={"action": "remove"}).json()["status"] == "rejected"
+    assert client.post(waiting_url, headers=headers(boss), json={"action": "restore"}).status_code == 409
+
 
 def test_lists_paginate_and_filter_by_type(client):
     boss = register(client, "boss@example.com", admin=True)

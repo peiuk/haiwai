@@ -9,7 +9,7 @@ from app.core.errors import APIError
 from app.feed import embed_card, image_keys_of, reaction_flags
 from app.keywords import load_keywords
 from app.models import Channel, ChannelItem, Content, ModerationCase, User, UserBlock, UserFollow
-from app.privacy import can_view_content
+from app.privacy import viewable
 from app.rooms import ROOM_TYPE_LABELS
 from app.reports import ReportBody, report_receipt
 
@@ -78,7 +78,8 @@ def _count(session: Session, stmt: Select[tuple[int]]) -> int:
 
 
 def _published(user_id: str) -> tuple:
-    return (Content.author_id == user_id, Content.deleted_at.is_(None), Content.status == "published")
+    # 私密房间的帖子在 SQL 里排除（主页对谁都不露）：先取 50 条再过滤，会被私密帖占满；帖子数也不该把它们算进去
+    return (Content.author_id == user_id, Content.deleted_at.is_(None), Content.status == "published", viewable(None))
 
 
 @router.post("/users/{user_id}/report")
@@ -126,7 +127,6 @@ def public_posts(
         .order_by(Content.created_at.desc())
         .limit(50)  # shortcut: 主页只显示最近 50 条；要看更早的再加游标分页
     ).all()
-    rows = [row for row in rows if can_view_content(session, row, None)]
     flags = reaction_flags(session, viewer.id if viewer else None, [row.id for row in rows])
     items: list[dict[str, object]] = []
     for row in rows:

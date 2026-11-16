@@ -871,6 +871,9 @@ def test_owner_can_fill_rename_and_show_a_pending_room(client):
     assert renamed.status_code == 200 and renamed.json()["name_hans"] == "伦敦剧场"
     assert client.patch(f"/api/v1/channels/{room_id}", headers=headers(owner), json={"name": "坏词房"}).status_code == 422
     assert client.patch(f"/api/v1/channels/{room_id}", headers=headers(stranger), json={"name": "抢房"}).status_code == 404
+    # 新建时也挡：房间第一条帖子直接公开时会跟着上线，名字可能没人看过
+    created_bad = client.post("/api/v1/channels", headers=headers(owner), json={"name": "坏词房", "parent_channel_id": parent_id})
+    assert created_bad.status_code == 422
 
     # 审核中也能加条目，但先待审：房主自己能看到，搜索 / 主页里没有
     entry = client.post(
@@ -1018,6 +1021,29 @@ def test_banned_member_cannot_post_or_comment_in_public_room(client):
         client.post(f"{base}/submissions", headers=headers(member), json={"title": "投稿", "body": "还想投稿"}),
     ]
     assert [(r.status_code, r.json()["code"]) for r in attempts] == [(403, "ROOM_BANNED")] * 4
+
+
+def test_blocked_user_cannot_reply_under_the_blockers_posts(client):
+    """拉黑不只挡私信：被拉黑的人不能在对方的帖子下回复（两个回复入口都挡），别人照常。"""
+    parent_id = official_channel(client)
+    owner = register(client, "block-owner@example.com")
+    verify(client, owner, "+447700900361")
+    pest = register(client, "block-pest@example.com")
+    friend = register(client, "block-friend@example.com")
+    room_id = client.post("/api/v1/channels", headers=headers(owner), json={"name": "拉黑测试", "parent_channel_id": parent_id}).json()[
+        "channel_id"
+    ]
+    client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"})
+    content_id = client.post(
+        f"/api/v1/channels/{room_id}/announcements", headers=headers(owner), json={"title": "公告", "body": "欢迎"}
+    ).json()["content_id"]
+    pest_id = client.get("/api/v1/me", headers=headers(pest)).json()["user_id"]
+    assert client.put(f"/api/v1/me/blocks/{pest_id}", headers=headers(owner)).status_code == 200
+
+    reply = client.post(f"/api/v1/contents/{content_id}/comments", headers=headers(pest), json={"body": "还来"})
+    room_reply = client.post(f"/api/v1/channels/{room_id}/comments", headers=headers(pest), json={"body": "还来", "content_id": content_id})
+    assert [(r.status_code, r.json()["code"]) for r in (reply, room_reply)] == [(403, "USER_BLOCKED")] * 2
+    assert client.post(f"/api/v1/contents/{content_id}/comments", headers=headers(friend), json={"body": "你好"}).status_code == 200
 
 
 def test_owner_bans_a_member_and_deletes_the_room(client):

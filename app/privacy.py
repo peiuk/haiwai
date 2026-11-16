@@ -3,7 +3,8 @@
 from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm import Session, aliased
 
-from app.models import Channel, ChannelCollaborator, ChannelItem, ChannelSubscription, Content, User
+from app.core.errors import APIError
+from app.models import Channel, ChannelCollaborator, ChannelItem, ChannelSubscription, Content, User, UserBlock
 
 
 def can_view_content(session: Session, content: Content, user: User | None) -> bool:
@@ -56,6 +57,13 @@ def is_room_member(session: Session, room: Channel, user: User | None) -> bool:
         or session.get(ChannelCollaborator, (room.id, user.id)) is not None
         or session.get(ChannelSubscription, (user.id, room.id)) is not None
     )
+
+
+def require_not_blocked_by(session: Session, owner_ids: list[str | None], user_id: str) -> None:
+    """被帖子作者或被回复的人拉黑了，就不能在他们的帖子 / 留言下回复（不然拉黑挡不住骚扰，对方每条都收到通知）。"""
+    ids = [owner for owner in owner_ids if owner and owner != user_id]
+    if ids and session.scalar(select(UserBlock.user_id).where(UserBlock.user_id.in_(ids), UserBlock.target_id == user_id).limit(1)):
+        raise APIError(403, "USER_BLOCKED", "对方已把你拉黑，不能回复")
 
 
 def is_private_room_content(session: Session, content: Content) -> bool:

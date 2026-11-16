@@ -90,6 +90,32 @@ def test_search_finds_public_post_behind_many_private_matches(client):
     assert [item["content_id"] for item in found] == [public_id]
 
 
+def test_profile_shows_public_post_behind_many_private_posts(client):
+    """主页只列最近 50 条：同一作者更新的私密房间帖子超过 50 条时，公开帖照样显示，帖子数也不算私密的。"""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models import User
+
+    room_id, owner, _viewer = private_room(client)
+    now = datetime.now(timezone.utc)
+    session = client.session_factory()
+    author_id = session.query(User.id).filter(User.email == "private-owner@example.com").scalar()
+    public = Content(type="post", status="published", author_id=author_id, title="公开帖", summary="", published_at=now - timedelta(days=1))
+    public.created_at = now - timedelta(days=1)
+    session.add(public)
+    for index in range(51):
+        hidden = Content(type="post", status="published", author_id=author_id, title=f"私密帖{index}", summary="", published_at=now)
+        session.add(hidden)
+        session.flush()
+        session.add(ChannelItem(channel_id=room_id, content_id=hidden.id))
+    session.commit()
+    public_id = public.id
+    session.close()
+    posts = client.get(f"/api/v1/users/{author_id}/posts").json()["items"]
+    assert [item["content_id"] for item in posts] == [public_id]
+    assert client.get(f"/api/v1/users/{author_id}").json()["post_count"] == 1
+
+
 def test_private_room_content_is_not_public_by_id_or_search(client):
     room_id, owner, viewer = private_room(client)
     created = client.post(

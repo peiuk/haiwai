@@ -16,7 +16,7 @@ from app.guard import blocked_term_in, first_status, hide_if_widely_reported, re
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.keywords import clean_city_topic, collect_keywords, dump_keywords, load_keywords, resolve_keywords
-from app.privacy import can_view_content, is_private_room_content
+from app.privacy import can_view_content, is_private_room_content, require_not_blocked_by
 from app.reports import ReportBody, report_receipt
 from app.recommend import country_blocked, is_roaming
 from app.rooms import drop_pushes, notify_room_update, require_not_banned
@@ -106,6 +106,18 @@ class PostBody(BaseModel):
         return value
 
 
+def _approved_posts(session: Session, user_id: str) -> int:
+    """新用户前 REVIEW_LIMIT 条要审：只数审核通过的。连待审的也数的话，发 3 条垃圾帖等着，第 4 条就直接公开了。"""
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(Content)
+            .where(Content.author_id == user_id, Content.deleted_at.is_(None), Content.status == "published")
+        )
+        or 0
+    )
+
+
 def _check_hourly_limit(session: Session, user_id: str) -> None:
     # 只数最近一小时的条数：原来把作者全部帖子的时间都读出来再在 Python 里过滤，帖子越多越慢。
     cutoff = utcnow() - timedelta(hours=1)
@@ -156,9 +168,7 @@ def create_post(
         raise APIError(400, "VALIDATION_FAILED", "上传视频和视频外链只能选一个")
     embed = embed_fields(video_url) if video_url else {}
     _check_hourly_limit(session, user.id)
-    prior = session.scalar(
-        select(func.count()).select_from(Content).where(Content.author_id == user.id, Content.deleted_at.is_(None))
-    )
+    prior = _approved_posts(session, user.id)
     now = utcnow()
     # 后台关了帖子审核时，新用户的前几条也直接发布；敏感词照样拦
     status = "pending" if review_on(session, "post") and (prior or 0) < REVIEW_LIMIT else "published"
@@ -477,10 +487,12 @@ def create_reply(
     if item is None:
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
     require_not_banned(session, session.scalars(select(ChannelItem.channel_id).where(ChannelItem.content_id == content.id)), user.id)
+    parent = None
     if body.parent_id:
         parent = session.get(RoomComment, body.parent_id)
         if parent is None or parent.content_id != content.id or parent.removed_at is not None:
             raise APIError(404, "COMMENT_NOT_FOUND", "要回复的留言不存在")
+    require_not_blocked_by(session, [content.author_id, parent.author_id if parent else None], user.id)
     if body.image_key:
         owned_upload(session, user, body.image_key)
     now = utcnow()
@@ -584,9 +596,7 @@ def repost_content(
     now = utcnow()
     note = body.body or original.summary or ""
     # 和发帖同一套规则：新用户前几条要审，附言命中敏感词也先待审（原来转发一律直接公开）
-    prior = session.scalar(
-        select(func.count()).select_from(Content).where(Content.author_id == user.id, Content.deleted_at.is_(None))
-    )
+    prior = _approved_posts(session, user.id)
     status = "pending" if review_on(session, "post") and (prior or 0) < REVIEW_LIMIT else "published"
     if blocked_term_in(session, body.body):
         status = "pending"

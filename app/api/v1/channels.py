@@ -533,6 +533,9 @@ def create_room(
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
     require_verified_phone(user, "创建")
+    # 和改名同一条规则：房间第一条帖子直接公开时房间会跟着上线，名字可能没人看过
+    if blocked_term_in(session, body.name):
+        raise APIError(422, "VALIDATION_FAILED", "房间名包含不允许的词，换一个吧")
     parent = _official_parent(session, body.parent_channel_id)
     owned = session.scalar(select(func.count()).select_from(Channel).where(Channel.owner_id == user.id))
     if (owned or 0) >= ROOM_LIMIT:
