@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 站内私信（对齐 /me/messages 全套端点）：会话列表 / 消息详情 / 发送 / 接受或删除请求 / 标记已读。
 // 陌生人请求需对方接受；图片消息走 /uploads/sign 直传后只提交 object_key。
+import { fmtRelativeTime } from "../../utils/time";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { request, jsonBody, type DmThreadItem, type DmThreadsResponse, type DmThreadResponse, type DmOpenResponse } from "../../api";
 import { useAuthStore } from "../../stores/auth";
@@ -262,7 +263,7 @@ defineExpose({ reload: () => loadThreads(false) });
                   <BaseTag v-if="thread.listing_inquiry" variant="link">分类信息咨询</BaseTag>
                 </span>
                 <span class="dm-preview" data-ugc>{{ thread.preview || "暂无消息" }}</span>
-                <span class="dm-time">{{ timeLabel(thread.updated_at) }}</span>
+                <span class="dm-time" :title="timeLabel(thread.updated_at)">{{ fmtRelativeTime(thread.updated_at) }}</span>
               </span>
               <span v-if="thread.unread" class="dm-unread" :aria-label="`${thread.unread} 条未读`">{{ thread.unread }}</span>
             </button>
@@ -318,7 +319,7 @@ defineExpose({ reload: () => loadThreads(false) });
               <BaseButton type="submit" variant="primary" size="sm" :loading="sending">发送</BaseButton>
             </form>
           </template>
-          <EmptyState v-else title="选择左侧会话查看消息" />
+          <EmptyState v-else title="选一个会话查看消息" />
         </section>
       </div>
     </template>
