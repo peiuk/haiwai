@@ -22,7 +22,7 @@ import ReportButton from "../components/common/ReportButton.vue";
 import PostCard from "../components/common/PostCard.vue";
 import ContentDetail from "../components/ContentDetail.vue";
 import EmptyState from "../components/base/EmptyState.vue";
-import Lightbox from "../components/common/Lightbox.vue";
+import MediaFeed from "../components/common/MediaFeed.vue";
 import ErrorState from "../components/base/ErrorState.vue";
 
 const route = useRoute();
@@ -54,7 +54,11 @@ const media = computed(() =>
     ...post.image_keys.map((key) => ({ src: `/api/v1/uploads/${key}`, video: false, post })),
   ]),
 );
-const mediaVideos = computed(() => media.value.flatMap((m, i) => (m.video ? [i] : [])));
+
+function openMediaPost(contentId: string): void {
+  mediaIndex.value = -1;
+  activeContentId.value = contentId;
+}
 
 const isSelf = computed(() => selfId.value !== "" && selfId.value === userId.value);
 const displayName = computed(() => profile.value?.display_name || profile.value?.handle || "匿名用户");
@@ -301,12 +305,12 @@ watch(userId, () => {
             <span v-if="item.video" class="media-play"><BaseIcon name="i-play" :size="20" /></span>
           </button>
         </div>
-        <Lightbox
-          :images="media.map((m) => m.src)"
-          :videos="mediaVideos"
-          :initial-index="mediaIndex"
-          :alt="displayName"
+        <MediaFeed
+          :items="media"
+          :start="mediaIndex"
+          :label="displayName"
           @close="mediaIndex = -1"
+          @open="openMediaPost"
         />
       </template>
 
