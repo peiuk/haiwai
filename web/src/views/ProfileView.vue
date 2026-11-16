@@ -51,6 +51,11 @@ const rooms = ref<OwnRoom[]>([]);
 const roomCount = ref(0);
 const roomNextCursor = ref<string | null>(null);
 const roomsLoadingMore = ref(false);
+// 自己建的和加入别人的分两组；接口按「先自建、后加入」分页返回，role 区分
+const roomGroups = computed(() => [
+  { key: "owner", title: "我建的房间", empty: "还没有创建房间。", items: rooms.value.filter((r) => r.role === "owner") },
+  { key: "member", title: "我加入的房间", empty: "还没有加入别人的房间。", items: rooms.value.filter((r) => r.role !== "owner") },
+]);
 
 // ---- 我的帖子 ----
 type MyPost = { content_id: string; title: string; status: string; summary: string | null };
@@ -300,10 +305,11 @@ watch(
         <h3>我的房间 <span>{{ rooms.length }} 个</span>
           <BaseButton class="section-btn" variant="outline" size="sm" @click="openCreateRoom">创建房间</BaseButton>
         </h3>
-        <p v-if="!rooms.length" class="me-empty">还没有创建或加入房间。</p>
-        <template v-else>
+        <div v-for="group in roomGroups" :key="group.key" class="rooms-group">
+          <h4>{{ group.title }} <span>{{ group.items.length }} 个</span></h4>
+          <p v-if="!group.items.length && !roomNextCursor" class="me-empty">{{ group.empty }}</p>
           <button
-            v-for="room in rooms"
+            v-for="room in group.items"
             :key="room.channel_id"
             type="button"
             class="me-row"
@@ -312,12 +318,12 @@ watch(
             <BaseIcon name="i-circle" :size="20" />
             <span class="mr-main">
               <span class="mr-t">{{ room.name_hans }}</span>
-              <span class="mr-s">{{ room.room_type_label }} · {{ room.entry_count }} 条内容{{ room.role === 'owner' ? ' · 房主' : ' · 成员' }}{{ room.is_private ? ' · 私密' : '' }}{{ !room.is_active ? ' · 审核中' : '' }}</span>
+              <span class="mr-s">{{ room.room_type_label }} · {{ room.entry_count }} 条内容{{ room.is_private ? ' · 私密' : '' }}{{ !room.is_active ? ' · 审核中' : '' }}</span>
             </span>
             <span class="mr-end">进入</span>
           </button>
-          <BaseButton v-if="roomNextCursor" class="rooms-more" variant="outline" size="sm" :loading="roomsLoadingMore" @click="loadMoreRooms">加载更多房间</BaseButton>
-        </template>
+        </div>
+        <BaseButton v-if="roomNextCursor" class="rooms-more" variant="outline" size="sm" :loading="roomsLoadingMore" @click="loadMoreRooms">加载更多房间</BaseButton>
       </div>
 
       <!-- 我的帖子 -->
@@ -618,6 +624,8 @@ watch(
 }
 .me-section h3 .section-btn { margin-left: auto; }
 .rooms-more { margin: var(--sp-2) var(--sp-4); }
+.rooms-group h4 { margin: var(--sp-2) var(--sp-4) var(--sp-1); font-size: var(--fs-13); }
+.rooms-group h4 span { color: var(--muted); font-weight: 600; font-size: 12px; }
 .favorites-list { padding-left: var(--sp-4); border-top: 1px solid var(--border); }
 .favorites-list h4 { margin: var(--sp-3) var(--sp-4) var(--sp-1); font-size: var(--fs-13); }
 .favorites-list a.me-row { text-decoration: none; }
