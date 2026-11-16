@@ -15,13 +15,6 @@ import type { EmbedCard } from "../../api";
 import EmbedConsentCard from "../room/EmbedConsentCard.vue";
 import { PROVIDER_NAMES } from "../room/EntryMedia.vue";
 
-export interface PostActionItem {
-  content_id: string;
-  liked: boolean;
-  favorited: boolean;
-  reposted: boolean;
-}
-
 const props = withDefaults(
   defineProps<{
     contentId: string;

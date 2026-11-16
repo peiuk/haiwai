@@ -28,8 +28,3 @@ export function toHant(value: unknown): string {
   }
   return out;
 }
-
-/** 按当前语言转换一段界面文案；组件里可直接用于动态字符串。 */
-export function uiText(text: string, lang: "zh-Hans" | "zh-Hant"): string {
-  return lang === "zh-Hant" ? toHant(text) : text;
-}

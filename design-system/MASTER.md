@@ -378,7 +378,7 @@ src/
   styles/tokens.css          ← 复制 design-system/tokens.css，唯一变量来源
   components/base/           BaseButton.vue / TextField.vue / BaseTag.vue / ...
   components/business/       ContentCard.vue / SourceBlock.vue / EmbedPlayerCard.vue / ...
-  composables/useTheme.ts    data-theme + lang 持久化，可撤回
+  stores/theme.ts            data-theme + lang 持久化，可撤回（组件直接用 useThemeStore）
   i18n/zh-Hans.ts / zh-Hant.ts
 ```
 

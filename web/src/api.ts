@@ -542,19 +542,6 @@ export type PublishResponse = {
   city_topic?: string;
 };
 
-// POST /embed/resolve 响应（URL 三态校验）
-export type EmbedResolve = {
-  provider_code: string;
-  display_name: string;
-  media_id: string;
-  source_url: string;
-  source_title: string | null;
-  embed_status: "embeddable" | "fallback" | "removed";
-  uk_rights_verified: boolean;
-  notice: string;
-  consent_required: boolean;
-};
-
 // GET /embed/{content_id}/consent 响应
 export type EmbedConsent = {
   provider_code: string | null;
@@ -573,13 +560,6 @@ export type EmbedConsentResult = {
   scope: "once" | "always" | "withdrawn";
   may_load: boolean;
   embed_url?: string | null;
-};
-
-// POST /channels/{channel_id}/items/embed 响应
-export type EmbedCreateResponse = {
-  content_id: string;
-  status: string;
-  embed_status: string;
 };
 
 // GET /discover/listings 单条（对齐 _public_listing）
@@ -609,10 +589,6 @@ export type ListingCardItem = {
   author_handle?: string;
   /** 详情图片（后端 image_keys_json，最多 4 张；横滑容器按数组渲染） */
   image_keys?: string[];
-};
-
-export type ListingsResponse = {
-  items: ListingCardItem[];
 };
 
 // 频道（发布目标下拉用），后端 /channels 返回 items
