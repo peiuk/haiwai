@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { request, toMessage, type RoomDetail, type RoomItem, type RoomItemsResponse } from "../api";
+import { ApiRequestError, request, toMessage, type RoomDetail, type RoomItem, type RoomItemsResponse } from "../api";
 import { useAuthStore } from "../stores/auth";
 import { useToastStore } from "../stores/toast";
 import { usePostReactions } from "../composables/usePostReactions";
@@ -33,6 +33,7 @@ const loading = ref(true);
 const loadingMore = ref(false);
 const joining = ref(false);
 const error = ref("");
+const notFound = ref(false); // 404 时不给「重试」：内容不在了，重试也没用
 const itemsError = ref("");
 const activeContentId = ref<string | null>(null);
 
@@ -75,6 +76,7 @@ async function load(): Promise<void> {
     await loadItems(true);
   } catch (err) {
     detail.value = null;
+    notFound.value = err instanceof ApiRequestError && err.status === 404;
     error.value = toMessage(err);
   } finally {
     loading.value = false;
@@ -151,7 +153,7 @@ watch(channelId, () => void load(), { immediate: true });
   <section class="channel-view">
     <RouterLink :to="{ name: 'home', query: { tab: 'channels' } }" class="back-link">← 全部频道</RouterLink>
     <p v-if="loading" class="channel-note">正在加载频道…</p>
-    <ErrorState v-else-if="error" :message="error" retry-label="重试" @retry="load" />
+    <ErrorState v-else-if="error" :message="error" :retry-label="notFound ? '' : '重试'" @retry="load" />
     <template v-else-if="detail">
       <header class="channel-head">
         <Avatar :name="detail.name_hans" :size="44" kind="channel" />
@@ -174,7 +176,7 @@ watch(channelId, () => void load(), { immediate: true });
           <div v-else class="room-grid">
             <RouterLink v-for="room in visibleRooms" :key="room.id" :to="{ name: 'room', params: { id: room.id } }" class="room-card">
               <strong data-ugc>{{ room.name_hans }}</strong>
-              <span>{{ room.is_private ? "私密" : "公开" }} · {{ room.room_type }}</span>
+              <span>{{ room.is_private ? "私密" : "公开" }} · {{ room.room_type_label }}</span>
             </RouterLink>
           </div>
           <BaseButton v-if="roomCount < (detail.rooms?.length ?? 0)" variant="ghost" size="sm" @click="roomCount += 6">查看更多房间</BaseButton>

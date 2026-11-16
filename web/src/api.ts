@@ -361,7 +361,7 @@ export type RoomDetail = {
   name_hant: string;
   kind: string;
   room_type: string;
-  /** 房间类型的中文名（通用 / 剧集 / 电影 / 视频），由后端下发 */
+  /** 房间类型的中文名（综合讨论 / 剧集系列 / 电影 / 视频），由后端下发 */
   room_type_label?: string;
   /** 房间封面图的上传 key（剧集房间页顶部） */
   cover_key?: string | null;
@@ -382,7 +382,7 @@ export type RoomDetail = {
   seasons?: number[];
   owner?: { user_id: string; display_name: string; handle: string } | null;
   collaborators?: { user_id: string; display_name: string; handle: string }[];
-  rooms?: { id: string; name_hans: string; room_type: string; is_private: boolean; is_active: boolean; has_published: boolean }[];
+  rooms?: { id: string; name_hans: string; room_type: string; room_type_label: string; is_private: boolean; is_active: boolean; has_published: boolean }[];
 };
 
 // 房间条目（series/film/video/general 共用的 item 结构）

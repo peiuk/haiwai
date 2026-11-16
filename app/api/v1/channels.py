@@ -194,6 +194,7 @@ def _channel_rooms(session: Session, channel: Channel, user: User | None) -> lis
                 "id": row.id,
                 "name_hans": row.name_hans,
                 "room_type": row.room_type,
+                "room_type_label": ROOM_TYPE_LABELS.get(row.room_type, row.room_type),
                 "is_private": row.is_private,
                 "is_active": row.is_active,
                 "has_published": row.id in published_ids,

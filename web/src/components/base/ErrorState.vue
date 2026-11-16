@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // ErrorState：错误态，红框 + 可恢复的「重试」，对齐 MASTER §5.1。
+// retryLabel 传空 = 重试也没用（比如内容不存在），不显示按钮。
 withDefaults(
   defineProps<{
     message: string;
@@ -14,7 +15,7 @@ const emit = defineEmits<{ (e: "retry"): void }>();
 <template>
   <div class="error-state" role="alert">
     <p>{{ message }}</p>
-    <button class="btn btn--outline" type="button" @click="emit('retry')">{{ retryLabel }}</button>
+    <button v-if="retryLabel" class="btn btn--outline" type="button" @click="emit('retry')">{{ retryLabel }}</button>
   </div>
 </template>
 

@@ -5,6 +5,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
+  ApiRequestError,
   request,
   jsonBody,
   type DmOpenResponse,
@@ -37,6 +38,7 @@ const profile = ref<UserProfile | null>(null);
 const posts = ref<UserPost[]>([]);
 const loading = ref(true);
 const error = ref("");
+const notFound = ref(false); // 404 时不给「重试」：内容不在了，重试也没用
 const selfId = ref("");
 const followingBusy = ref(false);
 const blockBusy = ref(false);
@@ -97,6 +99,7 @@ async function load(): Promise<void> {
     profile.value = p;
     posts.value = ps.items;
   } catch (err) {
+    notFound.value = err instanceof ApiRequestError && err.status === 404;
     error.value = err instanceof Error ? err.message : "用户主页加载失败";
   } finally {
     loading.value = false;
@@ -198,7 +201,7 @@ watch(userId, () => {
     </nav>
 
     <p v-if="loading" class="empty">加载中…</p>
-    <ErrorState v-else-if="error" :message="error" retry-label="重试" @retry="load" />
+    <ErrorState v-else-if="error" :message="error" :retry-label="notFound ? '' : '重试'" @retry="load" />
 
     <template v-else-if="profile">
       <header class="profile">

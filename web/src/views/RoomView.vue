@@ -10,7 +10,7 @@ import RoomMembers from "../components/room/RoomMembers.vue";
 import Modal from "../components/base/Modal.vue";
 import RoomManager from "../components/room/RoomManager.vue";
 import RoomSubmissions from "../components/room/RoomSubmissions.vue";
-import { jsonBody, request, type MeProfile, type RoomDetail } from "../api";
+import { ApiRequestError, jsonBody, request, type MeProfile, type RoomDetail } from "../api";
 import { ROOM_TYPES } from "../utils/room";
 import { useAuthStore } from "../stores/auth";
 import { useToastStore } from "../stores/toast";
@@ -38,6 +38,7 @@ watch(
 );
 const loading = ref(true);
 const error = ref("");
+const notFound = ref(false); // 404 时不给「重试」：内容不在了，重试也没用
 const requesting = ref(false);
 const reviewingId = ref("");
 const joinRequests = ref<{ request_id: string; user_id: string; display_name: string; handle: string }[]>([]);
@@ -64,7 +65,9 @@ async function load(): Promise<void> {
     if (detail.value.is_private && detail.value.is_owner) void loadJoinRequests();
     if (auth.isLoggedIn) void loadMe();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "房间不存在或无法访问";
+    notFound.value = err instanceof ApiRequestError && err.status === 404;
+    // 后端对房间和频道共用「频道不存在」，房间页里说「房间」才不让人糊涂
+    error.value = notFound.value ? "房间不存在或已经下线" : err instanceof Error ? err.message : "房间不存在或无法访问";
   } finally {
     loading.value = false;
   }
@@ -215,10 +218,15 @@ onMounted(load);
 
 <template>
   <section>
-    <RouterLink to="/profile" class="back-link">← 我的房间</RouterLink>
+    <RouterLink
+      v-if="detail && !detail.is_owner && detail.parent_channel_id"
+      :to="{ name: 'channel', params: { id: detail.parent_channel_id } }"
+      class="back-link"
+    >← {{ detail.parent_name_hans || "所属频道" }}</RouterLink>
+    <RouterLink v-else to="/profile" class="back-link">← 我的房间</RouterLink>
 
     <p v-if="loading" class="empty">加载中…</p>
-    <ErrorState v-else-if="error" :message="error" retry-label="重试" @retry="load" />
+    <ErrorState v-else-if="error" :message="error" :retry-label="notFound ? '' : '重试'" @retry="load" />
 
     <template v-else-if="detail">
       <header class="room-head">

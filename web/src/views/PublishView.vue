@@ -124,7 +124,10 @@ async function loadChannels(): Promise<void> {
   try {
     const [res, mine] = await Promise.all([
       request<ChannelsResponse>("/api/v1/channels"),
-      request<ChannelsResponse>("/api/v1/channels/mine").catch(() => ({ items: [] })),
+      // 游客没有自己的房间，不发这个必然 401 的请求；登录后下面的 watch 会重新加载
+      auth.isLoggedIn
+        ? request<ChannelsResponse>("/api/v1/channels/mine").catch(() => ({ items: [] }))
+        : Promise.resolve({ items: [] } as ChannelsResponse),
     ]);
     channels.value = res.items;
     myRooms.value = mine.items;
@@ -354,6 +357,8 @@ watch(
   },
   { immediate: true },
 );
+// 在发布页里登录 / 退出后，「我的房间」要跟着变
+watch(() => auth.isLoggedIn, () => void loadChannels());
 watch(() => route.query.channel, (value) => {
   if (typeof value === "string" && allTargets.value.some((item) => item.id === value)) channelId.value = value;
   if (typeof value === "string") openListingFormFor(value);

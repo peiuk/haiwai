@@ -152,6 +152,9 @@ def test_room_needs_official_parent_then_announce_and_accept(client):
     assert changed.status_code == 200
     changed_detail = client.get(f"/api/v1/channels/{room_id}").json()
     assert changed_detail["room_type"] == "series" and changed_detail["room_type_label"] == "剧集系列"
+    # 频道页的房间列表也给中文名（原来只有 room_type，页面上露出了「general」）
+    parent_rooms = client.get(f"/api/v1/channels/{changed_detail['parent_channel_id']}", headers=headers(owner)).json()["rooms"]
+    assert {room["id"]: room["room_type_label"] for room in parent_rooms}[room_id] == "剧集系列"
     rejected = client.patch(f"/api/v1/channels/{room_id}", headers=headers(owner), json={"room_type": "drama"})
     assert rejected.status_code == 422
     empty = client.get("/api/v1/channels?kind=room").json()["items"]
