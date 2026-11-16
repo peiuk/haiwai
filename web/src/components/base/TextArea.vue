@@ -11,6 +11,7 @@ withDefaults(
     hint?: string;
     disabled?: boolean;
     required?: boolean;
+    maxlength?: number;
   }>(),
   {
     rows: 4,
@@ -36,6 +37,7 @@ const emit = defineEmits<{ (e: "update:modelValue", value: string): void }>();
       :placeholder="placeholder"
       :disabled="disabled"
       :required="required"
+      :maxlength="maxlength"
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="hint ? `${id}-hint` : undefined"
       @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"

@@ -229,7 +229,7 @@ onBeforeUnmount(() => {
             name="i-check"
             :size="16"
             class="post-verified"
-            aria-label="官方认证"
+            label="官方认证"
           />
           <RouterLink
             v-if="displayHandle && authorId"

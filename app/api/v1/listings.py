@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -41,14 +41,15 @@ _CURRENCY = {"UK": "GBP", "JP": "JPY", "CA": "CAD"}
 
 class ListingBody(BaseModel):
     channel_id: str
-    title: str
-    body: str
+    # 上限和数据库列宽一致：超了在 PostgreSQL 上会直接 500
+    title: str = Field(max_length=200)
+    body: str = Field(max_length=4000)
     category: str
     kind: str
-    area: str
-    price_amount: str
+    area: str = Field(max_length=80)
+    price_amount: str = Field(max_length=32)
     price_unit: str = ""
-    contact: str
+    contact: str = Field(max_length=120)
     attrs: dict[str, str] = {}
     keywords: list[str] = []
     city_topic: str | None = None
@@ -64,6 +65,13 @@ class ListingBody(BaseModel):
         if len(keys) > MAX_LISTING_IMAGES:
             raise ValueError(f"分类信息最多上传 {MAX_LISTING_IMAGES} 张图片")
         return keys
+
+    @field_validator("attrs")
+    @classmethod
+    def short_attrs(cls, value: dict[str, str]) -> dict[str, str]:
+        if any(len(item) > 80 for item in value.values()):
+            raise ValueError("房型、面积这类补充信息每项最多 80 个字")
+        return value
 
     @field_validator("keyword_source")
     @classmethod

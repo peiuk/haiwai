@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.feed import author_names, card_extras, content_titles, reaction_flags, repost_context
 from app.core.regions import is_open_region
+from app.privacy import viewable
 from app.models import Channel, ChannelItem, ChannelSubscription, Content, User, UserRegionPref
 
 CANDIDATES = 500
@@ -99,6 +100,7 @@ def for_you(session: Session, user: User | None, limit: int | None = 12, order: 
             Channel.is_active.is_(True),
             Channel.region_code.in_(regions),
             ChannelItem.content_id.not_in(private_room_content),
+            viewable(user_id),  # 和关注流、详情页同一套可见规则（下架房间、失效转发）
         )
         .order_by(ChannelItem.added_at.desc())
         .limit(CANDIDATES)

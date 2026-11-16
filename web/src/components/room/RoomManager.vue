@@ -121,8 +121,8 @@ defineExpose({ moveEntry, reorderByEpisode });
       <TextArea id="entry-body" v-model="body" label="正文" :rows="3" required />
 
       <div v-if="roomType === 'series'" class="form-row">
-        <TextField id="entry-season" v-model="season" label="季" type="number" inputmode="numeric" />
-        <TextField id="entry-episode" v-model="episode" label="集" type="number" inputmode="numeric" />
+        <TextField id="entry-season" v-model="season" label="季" type="number" />
+        <TextField id="entry-episode" v-model="episode" label="集" type="number" />
       </div>
       <Checkbox v-else-if="roomType === 'video' && !videoUrl.trim()" id="entry-rights" v-model="rightsConfirmed" label="确认是本人原创视频，已取得人物同意，且不含未授权音乐或影视片段" />
 
@@ -147,7 +147,6 @@ defineExpose({ moveEntry, reorderByEpisode });
         v-model="videoUrl"
         label="或者贴视频外链（可选）"
         type="url"
-        inputmode="url"
         placeholder="https://www.youtube.com/watch?v=… 或 https://www.bilibili.com/video/BV…"
         hint="支持 YouTube、哔哩哔哩，和上传视频二选一；大家点开后在站内播放"
       />

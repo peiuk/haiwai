@@ -2,6 +2,8 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -25,7 +27,7 @@ from app.api.v1.users import router as users_router
 from app.core.audit import client_ip, note_server_error, request_meta
 from app.core.config import DEFAULT_SECRET_KEY, get_settings
 from app.core.db import prepare_database
-from app.core.errors import APIError
+from app.core.errors import APIError, validation_message
 
 
 @asynccontextmanager
@@ -76,6 +78,19 @@ def create_app() -> FastAPI:
                 "code": exc.code,
                 "message": exc.message,
                 "request_id": getattr(request.state, "request_id", ""),
+            },
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # 前端只读 message：不转的话，校验器里写好的中文提示（「必填项不能为空」等）用户一句都看不到
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "VALIDATION_FAILED",
+                "message": validation_message(exc.errors()),
+                "request_id": getattr(request.state, "request_id", ""),
+                "detail": jsonable_encoder(exc.errors()),
             },
         )
 

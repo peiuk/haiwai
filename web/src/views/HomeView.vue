@@ -25,7 +25,8 @@ const initialTab = tabs.some((t) => t.key === route.query.tab)
   ? (route.query.tab as TabKey)
   : "recommend";
 const active = ref<TabKey>(initialTab);
-const regionCode = ref("GLOBAL");
+// 空 = RegionBar 还没定下国家；定下之前不渲染信息流，免得先按旧国家拉一遍再整块重拉
+const regionCode = ref("");
 
 // 「正在关注」关注数 pill：订阅频道数
 const followingCount = ref(0);
@@ -86,9 +87,11 @@ function selectTab(key: TabKey): void {
     </div>
 
     <div role="tabpanel" class="tab-panel">
-      <RecommendTab v-if="active === 'recommend'" :key="regionCode" />
-      <FeedTab v-else-if="active === 'following'" :key="regionCode" />
-      <ChannelsTab v-else :region-code="regionCode" />
+      <template v-if="regionCode">
+        <RecommendTab v-if="active === 'recommend'" :key="regionCode" />
+        <FeedTab v-else-if="active === 'following'" :key="regionCode" />
+        <ChannelsTab v-else :region-code="regionCode" />
+      </template>
     </div>
   </section>
 </template>

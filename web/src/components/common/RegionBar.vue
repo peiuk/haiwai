@@ -135,7 +135,9 @@ function resolveRegion(detected: string | null): string {
 async function load(): Promise<void> {
   if (!auth.isLoggedIn) {
     // 游客：优先 localStorage 记忆，否则自动定位
-    const saved = localStorage.getItem(LOCAL_KEY);
+    // 首页等这个事件才渲染信息流，存储被禁用时也必须发出去
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(LOCAL_KEY); } catch { /* 存储不可用 */ }
     if (saved && openRegions.value.some((r) => r.code === saved)) {
       pref.value = { region_code: saved, source: "local", locked: false, roaming: false };
       emit("changed", saved);
@@ -143,7 +145,7 @@ async function load(): Promise<void> {
     }
     const code = resolveRegion(detectCountryCode());
     pref.value = { region_code: code, source: "auto", locked: false, roaming: false };
-    localStorage.setItem(LOCAL_KEY, code);
+    try { localStorage.setItem(LOCAL_KEY, code); } catch { /* 存储不可用 */ }
     emit("changed", code);
     return;
   }

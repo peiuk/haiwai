@@ -12,6 +12,7 @@ withDefaults(
     hint?: string;
     disabled?: boolean;
     required?: boolean;
+    maxlength?: number;
   }>(),
   {
     type: "text",
@@ -39,6 +40,7 @@ const emit = defineEmits<{ (e: "update:modelValue", value: string): void }>();
       :autocomplete="autocomplete"
       :disabled="disabled"
       :required="required"
+      :maxlength="maxlength"
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="hint ? `${id}-hint` : undefined"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"

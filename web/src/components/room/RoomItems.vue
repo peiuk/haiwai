@@ -137,7 +137,7 @@ defineExpose({ reload: () => load(true) });
     </div>
 
     <p v-if="loading" class="empty">加载中…</p>
-    <Skeleton v-else-if="loadingMore && items.length === 0" :rows="3" />
+    <Skeleton v-else-if="loadingMore && items.length === 0" />
     <ErrorState v-else-if="error" :message="error" retry-label="重试" @retry="load(true)" />
     <EmptyState v-else-if="items.length === 0" title="还没有条目" description="房主添加条目后会显示在这里" />
 

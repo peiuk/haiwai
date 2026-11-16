@@ -138,11 +138,13 @@ onMounted(load);
     <p v-if="loading" class="muted">正在加载个人资料…</p>
     <div v-else-if="profile" class="profile-card__body">
       <div class="profile-card__identity">
-        <Avatar :name="profile.display_name" :size="56" :tone="profile.avatar_tone" :image="profile.avatar_key" />
-        <div class="profile-card__name">
-          <strong class="name" data-ugc>{{ profile.display_name }}</strong>
-          <span class="sub">{{ profile.handle ? `@${profile.handle}` : "尚未设置账号名" }}<template v-if="profile.city_label"> · {{ profile.city_label }}</template> · {{ theme.lang === 'zh-Hant' ? '繁體' : '简体' }}</span>
-        </div>
+        <RouterLink class="profile-card__link" :to="{ name: 'user', params: { id: profile.user_id } }" aria-label="查看我的个人主页">
+          <Avatar :name="profile.display_name" :size="56" :tone="profile.avatar_tone" :image="profile.avatar_key" />
+          <div class="profile-card__name">
+            <strong class="name" data-ugc>{{ profile.display_name }}</strong>
+            <span class="sub">{{ profile.handle ? `@${profile.handle}` : "尚未设置账号名" }}<template v-if="profile.city_label"> · {{ profile.city_label }}</template> · {{ theme.lang === 'zh-Hant' ? '繁體' : '简体' }}</span>
+          </div>
+        </RouterLink>
         <BaseButton v-if="!editing" variant="outline" size="sm" @click="editing = true">编辑资料</BaseButton>
       </div>
       <div v-if="editing" class="profile-card__actions">
@@ -180,6 +182,8 @@ onMounted(load);
 }
 .profile-card__body { display: grid; gap: var(--sp-4); flex: 1; min-width: 0; }
 .profile-card__identity { display: flex; align-items: center; gap: 14px; }
+.profile-card__link { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; color: inherit; text-decoration: none; }
+.profile-card__link:hover .name { text-decoration: underline; }
 .profile-card__name { display: grid; gap: 2px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .profile-card__name .name { font-size: 19px; font-weight: 800; }
 .profile-card__name .sub { font-size: 13px; color: var(--muted); }

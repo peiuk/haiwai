@@ -51,6 +51,16 @@ def _pair(a: str, b: str) -> tuple[str, str]:
     return (a, b) if a < b else (b, a)
 
 
+def _other_user(session: Session, user: User, target_id: str, action: str) -> User:
+    """关注 / 拉黑 / 私信的对象：不能是自己，也不能是已注销的账号。"""
+    if target_id == user.id:
+        raise APIError(400, "CANNOT_TARGET_SELF", f"不能{action}自己")
+    target = session.get(User, target_id)
+    if target is None or target.deleted_at is not None:
+        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    return target
+
+
 def _blocked(session: Session, a: str, b: str) -> bool:
     return (
         session.get(UserBlock, (a, b)) is not None or session.get(UserBlock, (b, a)) is not None
@@ -80,8 +90,7 @@ def update_prefs(
 
 @router.put("/me/follows/{target_id}")
 def follow(target_id: str, user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, bool]:
-    if target_id == user.id or session.get(User, target_id) is None:
-        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    _other_user(session, user, target_id, "关注")
     if session.get(UserFollow, (user.id, target_id)) is None:
         session.add(UserFollow(user_id=user.id, target_id=target_id))
         session.commit()
@@ -90,8 +99,7 @@ def follow(target_id: str, user: User = Depends(current_user), session: Session 
 
 @router.delete("/me/follows/{target_id}")
 def unfollow(target_id: str, user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, bool]:
-    if target_id == user.id or session.get(User, target_id) is None:
-        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    # 和取消拉黑一样幂等：对方已注销也能取消，不报错
     row = session.get(UserFollow, (user.id, target_id))
     if row is not None:
         session.delete(row)
@@ -113,8 +121,7 @@ def list_blocks(user: User = Depends(current_user), session: Session = Depends(g
 
 @router.put("/me/blocks/{target_id}")
 def block(target_id: str, user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, bool]:
-    if target_id == user.id or session.get(User, target_id) is None:
-        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    _other_user(session, user, target_id, "拉黑")
     if session.get(UserBlock, (user.id, target_id)) is None:
         session.add(UserBlock(user_id=user.id, target_id=target_id))
         session.commit()
@@ -202,9 +209,7 @@ def open_message(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
-    peer = session.get(User, body.to_user_id)
-    if peer is None or peer.id == user.id or peer.deleted_at is not None:
-        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    peer = _other_user(session, user, body.to_user_id, "私信")
     if _blocked(session, user.id, peer.id):
         raise APIError(403, "USER_BLOCKED", "无法发送私信")
     kind, image_key = _message_payload(session, user, body.body, body.image_key)

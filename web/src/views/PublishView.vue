@@ -466,7 +466,6 @@ watch(
             v-model="videoUrl"
             label="视频链接"
             type="url"
-            inputmode="url"
             placeholder="https://www.youtube.com/watch?v=… 或 https://www.bilibili.com/video/BV…"
             hint="支持 YouTube、哔哩哔哩；贴原站完整地址，不要短链。大家点开后在站内播放"
           />

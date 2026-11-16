@@ -274,7 +274,7 @@ watch(userId, () => {
       </header>
 
       <template v-if="tab === 'rooms'">
-        <EmptyState v-if="profile.rooms.length === 0" title="还没有房间" description="这位用户还没有创建公开房间" />
+        <EmptyState v-if="profile.rooms.length === 0" title="还没有房间" :description="isSelf ? '在「我的」里可以创建房间' : '这位用户还没有创建公开房间'" />
         <ul v-else class="room-list">
           <li v-for="room in profile.rooms" :key="room.id">
             <RouterLink class="room-row" :to="{ name: 'room', params: { id: room.id } }">
@@ -290,7 +290,7 @@ watch(userId, () => {
       </template>
 
       <template v-else-if="tab === 'media'">
-        <EmptyState v-if="media.length === 0" title="还没有图片或视频" description="这位用户发的帖子里还没有图片和视频" />
+        <EmptyState v-if="media.length === 0" title="还没有图片或视频" :description="isSelf ? '你发的公开帖子里还没有图片和视频' : '这位用户发的帖子里还没有图片和视频'" />
         <div v-else class="media-grid">
           <button
             v-for="(item, i) in media"
@@ -317,7 +317,9 @@ watch(userId, () => {
       <EmptyState
         v-else-if="posts.length === 0"
         title="还没有公开帖子"
-        description="这位用户暂时没有发布公开内容"
+        :description="isSelf ? '审核中或私密的帖子只有你自己能在「我的」里看到' : '这位用户暂时没有发布公开内容'"
+        :action-label="isSelf ? '去「我的」查看' : ''"
+        @action="$router.push({ name: 'profile' })"
       />
       <div v-else class="posts">
         <PostCard

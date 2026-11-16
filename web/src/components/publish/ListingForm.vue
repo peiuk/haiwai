@@ -200,9 +200,9 @@ async function submit(): Promise<void> {
       <template v-else>当前频道没有可用的分类信息，暂按官方频道展示；提交仍以后端校验为准。</template>
     </p>
 
-    <TextField id="listing-title" v-model="title" label="标题" required />
-    <TextArea id="listing-body" v-model="body" label="描述" :rows="4" required />
-    <TextField id="listing-area" v-model="area" label="区域" placeholder="例如：London Ealing" required />
+    <TextField id="listing-title" v-model="title" label="标题" :maxlength="200" required />
+    <TextArea id="listing-body" v-model="body" label="描述" :rows="4" :maxlength="4000" required />
+    <TextField id="listing-area" v-model="area" label="区域" :maxlength="80" placeholder="例如：London Ealing" required />
 
     <div class="price-row">
       <TextField id="listing-price" v-model="priceAmount" label="价格" type="number" required />
@@ -216,6 +216,7 @@ async function submit(): Promise<void> {
         :key="field.key"
         :model-value="attrs[field.key] ?? ''"
         :label="field.label"
+        :maxlength="80"
         @update:model-value="setAttr(field.key, $event)"
       />
     </div>
@@ -230,7 +231,7 @@ async function submit(): Promise<void> {
       hint="jpeg / png / webp，单张最大 5MB；详情中以 16:10 横滑展示，第一张为封面"
     />
 
-    <TextField id="listing-contact" v-model="contact" label="联系方式" hint="已自动带入你验证过的手机号，可修改；只有登录用户主动点按才可见，并留查看记录" required />
+    <TextField id="listing-contact" v-model="contact" label="联系方式" :maxlength="120" hint="已自动带入你验证过的手机号，可修改；只有登录用户主动点按才可见，并留查看记录" required />
 
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
     <p v-if="success" class="form-success" role="status">{{ success }}</p>

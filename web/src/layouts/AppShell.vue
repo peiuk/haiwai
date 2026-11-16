@@ -46,6 +46,11 @@ function isActive(item: NavItem): boolean {
   return route.name === item.key;
 }
 
+// 右栏只在 ≥1100px 显示；窄屏不挂载，免得手机上白拉三个接口
+const wideQuery = window.matchMedia("(min-width: 1100px)");
+const wide = ref(wideQuery.matches);
+wideQuery.addEventListener("change", (e) => (wide.value = e.matches));
+
 // 再点一次当前所在的导航项 = 回到顶部（MASTER §22.14 ScrollMemory，X 式）
 function onNavClick(item: NavItem): void {
   if (!isActive(item)) return;
@@ -254,7 +259,7 @@ watch(
 
       <!-- 右栏（≥1100px 显示）：热门关键词 + 推荐频道 + 今日最关注等 -->
       <aside class="right-col">
-        <RightRail />
+        <RightRail v-if="wide" />
       </aside>
     </div>
 

@@ -195,6 +195,7 @@ onMounted(loadProfile);
         <BaseButton type="submit" :loading="busy" class="submit-btn">
           {{ mode === "login" ? "登录" : "注册并登录" }}
         </BaseButton>
+        <p v-if="mode === 'login'" class="account-meta">忘记密码？请联系平台管理员，对方会给你一个一次性的重置链接。</p>
       </form>
     </template>
 

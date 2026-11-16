@@ -3,9 +3,10 @@
 withDefaults(
   defineProps<{
     title: string;
+    description?: string;
     actionLabel?: string;
   }>(),
-  { actionLabel: "" },
+  { description: "", actionLabel: "" },
 );
 
 const emit = defineEmits<{ (e: "action"): void }>();
@@ -14,6 +15,7 @@ const emit = defineEmits<{ (e: "action"): void }>();
 <template>
   <div class="empty">
     <p>{{ title }}</p>
+    <p v-if="description" class="empty__desc">{{ description }}</p>
     <slot name="extra" />
     <button v-if="actionLabel" class="btn btn--outline" type="button" @click="emit('action')">
       {{ actionLabel }}
@@ -27,4 +29,5 @@ const emit = defineEmits<{ (e: "action"): void }>();
   gap: var(--sp-3);
   justify-items: center;
 }
+.empty__desc { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
 </style>
