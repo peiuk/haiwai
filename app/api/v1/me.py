@@ -828,6 +828,10 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
     user.display_name = "已注销"
     user.handle = None
     user.avatar_key = None  # 图片文件在下面和其他上传一起删
+    # 后台权限也收回：注销后的账号在后台改不了权限（按「用户不存在」处理），留着就永远撤不掉
+    user.is_admin = False
+    user.is_super = False
+    user.totp_secret = None
     subscriptions = session.scalars(select(ChannelSubscription).where(ChannelSubscription.user_id == user.id)).all()
     for subscription in subscriptions:
         channel = session.get(Channel, subscription.channel_id)
