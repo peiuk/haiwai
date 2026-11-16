@@ -28,7 +28,6 @@ security.PBKDF2_ITERATIONS = 1_000
 
 @pytest.fixture
 def client():
-    auth_api._attempts.clear()  # 限流计数在进程内存里，每个测试从零开始
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},

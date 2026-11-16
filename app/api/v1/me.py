@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user, optional_user
@@ -45,9 +45,14 @@ router = APIRouter(prefix="/me")
 
 
 @router.get("")
-def my_profile(user: User = Depends(current_user)) -> dict[str, object]:
+def my_profile(user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, object]:
+    consent = session.scalar(
+        select(ConsentRecord.version).where(ConsentRecord.user_id == user.id).order_by(ConsentRecord.created_at.desc()).limit(1)
+    )
     return {
         "user_id": user.id,
+        "email": user.email,
+        "consent_version": consent,
         "display_name": user.display_name,
         "handle": user.handle or "",
         "avatar_tone": user.avatar_tone,
@@ -143,7 +148,7 @@ def update_profile(
     if body.city_label is not None:
         user.city_label = body.city_label or None
     session.commit()
-    return my_profile(user)
+    return my_profile(user, session)
 
 
 def _content_paused(session: Session, user: User, content_id: str) -> bool:
@@ -204,19 +209,23 @@ def join_channel(
     return {"joined": True, "subscriber_count": channel.subscriber_count}
 
 
-def _unread(session: Session, subscription: ChannelSubscription) -> int:
-    count = session.scalar(
-        select(func.count())
-        .select_from(ChannelItem)
+def _unread_counts(session: Session, user_id: str) -> dict[str, int]:
+    """这个人每个已加入频道的未读条数，一条查询算完（不按频道一个个查）。"""
+    rows = session.execute(
+        select(ChannelItem.channel_id, func.count())
         .join(Content, Content.id == ChannelItem.content_id)
+        .join(
+            ChannelSubscription,
+            and_(ChannelSubscription.channel_id == ChannelItem.channel_id, ChannelSubscription.user_id == user_id),
+        )
         .where(
-            ChannelItem.channel_id == subscription.channel_id,
             Content.status == "published",
             Content.deleted_at.is_(None),
-            ChannelItem.added_at > subscription.last_read_at,
+            ChannelItem.added_at > ChannelSubscription.last_read_at,
         )
-    )
-    return int(count or 0)
+        .group_by(ChannelItem.channel_id)
+    ).all()
+    return {channel_id: int(count) for channel_id, count in rows}
 
 
 @router.get("/subscriptions")
@@ -227,11 +236,12 @@ def list_subscriptions(
     rows = session.scalars(select(ChannelSubscription).where(ChannelSubscription.user_id == user.id)).all()
     items: list[dict[str, object]] = []
     paused = 0
+    unread = _unread_counts(session, user.id)
     for subscription in rows:
         channel = session.get(Channel, subscription.channel_id)
         if channel is None:
             continue
-        count = _unread(session, subscription)
+        count = unread.get(channel.id, 0)
         subscription.unread_count = count
         if country_blocked(session, user, channel):
             paused += 1
@@ -362,26 +372,31 @@ def badges(user: User = Depends(current_user), session: Session = Depends(get_db
     notes = session.scalar(
         select(func.count()).select_from(Notification).where(Notification.user_id == user.id, Notification.read_at.is_(None))
     )
-    threads = session.scalars(
-        select(DmThread).where(or_(DmThread.user_low == user.id, DmThread.user_high == user.id))
-    ).all()
-    messages = 0
-    for thread in threads:
-        other_id = thread.user_high if thread.user_low == user.id else thread.user_low
-        if session.get(UserBlock, (user.id, other_id)) is not None or session.get(UserBlock, (other_id, user.id)) is not None:
-            continue
-        messages += int(
-            session.scalar(
-                select(func.count())
-                .select_from(DmMessage)
-                .where(
-                    DmMessage.thread_id == thread.id,
-                    DmMessage.sender_id != user.id,
-                    DmMessage.read_at.is_(None),
-                )
+    # 别人发给我、我还没读的私信，一条查询算完。会话只有两个人，所以发信人就是对方；双方任一拉黑了对方就不算。
+    blocked = (
+        select(UserBlock.user_id)
+        .where(
+            or_(
+                and_(UserBlock.user_id == user.id, UserBlock.target_id == DmMessage.sender_id),
+                and_(UserBlock.user_id == DmMessage.sender_id, UserBlock.target_id == user.id),
             )
-            or 0
         )
+        .exists()
+    )
+    messages = int(
+        session.scalar(
+            select(func.count())
+            .select_from(DmMessage)
+            .join(DmThread, DmThread.id == DmMessage.thread_id)
+            .where(
+                or_(DmThread.user_low == user.id, DmThread.user_high == user.id),
+                DmMessage.sender_id != user.id,
+                DmMessage.read_at.is_(None),
+                ~blocked,
+            )
+        )
+        or 0
+    )
     notification_count = int(notes or 0)
     return {"notifications": notification_count, "messages": messages, "total": notification_count + messages}
 
@@ -777,8 +792,8 @@ def set_region(
     }
 
 
-@router.get("/export")
-def export_account(user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, object]:
+def export_account(user: User, session: Session) -> dict[str, object]:
+    """这个人的全部个人数据。前台不再提供自助导出；用户来要时由超级管理员在后台导出（admin_ops.export_user_data）。"""
     subscriptions = session.scalars(select(ChannelSubscription).where(ChannelSubscription.user_id == user.id)).all()
     posts = session.scalars(select(Content).where(Content.author_id == user.id)).all()
     consents = session.scalars(select(ConsentRecord).where(ConsentRecord.user_id == user.id)).all()

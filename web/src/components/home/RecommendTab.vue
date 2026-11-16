@@ -170,6 +170,7 @@ void load();
       :keywords="item.keywords"
       :image-keys="item.image_keys"
       :video-key="item.video_key"
+      :embed="item.embed"
       :time="item.added_at"
       :show-join="true"
       :is-joined="item.is_joined"

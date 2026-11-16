@@ -301,8 +301,16 @@ def seconds_until_next_run(now: datetime) -> float:
 def run_once() -> int:
     from app.core.db import get_db
 
+    from app.housekeeping import run_housekeeping
+
     db = next(get_db())
     try:
+        # 顺带做每日清理（没用上的上传文件、过期限流记录）；清理失败不影响资讯
+        try:
+            print(f"{utcnow().isoformat()} 每日清理：{run_housekeeping(db)}", flush=True)
+        except Exception as err:
+            db.rollback()
+            print(f"{utcnow().isoformat()} 每日清理出错：{err!r}", flush=True)
         print(f"{utcnow().isoformat()} 每日资讯：{run_daily_news(db)}", flush=True)
         return 0
     except NewsUnavailable as err:

@@ -28,6 +28,22 @@ LIMITS = {
 }
 
 
+_MP4_BOXES = (b"ftyp", b"moov", b"mdat", b"wide", b"free", b"skip")  # mp4 / mov 文件第 5–8 字节的盒子名
+
+
+def _matches_type(content_type: str, head: bytes) -> bool:
+    """看文件开头几个字节（文件格式标记）是不是真的是声明的类型：防止把网页、脚本冒充成图片传上来。"""
+    if content_type == "image/jpeg":
+        return head.startswith(b"\xff\xd8\xff")
+    if content_type == "image/png":
+        return head.startswith(b"\x89PNG")
+    if content_type == "image/webp":
+        return head.startswith(b"RIFF") and head[8:12] == b"WEBP"
+    if content_type == "video/webm":
+        return head.startswith(b"\x1a\x45\xdf\xa3")
+    return head[4:8] in _MP4_BOXES  # video/mp4、video/quicktime
+
+
 class SignBody(BaseModel):
     content_type: str
 
@@ -169,15 +185,20 @@ async def store_upload(
     # 边收边写到临时文件，内存里只留一个数据块（100MB 的视频不再整个读进内存）。
     temp = upload_root() / f"{key}.part"
     size = 0
+    head = b""
     try:
         with temp.open("wb") as out:
             async for chunk in request.stream():
                 size += len(chunk)
                 if size > limit:
                     raise too_big
+                if len(head) < 12:
+                    head += chunk[: 12 - len(head)]
                 out.write(chunk)
         if size == 0:
             raise too_big
+        if not _matches_type(row.content_type, head):
+            raise APIError(400, "UPLOAD_INVALID", f"文件内容不是{kind}，请重新选择")
         # 传到对象存储可能要几十秒：放到线程池，不然这个进程在此期间处理不了别的请求。
         await run_in_threadpool(save_object, key, temp, row.content_type)
     finally:

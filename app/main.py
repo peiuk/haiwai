@@ -64,6 +64,8 @@ def create_app() -> FastAPI:
         # 接口数据因人而异：没有自己声明缓存策略的 /api 响应一律不许 CDN / 浏览器缓存，免得串号
         if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
             response.headers["Cache-Control"] = "no-store"
+        # 浏览器严格按声明的类型处理（不去「猜」内容）：上传的图片即使夹带网页代码也不会被当网页执行
+        response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
     @app.exception_handler(APIError)

@@ -10,7 +10,7 @@ import {
   request,
   setSession,
   toMessage,
-  type AccountExport,
+  type MeProfile,
   type LoginResponse,
 } from "../../api";
 import { useAuthStore } from "../../stores/auth";
@@ -34,7 +34,7 @@ const phone = ref("");
 const phoneCode = ref("");
 const busy = ref(false);
 const error = ref("");
-const profile = ref<AccountExport["user"] | null>(null);
+const profile = ref<MeProfile | null>(null);
 
 async function loadProfile(): Promise<void> {
   if (!auth.isLoggedIn) {
@@ -42,8 +42,7 @@ async function loadProfile(): Promise<void> {
     return;
   }
   try {
-    const body = await request<AccountExport>("/api/v1/me/export");
-    profile.value = body.user;
+    profile.value = await request<MeProfile>("/api/v1/me");
   } catch {
     profile.value = null;
   }

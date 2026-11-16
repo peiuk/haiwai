@@ -151,9 +151,10 @@ def test_report_removes_content_and_dsar_erases_account(client):
     assert "content.report" in actions
     assert "moderation.remove" in actions
 
-    exported = client.get("/api/v1/me/export", headers=headers(author))
-    assert exported.status_code == 200
-    assert exported.json()["user"]["email"] == "author@example.com"
+    # 前台自助导出已取消（用户来要数据时由后台导出）；账号页要的邮箱和同意版本改由 GET /me 给
+    assert client.get("/api/v1/me/export", headers=headers(author)).status_code in {404, 405}
+    me = client.get("/api/v1/me", headers=headers(author)).json()
+    assert me["email"] == "author@example.com" and me["consent_version"]
     erased = client.delete("/api/v1/me", headers=headers(author))
     assert erased.status_code == 200
     login = client.post("/api/v1/auth/login", json={"email": "author@example.com", "password": "password-1"})

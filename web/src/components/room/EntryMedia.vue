@@ -1,3 +1,8 @@
+<script lang="ts">
+/** 外链平台代码 → 显示名；帖子卡和房间条目共用 */
+export const PROVIDER_NAMES: Record<string, string> = { youtube: "YouTube", bilibili: "哔哩哔哩", bbc: "BBC" };
+</script>
+
 <script setup lang="ts">
 // 房间条目的图片（最多 4 张）和视频（上传的，或外链 embed），各种房间类型共用。
 import EmbedConsentCard from "./EmbedConsentCard.vue";
@@ -13,8 +18,6 @@ defineProps<{
   sourceUrl?: string | null;
   provider?: string | null;
 }>();
-
-const PROVIDER_NAMES: Record<string, string> = { youtube: "YouTube", bilibili: "哔哩哔哩", bbc: "BBC" };
 </script>
 
 <template>

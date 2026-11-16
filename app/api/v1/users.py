@@ -6,7 +6,7 @@ from app.api.v1.auth import optional_user
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
-from app.feed import image_keys_of, reaction_flags
+from app.feed import embed_card, image_keys_of, reaction_flags
 from app.keywords import load_keywords
 from app.models import Channel, ChannelItem, Content, ModerationCase, User, UserBlock, UserFollow
 from app.privacy import can_view_content
@@ -151,6 +151,7 @@ def public_posts(
                 "keywords": load_keywords(row.keywords_json),
                 "image_keys": image_keys_of(row),
                 "video_key": row.video_key,
+                "embed": embed_card(row),
                 "liked": liked,
                 "favorited": favorited,
             }

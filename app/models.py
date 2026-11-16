@@ -343,7 +343,8 @@ class UserBlock(Base):
 
 class DmThread(Base):
     __tablename__ = "dm_thread"
-    __table_args__ = (UniqueConstraint("user_low", "user_high", name="uq_dm_pair"),)
+    # 唯一约束以 user_low 开头；按 user_high 查「我的会话」要单独的索引
+    __table_args__ = (UniqueConstraint("user_low", "user_high", name="uq_dm_pair"), Index("ix_dm_thread_high", "user_high"))
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     user_low: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
@@ -356,6 +357,7 @@ class DmThread(Base):
 
 class DmMessage(Base):
     __tablename__ = "dm_message"
+    __table_args__ = (Index("ix_dm_message_thread", "thread_id"),)  # Postgres 不会自动给外键建索引
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     thread_id: Mapped[str] = mapped_column(ForeignKey("dm_thread.id", ondelete="CASCADE"))
@@ -426,6 +428,7 @@ class UserConsentLog(Base):
 
 class UploadObject(Base):
     __tablename__ = "upload_object"
+    __table_args__ = (Index("ix_upload_owner", "owner_id"),)
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
@@ -477,3 +480,14 @@ class BlockedTerm(Base):
 
     term: Mapped[str] = mapped_column(String(64), primary_key=True)  # 小写保存，匹配时不分大小写
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RateHit(Base):
+    """限流记录（登录、注册等）：存数据库，多个进程共用一份计数，重启也不清零。每日任务删掉一天前的。"""
+
+    __tablename__ = "rate_hit"
+    __table_args__ = (Index("ix_rate_hit_key_at", "key", "at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(160))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -95,6 +95,13 @@ def _expired(expires_at: datetime | None) -> bool:
     return expires_at < datetime.now(timezone.utc)
 
 
+def embed_card(content: Content) -> dict[str, str | None] | None:
+    """外链视频帖给卡片的播放信息（走第三方播放同意流程）；不是外链帖返回 None。"""
+    if content.type != "embed":
+        return None
+    return {"status": content.embed_status, "provider": content.embed_provider_code}
+
+
 def card_extras(content: Content, listing: ListingExt | None, author: tuple[str, ...] = ("", "")) -> dict[str, object]:
     author_name, author_handle, author_avatar = (*author, "")[:3]  # 调用方的缺省值是两项的 ("", "")
     extra: dict[str, object] = {
@@ -103,6 +110,7 @@ def card_extras(content: Content, listing: ListingExt | None, author: tuple[str,
         "image_key": content.image_key,
         "image_keys": image_keys_of(content),
         "video_key": content.video_key,
+        "embed": embed_card(content),
         "rights_confirmed": content.rights_confirmed,
         "author_id": content.author_id,
         "author_name": author_name,

@@ -1,16 +1,14 @@
 import re
 import secrets
-import time
-from collections import deque
 from datetime import timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.core.audit import write_audit
+from app.core.audit import client_ip, write_audit
 
 from app.core.config import get_settings
 from app.core.db import get_db
@@ -27,26 +25,23 @@ from app.core.security import (
     refresh_expiry,
     verify_password,
 )
-from app.models import Channel, ChannelSubscription, ConsentRecord, PasswordReset, RefreshSession, User, utcnow
+from app.models import Channel, ChannelSubscription, ConsentRecord, PasswordReset, RateHit, RefreshSession, User, utcnow
 
 DEV_PHONE_CODE = "246810"
 
-# shortcut: 计数放在每个进程的内存里，2 个 worker 各算各的、重启后清零；
-# 需要严格限流或按 IP 限制注册时，换成 Redis 等共享存储，并让反向代理传真实客户端 IP。
-_attempts: dict[str, deque[float]] = {}
 
-
-def throttle(key: str, limit: int, window_seconds: int) -> None:
-    now = time.monotonic()
-    if len(_attempts) > 50_000:  # 键只增不减会吃内存：超过上限时清掉一小时内没动静的
-        for stale in [name for name, hits in _attempts.items() if not hits or now - hits[-1] > 3600]:
-            del _attempts[stale]
-    hits = _attempts.setdefault(key, deque())
-    while hits and now - hits[0] > window_seconds:
-        hits.popleft()
-    if len(hits) >= limit:
+def throttle(session: Session, key: str, limit: int, window_seconds: int) -> None:
+    """窗口内超过 limit 次就拒绝。计数存数据库（rate_hit），多个进程共用、重启不清零。
+    会立即提交：失败的尝试（如密码错误）也要算数，所以必须在处理函数开头、还没改别的数据时调用。"""
+    key = key[:160]
+    now = utcnow()
+    session.execute(delete(RateHit).where(RateHit.key == key, RateHit.at < now - timedelta(seconds=window_seconds)))
+    hits = session.scalar(select(func.count()).select_from(RateHit).where(RateHit.key == key)) or 0
+    if hits >= limit:
+        session.commit()
         raise APIError(429, "RATE_LIMITED", "尝试太频繁，请稍后再试")
-    hits.append(now)
+    session.add(RateHit(key=key, at=now))
+    session.commit()
 
 
 def _aware_datetime(value) -> object:
@@ -243,7 +238,11 @@ def join_channels_by_code(session: Session, user_id: str, codes: list[str]) -> i
 
 
 @router.post("/register")
-def register(body: RegisterBody, session: Session = Depends(get_db)) -> dict[str, object]:
+def register(body: RegisterBody, request: Request, session: Session = Depends(get_db)) -> dict[str, object]:
+    # 同一个来源一小时最多注册 5 个号：挡住脚本批量注册（再拿去刷上传、发广告）。
+    # 单元测试全部来自同一个地址、每个用例要注册好几个号，所以测试里关掉（有单独的用例打开它测）。
+    if not get_settings().testing:
+        throttle(session, f"register-ip:{client_ip(request)}", limit=5, window_seconds=60 * 60)
     existing = session.scalar(select(User.id).where(User.email == body.email))
     if existing:
         raise APIError(409, "DUPLICATE_EMAIL", "这个邮箱已经注册")
@@ -293,7 +292,7 @@ def verify_phone(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, bool]:
-    throttle(f"phone:{user.id}", limit=5, window_seconds=15 * 60)
+    throttle(session, f"phone:{user.id}", limit=5, window_seconds=15 * 60)
     if get_settings().app_env != "dev":
         # 还没接短信服务商：线上发不出验证码，任何验证码都不可能对。接入前请在 .env 里设
         # REQUIRE_PHONE_VERIFICATION=false，否则没有人能发帖。
@@ -310,8 +309,10 @@ def verify_phone(
 
 
 @router.post("/login")
-def login(body: LoginBody, session: Session = Depends(get_db)) -> dict[str, str]:
-    throttle(f"login:{body.email}", limit=10, window_seconds=15 * 60)
+def login(body: LoginBody, request: Request, session: Session = Depends(get_db)) -> dict[str, str]:
+    throttle(session, f"login:{body.email}", limit=10, window_seconds=15 * 60)
+    # 同一个来源拿一个密码换着邮箱试（撞库）也要拦；30 次够一家人共用一个网络
+    throttle(session, f"login-ip:{client_ip(request)}", limit=30, window_seconds=15 * 60)
     user = session.scalar(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     if user is None or not verify_password(body.password, user.password_hash):
         raise APIError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")
@@ -336,7 +337,7 @@ class ResetPasswordBody(BaseModel):
 def reset_password(body: ResetPasswordBody, session: Session = Depends(get_db)) -> dict[str, bool]:
     """用管理员生成的一次性链接设置新密码。成功后所有设备上的登录都失效，要用新密码重新登录。"""
     digest = hash_refresh_token(body.token.strip())
-    throttle(f"reset:{digest[:16]}", limit=10, window_seconds=15 * 60)
+    throttle(session, f"reset:{digest[:16]}", limit=10, window_seconds=15 * 60)
     row = session.scalar(select(PasswordReset).where(PasswordReset.token_hash == digest))
     if row is None or row.used_at is not None or _aware_datetime(row.expires_at) < utcnow():
         raise APIError(400, "INVALID_RESET_TOKEN", "这个重置链接已经失效，请重新获取")

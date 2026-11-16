@@ -126,6 +126,36 @@ def test_login_attempts_per_email_are_throttled(client):
     assert client.post("/api/v1/auth/login", json={"email": "other-h@example.com", "password": "x" * 8}).status_code == 401
 
 
+def test_upload_must_match_its_declared_type(client):
+    token = register(client, "fake-png-h@example.com")
+    key = sign(client, token, "image/png")
+    disguised = client.put(f"/api/v1/uploads/{key}", headers=headers(token), content=b"<html><script>alert(1)</script>")
+    assert disguised.status_code == 400 and disguised.json()["code"] == "UPLOAD_INVALID"
+    # 没存下来，换成真的 PNG 还能用这个名额；读出来带 nosniff
+    assert client.put(f"/api/v1/uploads/{key}", headers=headers(token), content=b"\x89PNG\r\n\x1a\nok").status_code == 200
+    assert client.get(f"/api/v1/uploads/{key}").headers["x-content-type-options"] == "nosniff"
+
+
+def test_login_spraying_many_emails_from_one_source_is_throttled(client):
+    # 一个密码换着 31 个邮箱试：每个邮箱只试一次，按来源 IP 的限制要拦住第 31 次
+    codes = [
+        client.post("/api/v1/auth/login", json={"email": f"spray{i}@example.com", "password": "123456aa"}).status_code
+        for i in range(31)
+    ]
+    assert codes[:30] == [401] * 30
+    assert codes[30] == 429
+
+
+def test_register_is_throttled_per_source(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "testing", False)  # 测试环境默认关掉这条限制，这里打开
+
+    def attempt(i: int) -> int:
+        body = {"email": f"bulk{i}@example.com", "password": "password-1", "display_name": "批量", "consents": CONSENTS}
+        return client.post("/api/v1/auth/register", json=body).status_code
+
+    assert [attempt(i) for i in range(6)] == [200] * 5 + [429]
+
+
 def test_phone_verification_is_throttled(client):
     token = register(client, "phone-h@example.com")
     codes = [

@@ -211,6 +211,7 @@ watch(channelId, () => void load(), { immediate: true });
               :source-name="item.source_name" :licence-ref="item.licence_ref" :canonical-url="item.canonical_url"
               :keywords="item.keywords" :image-keys="item.image_keys ?? (item.image_key ? [item.image_key] : [])"
               :video-key="item.video_key"
+              :embed="item.embed"
               :liked="item.liked" :favorited="item.favorited" :reposted="item.reposted"
               @open="activeContentId = item.content_id"
               @like="toggleReaction(item, 'like')" @favorite="toggleReaction(item, 'favorite')" @repost="repost(item)"

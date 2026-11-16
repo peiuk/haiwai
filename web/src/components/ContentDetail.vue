@@ -17,6 +17,8 @@ import { fmtRelativeTime } from "../utils/time";
 import SourceBlock from "./common/SourceBlock.vue";
 import ReportButton from "./common/ReportButton.vue";
 import Lightbox from "./common/Lightbox.vue";
+import EmbedConsentCard from "./room/EmbedConsentCard.vue";
+import { PROVIDER_NAMES } from "./room/EntryMedia.vue";
 import Avatar from "./base/Avatar.vue";
 import BaseIcon from "./base/BaseIcon.vue";
 
@@ -359,8 +361,17 @@ watch(detail, async (value) => {
                   @keydown.space.prevent="lightboxIndex = i"
                 />
               </div>
+              <EmbedConsentCard
+                v-if="detail.type === 'embed' && detail.embed_status"
+                bare
+                :content-id="detail.content_id"
+                :title="detail.title"
+                :embed-status="detail.embed_status"
+                :source-url="detail.canonical_url"
+                :display-name="PROVIDER_NAMES[detail.embed_provider_code ?? ''] ?? detail.embed_provider_code ?? undefined"
+              />
               <video
-                v-else-if="detail.video_key"
+                v-else-if="detail.video_key && !images.length"
                 class="cd-video"
                 :src="`/api/v1/uploads/${detail.video_key}`"
                 controls

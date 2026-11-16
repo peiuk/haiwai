@@ -7,7 +7,7 @@ import { useRouter } from "vue-router";
 import {
   request,
   toMessage,
-  type AccountExport,
+  type MeProfile,
   type BlocksResponse,
   type Channel,
   type ChannelsResponse,
@@ -78,8 +78,7 @@ const reports = ref<Report[]>([]);
 // ---- 私信 / 设置 ----
 const dmAllow = ref(false);
 const blocks = ref<BlocksResponse["items"]>([]);
-const consent = ref<AccountExport["consents"][number] | null>(null);
-const exportBusy = ref(false);
+const consentVersion = ref<string | null>(null);
 
 // ---- 状态 ----
 const loading = ref(true);
@@ -97,18 +96,18 @@ async function loadAll(): Promise<void> {
   }
   try {
     profile.value = await request<Profile>("/api/v1/me");
-    const [roomBody, postBody, favBody, subscriptionBody, reportBody, exportBody, prefs, blockBody] =
+    const [roomBody, postBody, favBody, subscriptionBody, reportBody, meBody, prefs, blockBody] =
       await Promise.allSettled([
         request<MyRoomsResponse>("/api/v1/me/channels"),
         request<MyPostsResponse>("/api/v1/me/posts"),
         request<FavoritesResponse>("/api/v1/me/favorites"),
         request<{ items: Subscription[] }>("/api/v1/me/subscriptions"),
         request<{ items: Report[] }>("/api/v1/me/reports"),
-        request<AccountExport>("/api/v1/me/export"),
+        request<MeProfile>("/api/v1/me"),
         request<PrefsResponse>("/api/v1/me/prefs"),
         request<BlocksResponse>("/api/v1/me/blocks"),
       ]);
-    partialError.value = [roomBody, postBody, favBody, subscriptionBody, reportBody, exportBody, prefs, blockBody].some((result) => result.status === "rejected");
+    partialError.value = [roomBody, postBody, favBody, subscriptionBody, reportBody, meBody, prefs, blockBody].some((result) => result.status === "rejected");
     if (roomBody.status === "fulfilled") {
       rooms.value = roomBody.value.items;
       roomCount.value = roomBody.value.owned_count;
@@ -122,7 +121,7 @@ async function loadAll(): Promise<void> {
     }
     if (subscriptionBody.status === "fulfilled") subscriptions.value = subscriptionBody.value.items;
     if (reportBody.status === "fulfilled") reports.value = reportBody.value.items;
-    if (exportBody.status === "fulfilled") consent.value = exportBody.value.consents[exportBody.value.consents.length - 1] ?? null;
+    if (meBody.status === "fulfilled") consentVersion.value = meBody.value.consent_version;
     if (prefs.status === "fulfilled") dmAllow.value = prefs.value.dm_allow_strangers;
     if (blockBody.status === "fulfilled") blocks.value = blockBody.value.items;
   } catch (err) {
@@ -177,26 +176,6 @@ async function unblock(userId: string): Promise<void> {
     toast.show("已解除屏蔽");
   } catch (err) {
     toast.show(toMessage(err));
-  }
-}
-
-// ---- 数据导出 ----
-async function exportAccount(): Promise<void> {
-  exportBusy.value = true;
-  try {
-    const body = await request<AccountExport>("/api/v1/me/export");
-    const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "ukcn-account-export.json";
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.show("已导出账号数据");
-  } catch (err) {
-    toast.show(toMessage(err));
-  } finally {
-    exportBusy.value = false;
   }
 }
 
@@ -487,19 +466,11 @@ watch(
 
       <div class="me-section">
         <h3>隐私与数据</h3>
-        <button type="button" class="me-row" :disabled="exportBusy" @click="exportAccount">
-          <BaseIcon name="i-link" :size="20" />
-          <span class="mr-main">
-            <span class="mr-t">{{ exportBusy ? '正在生成导出文件…' : '导出我的数据' }}</span>
-            <span class="mr-s">下载账号、帖子、房间与同意记录（JSON）</span>
-          </span>
-          <span class="mr-end">导出</span>
-        </button>
         <div class="me-row">
           <BaseIcon name="i-check" :size="20" />
           <span class="mr-main">
             <span class="mr-t">同意记录</span>
-            <span class="mr-s">{{ consent ? `条款版本 ${consent.version} · 年满 18 岁已确认` : '暂无同意记录' }}</span>
+            <span class="mr-s">{{ consentVersion ? `条款版本 ${consentVersion} · 年满 18 岁已确认` : '暂无同意记录' }}</span>
           </span>
         </div>
         <button type="button" class="me-row danger" @click="deleteOpen = true">

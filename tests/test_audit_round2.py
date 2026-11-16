@@ -9,7 +9,7 @@ def test_upload_slots_are_capped_per_day(client, monkeypatch):
     user = register(client, "uploader@example.com")
     for _ in range(2):
         key = client.post("/api/v1/uploads/sign", headers=headers(user), json={"content_type": "image/png"}).json()["object_key"]
-        assert client.put(f"/api/v1/uploads/{key}", headers=headers(user), content=b"png").status_code == 200
+        assert client.put(f"/api/v1/uploads/{key}", headers=headers(user), content=b"\x89PNG").status_code == 200
     refused = client.post("/api/v1/uploads/sign", headers=headers(user), json={"content_type": "image/png"})
     assert refused.status_code == 429 and refused.json()["code"] == "UPLOAD_DAILY_LIMIT"
 

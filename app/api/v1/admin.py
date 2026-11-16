@@ -81,9 +81,9 @@ class AdminLoginBody(LoginBody):
 @router.post("/login")
 def admin_login(body: AdminLoginBody, request: Request, session: Session = Depends(get_db)) -> dict[str, str]:
     """后台独立登录：密码对但不是管理员也拒绝，不给普通账号发后台用的令牌。"""
-    throttle(f"admin-login:{body.email}", limit=10, window_seconds=15 * 60)
+    throttle(session, f"admin-login:{body.email}", limit=10, window_seconds=15 * 60)
     # 同一个来源换着邮箱试也要拦
-    throttle(f"admin-login-ip:{client_ip(request)}", limit=30, window_seconds=15 * 60)
+    throttle(session, f"admin-login-ip:{client_ip(request)}", limit=30, window_seconds=15 * 60)
     user = session.scalar(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     if user is None or not verify_password(body.password, user.password_hash):
         raise APIError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")

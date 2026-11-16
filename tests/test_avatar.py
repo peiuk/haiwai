@@ -7,7 +7,8 @@ PNG = b"\x89PNG\r\n\x1a\nfake"
 
 def upload(client, token, content_type="image/png"):
     key = client.post("/api/v1/uploads/sign", headers=headers(token), json={"content_type": content_type}).json()["object_key"]
-    assert client.put(f"/api/v1/uploads/{key}", headers=headers(token), content=PNG).status_code == 200
+    body = PNG if content_type.startswith("image/") else b"\x00\x00\x00\x18ftypmp42"  # 上传会核对文件格式标记
+    assert client.put(f"/api/v1/uploads/{key}", headers=headers(token), content=body).status_code == 200
     return key
 
 

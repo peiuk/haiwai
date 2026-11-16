@@ -210,7 +210,7 @@ EXPORT_ROWS = 10_000  # shortcut: 一次最多导出这么多行、整份放在�
 def _cell(value: object) -> str:
     text = "" if value is None else str(value)
     # 用 Excel 打开时，以这些符号开头的格子会被当成公式执行；前面加个单引号让它只是文字
-    return f"'{text}" if text[:1] in ("=", "+", "-", "@") else text
+    return f"'{text}" if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
 
 
 def _csv(filename: str, header: list[str], rows: list[list[object]]) -> Response:

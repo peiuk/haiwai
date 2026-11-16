@@ -11,6 +11,9 @@ import Lightbox from "./Lightbox.vue";
 import PostActions from "./PostActions.vue";
 import { fmtRelativeTime } from "../../utils/time";
 import { hasOwnTitle } from "../../utils/post";
+import type { EmbedCard } from "../../api";
+import EmbedConsentCard from "../room/EmbedConsentCard.vue";
+import { PROVIDER_NAMES } from "../room/EntryMedia.vue";
 
 export interface PostActionItem {
   content_id: string;
@@ -45,6 +48,8 @@ const props = withDefaults(
     imageKeys?: string[];
     /** 视频 key（post_type=video 时存在） */
     videoKey?: string | null;
+    /** 外链视频：走第三方播放同意流程 */
+    embed?: EmbedCard | null;
     liked?: boolean;
     favorited?: boolean;
     reposted?: boolean;
@@ -69,6 +74,7 @@ const props = withDefaults(
     keywords: () => [],
     imageKeys: () => [],
     videoKey: null,
+    embed: null,
     liked: false,
     favorited: false,
     reposted: false,
@@ -335,6 +341,16 @@ onBeforeUnmount(() => {
           <BaseIcon name="i-play" :size="24" />
         </button>
       </div>
+
+      <EmbedConsentCard
+        v-if="embed"
+        bare
+        :content-id="contentId"
+        :title="title"
+        :embed-status="embed.status"
+        :source-url="canonicalUrl"
+        :display-name="PROVIDER_NAMES[embed.provider ?? ''] ?? embed.provider ?? undefined"
+      />
 
       <!-- 来源行 -->
       <div v-if="sourceName" class="post-source">

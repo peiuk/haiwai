@@ -263,7 +263,11 @@ export type FeedItem = {
   image_keys?: string[];
   /** 视频 key（post_type=video 时存在） */
   video_key?: string | null;
+  /** 外链视频（YouTube / 哔哩哔哩）；不是外链帖为 null */
+  embed?: EmbedCard | null;
 };
+
+export type EmbedCard = { status: string; provider: string | null };
 
 export type FeedResponse = {
   items: FeedItem[];
@@ -392,6 +396,8 @@ export type RoomItem = {
   canonical_url: string | null;
   embed_status: string;
   embed_provider_code: string | null;
+  /** 帖子卡用：外链视频帖才有 */
+  embed?: EmbedCard | null;
   type: string;
   keywords: string[];
   image_key: string | null;
@@ -460,6 +466,7 @@ export type DiscoverItem = {
   keywords: string[];
   image_keys?: string[];
   video_key?: string | null;
+  embed?: EmbedCard | null;
   /** 当前用户的互动状态（游客恒为 false） */
   liked?: boolean;
   favorited?: boolean;
@@ -499,6 +506,8 @@ export type ContentDetail = {
   video_key: string | null;
   published_at: string | null;
   type: string;
+  embed_status?: string;
+  embed_provider_code?: string | null;
   author_id: string | null;
   author_name: string | null;
   author_avatar?: string;
@@ -698,19 +707,6 @@ export type MyPost = {
 
 export type MyPostsResponse = { items: MyPost[] };
 
-export type AccountExport = {
-  user: {
-    email: string;
-    display_name: string;
-    handle: string;
-    avatar_tone: string;
-    phone: string | null;
-  };
-  subscriptions: string[];
-  posts: { content_id: string; title: string; status: string }[];
-  consents: { purpose: string; version: string; granted: boolean }[];
-};
-
 export type ReportReason = "scam" | "harass" | "sexual" | "ip" | "privacy" | "other";
 
 export type ReportReceipt = {
@@ -748,6 +744,7 @@ export type SearchContent = {
   keywords: string[];
   image_keys: string[];
   video_key: string | null;
+  embed?: EmbedCard | null;
   published_at: string | null;
   liked: boolean;
   favorited: boolean;
@@ -868,6 +865,7 @@ export type UserPost = {
   keywords: string[];
   image_keys: string[];
   video_key: string | null;
+  embed?: EmbedCard | null;
   liked: boolean;
   favorited: boolean;
   reposted?: boolean;
@@ -884,6 +882,9 @@ export type MeProfile = {
   city_label: string;
   script_pref: string;
   phone: string;
+  email: string;
+  /** 最近一次同意的条款版本 */
+  consent_version: string | null;
   is_admin?: boolean;
 };
 
