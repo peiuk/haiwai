@@ -529,7 +529,7 @@ watch(
     <p v-if="success" class="success" role="status">{{ success }}</p>
 
     <!-- 我的发布（可折叠 feed）-->
-    <details class="published-history" :open="feedOpen" @toggle="feedOpen = ($event.target as HTMLDetailsElement).open">
+    <details v-if="auth.isLoggedIn" class="published-history" :open="feedOpen" @toggle="feedOpen = ($event.target as HTMLDetailsElement).open">
       <summary>我的发布 <BaseIcon name="i-chev" :size="16" class="history-chev" /></summary>
       <section class="feed" aria-label="已发布内容">
         <p v-if="feedLoading" class="feed-note">正在加载…</p>

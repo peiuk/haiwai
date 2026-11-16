@@ -370,6 +370,8 @@ watch(
 <style scoped>
 .discover {
   display: grid;
+  /* 列宽钉死在容器宽度：不然分类 chip 一多，整列被撑宽，手机上整页能左右滑、帖子卡被切 */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-3);
   margin-bottom: var(--sp-6);
 }
@@ -491,6 +493,7 @@ watch(
 .topics-block,
 .feed-block {
   display: grid;
+  grid-template-columns: minmax(0, 1fr); /* 同上：长内容不许把列撑宽 */
   gap: var(--sp-2);
 }
 .block-title {

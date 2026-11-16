@@ -396,6 +396,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   flex: 1;
   display: grid;
+  grid-template-columns: minmax(0, 1fr); /* 卡头一行不换行，列宽不能被它撑开 */
   gap: var(--sp-2);
 }
 
@@ -412,12 +413,15 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  flex-wrap: wrap;
+  /* 一行放下：窄屏时先把 @用户名 截成省略号，再截频道名；时间和「为什么推荐」不截 */
+  flex-wrap: nowrap;
   font-size: var(--fs-14);
   line-height: 1.3;
   overflow: hidden;
 }
 .post-name {
+  flex: 0 0 auto;
+  max-width: 55%; /* 频道名一般很短，不跟 @用户名 抢；特别长时才截 */
   font-weight: var(--fw-bold);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -439,6 +443,13 @@ onBeforeUnmount(() => {
 .post-time {
   color: var(--muted);
   flex-shrink: 0;
+  white-space: nowrap;
+}
+.post-handle {
+  flex: 0 100 auto; /* 比频道名先缩 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .post-pin {
   color: var(--accent-ink);

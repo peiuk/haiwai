@@ -11,7 +11,9 @@ export type LangCode = "zh-Hans" | "zh-Hant";
 
 function readTheme(): ThemeMode {
   const saved = localStorage.getItem(THEME_KEY);
-  return saved === "dark" ? "dark" : "light";
+  if (saved === "dark" || saved === "light") return saved;
+  // 没手动选过：跟手机 / 电脑的深色模式走，不然深色手机上一打开是一片白
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function readLang(): LangCode {
