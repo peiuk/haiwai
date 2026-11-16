@@ -64,7 +64,7 @@ def test_hash_tags_in_body_and_city_are_searchable(client):
     created = client.post(
         "/api/v1/contents",
         headers=headers(token),
-        json={"title": "周末去哪", "body": "推荐一家火锅 #伦敦美食 ＃周末好去处"},
+        json={"title": "周末去哪", "body": "推荐一家火锅 #伦敦美食 ＃周末好去处 菜单 https://example.com/menu#section"},
     )
     assert created.status_code == 200, created.text
     assert created.json()["keywords"] == ["伦敦美食", "周末好去处"]

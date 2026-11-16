@@ -14,6 +14,7 @@ _CATEGORIES = {"房产", "招聘", "市场", "生活", "交流", "活动"}
 
 _TOKEN = re.compile(r"^[\w\u4e00-\u9fff_]{1,12}$")
 _HASH = re.compile(r"[#\uff03]([\w\u4e00-\u9fff_]{1,12})")  # \u4e2d\u6587\u8f93\u5165\u6cd5\u5e38\u6253\u51fa\u5168\u89d2 \uff03
+_URL = re.compile(r"https?://\S+")  # \u94fe\u63a5\u91cc\u7684 #\u951a\u70b9\uff08page#section\uff09\u4e0d\u7b97\u8bdd\u9898
 
 
 def keyword_source_for(source: str | None, keywords: list[str]) -> str | None:
@@ -43,7 +44,7 @@ def collect_keywords(explicit: list[str], body: str) -> list[str]:
             found.append(token)
         if len(found) >= AI_MAX:
             return found
-    for token in _HASH.findall(body):
+    for token in _HASH.findall(_URL.sub(" ", body)):
         if token not in found:
             found.append(token)
         if len(found) >= AI_MAX:

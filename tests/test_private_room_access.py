@@ -69,6 +69,27 @@ def test_private_room_cannot_be_joined_without_approval(client):
     assert client.get(f"/api/v1/channels/{room_id}/items", headers=auth(viewer)).status_code == 200
 
 
+def test_search_finds_public_post_behind_many_private_matches(client):
+    """私密房间里更新的同词帖子超过 20 条时，较早的公开帖照样能搜到（过滤在取前 20 条之前）。"""
+    from datetime import datetime, timedelta, timezone
+
+    room_id, _owner, _viewer = private_room(client)
+    now = datetime.now(timezone.utc)
+    session = client.session_factory()
+    public = Content(type="post", status="published", title="撞词公开帖", summary="", published_at=now - timedelta(days=1))
+    session.add(public)
+    for index in range(21):
+        hidden = Content(type="post", status="published", title=f"撞词私密帖{index}", summary="", published_at=now)
+        session.add(hidden)
+        session.flush()
+        session.add(ChannelItem(channel_id=room_id, content_id=hidden.id))
+    session.commit()
+    public_id = public.id
+    session.close()
+    found = client.get("/api/v1/search", params={"q": "撞词"}).json()["contents"]
+    assert [item["content_id"] for item in found] == [public_id]
+
+
 def test_private_room_content_is_not_public_by_id_or_search(client):
     room_id, owner, viewer = private_room(client)
     created = client.post(

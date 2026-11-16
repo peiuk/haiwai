@@ -41,6 +41,7 @@ from app.rooms import (
     episode_sort_key,
     film_sort_key,
     notify_room_update,
+    require_not_banned,
     video_sort_key,
 )
 
@@ -1093,6 +1094,7 @@ def create_submission(
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
     if channel.kind == "room" and channel.is_private and not is_room_member(session, channel, user):
         raise APIError(403, "ROOM_PRIVATE", "加入私密房间后才能投稿")
+    require_not_banned(session, [channel.id], user.id)
     if country_blocked(session, user, channel):
         raise APIError(403, "REGION_BLOCKED", "当前国家看不到这个频道")
     now = utcnow()

@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import current_user
@@ -135,24 +135,41 @@ def list_messages(user: User = Depends(current_user), session: Session = Depends
     rows = session.scalars(
         select(DmThread).where(or_(DmThread.user_low == user.id, DmThread.user_high == user.id))
     ).all()
+    # 私信页每 30 秒刷新一次：对方、拉黑、最新一条、未读数都按整批查（固定 5 次），不按会话逐个查
+    other_of = {thread.id: thread.user_high if thread.user_low == user.id else thread.user_low for thread in rows}
+    thread_ids = list(other_of) or [""]
+    others = list(set(other_of.values())) or [""]
+    blocked = set(
+        session.scalars(select(UserBlock.target_id).where(UserBlock.user_id == user.id, UserBlock.target_id.in_(others))).all()
+    ) | set(session.scalars(select(UserBlock.user_id).where(UserBlock.target_id == user.id, UserBlock.user_id.in_(others))).all())
+    peers = {person.id: person for person in session.scalars(select(User).where(User.id.in_(others))).all()}
+    unread_of = dict(
+        session.execute(
+            select(DmMessage.thread_id, func.count())
+            .where(DmMessage.thread_id.in_(thread_ids), DmMessage.sender_id != user.id, DmMessage.read_at.is_(None))
+            .group_by(DmMessage.thread_id)
+        ).all()
+    )
+    newest = (
+        select(DmMessage.thread_id, func.max(DmMessage.created_at).label("at"))
+        .where(DmMessage.thread_id.in_(thread_ids))
+        .group_by(DmMessage.thread_id)
+        .subquery()
+    )
+    latest_of = {
+        row.thread_id: row
+        for row in session.scalars(
+            select(DmMessage).join(newest, and_(DmMessage.thread_id == newest.c.thread_id, DmMessage.created_at == newest.c.at))
+        ).all()
+    }
     items: list[dict[str, object]] = []
     for thread in rows:
-        other_id = thread.user_high if thread.user_low == user.id else thread.user_low
-        if _blocked(session, user.id, other_id):
+        other_id = other_of[thread.id]
+        if other_id in blocked:
             continue
-        peer = session.get(User, other_id)
-        latest = session.scalar(
-            select(DmMessage).where(DmMessage.thread_id == thread.id).order_by(DmMessage.created_at.desc())
-        )
-        unread = session.scalar(
-            select(func.count())
-            .select_from(DmMessage)
-            .where(
-                DmMessage.thread_id == thread.id,
-                DmMessage.sender_id != user.id,
-                DmMessage.read_at.is_(None),
-            )
-        )
+        peer = peers.get(other_id)
+        latest = latest_of.get(thread.id)
+        unread = unread_of.get(thread.id, 0)
         preview = ""
         updated_at = thread.created_at
         if latest is not None:
@@ -217,16 +234,15 @@ def open_message(
             "image_key": listed_content.image_key or "",
         }
         listing_ref = json.dumps(snapshot, ensure_ascii=False)
+    thread = _thread_for(session, user, peer.id)
     followed = session.get(UserFollow, (peer.id, user.id)) is not None
-    if inquiry:
-        status = "active"
-    elif followed:
+    # 已经聊上（对方接受过）的会话照常发：对方后来关掉「接收陌生人私信」只挡新的陌生人
+    if inquiry or followed or (thread is not None and thread.status == "active"):
         status = "active"
     elif peer.dm_allow_strangers:
         status = "request"
     else:
         raise APIError(403, "STRANGER_DM_CLOSED", "对方不接收陌生人私信")
-    thread = _thread_for(session, user, peer.id)
     if thread is None:
         low, high = _pair(user.id, peer.id)
         thread = DmThread(
@@ -284,6 +300,7 @@ def reply_message(
 
 DM_PER_MINUTE = 10
 DM_PER_HOUR = 100
+THREAD_PAGE = 200
 
 
 def _message_payload(session: Session, user: User, text: str, image_key: str | None) -> tuple[str, str | None]:
@@ -316,9 +333,12 @@ def thread_messages(
     other_id = thread.user_high if thread.user_low == user.id else thread.user_low
     if _blocked(session, user.id, other_id):
         raise APIError(403, "USER_BLOCKED", "无法查看这个会话")
-    rows = session.scalars(
-        select(DmMessage).where(DmMessage.thread_id == thread.id).order_by(DmMessage.created_at)
+    # 页面开着时每 30 秒重取一次：只给最近的 THREAD_PAGE 条，不让越聊越长的会话每次全量读出
+    # shortcut: 更早的消息暂时看不到；要翻看历史时加 before 游标分页
+    newest_first = session.scalars(
+        select(DmMessage).where(DmMessage.thread_id == thread.id).order_by(DmMessage.created_at.desc()).limit(THREAD_PAGE)
     ).all()
+    rows = list(reversed(newest_first))
     return {
         "thread_id": thread.id,
         "status": thread.status,

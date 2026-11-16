@@ -10,7 +10,7 @@ from app.core.db import get_db
 from app.core.regions import open_regions
 from app.feed import embed_card, image_keys_of, reaction_flags
 from app.keywords import load_keywords
-from app.privacy import can_view_content
+from app.privacy import viewable
 from app.models import Channel, ChannelItem, Content, User, utcnow
 
 router = APIRouter()
@@ -94,6 +94,8 @@ def search(
         .where(
             Content.status == "published",
             Content.deleted_at.is_(None),
+            # 私密房间的帖子在 SQL 里排除（搜索对谁都不露私密内容）：先取 20 条再过滤，会被私密帖占满而搜不到公开帖
+            viewable(None),
             or_(
                 Content.title.ilike(pattern, escape="\\"),
                 Content.summary.ilike(pattern, escape="\\"),
@@ -109,8 +111,6 @@ def search(
     # 结果页直接用信息流卡片展示，带上当前用户的点赞 / 收藏状态
     flags = reaction_flags(session, viewer.id if viewer else None, [row.id for row in contents])
     for row in contents:
-        if not can_view_content(session, row, None):
-            continue
         liked, favorited = flags.get(row.id, (False, False))
         placed = session.scalar(
             select(ChannelItem).where(ChannelItem.content_id == row.id, ChannelItem.origin_room_id.is_(None))

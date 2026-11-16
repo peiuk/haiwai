@@ -19,7 +19,7 @@ from app.keywords import clean_city_topic, collect_keywords, dump_keywords, load
 from app.privacy import can_view_content, is_private_room_content
 from app.reports import ReportBody, report_receipt
 from app.recommend import country_blocked, is_roaming
-from app.rooms import drop_pushes, notify_room_update
+from app.rooms import drop_pushes, notify_room_update, require_not_banned
 from app.feed import MAX_LISTING_IMAGES, image_keys_of
 from app.models import (
     Channel,
@@ -144,6 +144,7 @@ def create_post(
             raise APIError(403, "REGION_BLOCKED", "当前国家看不到这个频道")
         if channel.kind == "room" and channel.is_private and channel.owner_id != user.id and session.get(ChannelSubscription, (user.id, channel.id)) is None:
             raise APIError(403, "ROOM_PRIVATE", "加入私密房间后才能发布")
+        require_not_banned(session, [channel.id], user.id)
     # 归一化图片列表：新客户端 image_keys 优先，兼容旧客户端单图 image_key。
     keys = list(body.image_keys)
     if not keys and body.image_key:
@@ -475,6 +476,7 @@ def create_reply(
     item = session.scalars(select(ChannelItem).where(ChannelItem.content_id == content.id)).first()
     if item is None:
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
+    require_not_banned(session, session.scalars(select(ChannelItem.channel_id).where(ChannelItem.content_id == content.id)), user.id)
     if body.parent_id:
         parent = session.get(RoomComment, body.parent_id)
         if parent is None or parent.content_id != content.id or parent.removed_at is not None:
@@ -568,6 +570,7 @@ def repost_content(
     channel = active_channel(session, body.channel_id)
     if channel.kind == "room" and channel.is_private and channel.owner_id != user.id and session.get(ChannelSubscription, (user.id, channel.id)) is None:
         raise APIError(403, "ROOM_PRIVATE", "加入私密房间后才能发布")
+    require_not_banned(session, [channel.id], user.id)
     existing = session.scalar(
         select(Content).where(
             Content.author_id == user.id,

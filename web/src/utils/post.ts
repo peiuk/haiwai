@@ -8,10 +8,11 @@ export function hasOwnTitle(title: string | null | undefined, summary: string | 
   return !s || !s.startsWith(t);
 }
 
-// 正文里的 #话题（半角 # 或全角 ＃），和后端 app/keywords.py 的 _HASH 同一规则：1–12 个字、去重、最多 5 个
+// 正文里的 #话题（半角 # 或全角 ＃），和后端 app/keywords.py 的 _HASH / _URL 同一规则：
+// 链接里的 #锚点不算，1–12 个字、去重、最多 5 个
 export function hashTags(text: string): string[] {
   const out: string[] = [];
-  for (const m of text.matchAll(/[#＃]([\p{L}\p{N}_]{1,12})/gu)) {
+  for (const m of text.replace(/https?:\/\/\S+/g, " ").matchAll(/[#＃]([\p{L}\p{N}_]{1,12})/gu)) {
     if (!out.includes(m[1])) out.push(m[1]);
     if (out.length >= 5) break;
   }

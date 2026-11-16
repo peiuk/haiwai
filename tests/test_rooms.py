@@ -994,6 +994,32 @@ def test_entries_and_room_posts_take_video_links(client):
     assert mixed.status_code == 400
 
 
+def test_banned_member_cannot_post_or_comment_in_public_room(client):
+    """公开房间不加入也能发：被移出的人发帖、房间留言、帖子下回复都要拦住。"""
+    parent_id = official_channel(client)
+    owner = register(client, "pub-ban-owner@example.com")
+    verify(client, owner, "+447700900351")
+    member = register(client, "pub-ban-member@example.com")
+    verify(client, member, "+447700900352")
+    room_id = client.post("/api/v1/channels", headers=headers(owner), json={"name": "公开房间", "parent_channel_id": parent_id}).json()[
+        "channel_id"
+    ]
+    client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"})
+    base = f"/api/v1/channels/{room_id}"
+    post = client.post(f"{base}/announcements", headers=headers(owner), json={"title": "公告", "body": "欢迎"}).json()
+    assert post["status"] == "published"
+    member_id = client.get("/api/v1/me", headers=headers(member)).json()["user_id"]
+    assert client.put(f"{base}/bans/{member_id}", headers=headers(owner)).status_code == 200
+
+    attempts = [
+        client.post("/api/v1/contents", headers=headers(member), json={"channel_id": room_id, "title": "还想发", "body": "被移出了还发"}),
+        client.post(f"{base}/comments", headers=headers(member), json={"body": "还想留言"}),
+        client.post(f"/api/v1/contents/{post['content_id']}/comments", headers=headers(member), json={"body": "还想回复"}),
+        client.post(f"{base}/submissions", headers=headers(member), json={"title": "投稿", "body": "还想投稿"}),
+    ]
+    assert [(r.status_code, r.json()["code"]) for r in attempts] == [(403, "ROOM_BANNED")] * 4
+
+
 def test_owner_bans_a_member_and_deletes_the_room(client):
     parent_id = official_channel(client)
     owner = register(client, "ban-owner@example.com")

@@ -653,6 +653,39 @@ def test_listing_contact_keywords_like_and_recommendation(client):
     assert all(item["content_id"] != listing_id for item in gone.json()["items"])
 
 
+def test_unreviewed_listing_cannot_close_and_renew_into_public(client):
+    """待审或被拒的分类信息不能「结案再刷新」绕过审核上线。"""
+    owner = register(client, "renew-bypass@example.com", "房东")
+    verify(client, owner, "+447700900311")
+    created = client.post(
+        "/api/v1/listings",
+        headers=headers(owner),
+        json={
+            "channel_id": housing_channel(client),
+            "title": "出租单间",
+            "body": "伦敦出租单间，近地铁。",
+            "category": "房产",
+            "kind": "rent",
+            "area": "伦敦",
+            "price_amount": "900",
+            "price_unit": "月",
+            "contact": "wechat: x",
+        },
+    )
+    listing_id = created.json()["content_id"]
+    for status in ("pending", "rejected"):
+        session = client.session_factory()
+        session.get(Content, listing_id).status = status
+        session.commit()
+        session.close()
+        closed = client.post(f"/api/v1/listings/{listing_id}/close", headers=headers(owner), json={"reason": "rented"})
+        assert closed.status_code == 409, status
+        assert client.post(f"/api/v1/listings/{listing_id}/renew", headers=headers(owner)).status_code == 409
+        session = client.session_factory()
+        assert session.get(Content, listing_id).status == status
+        session.close()
+
+
 def test_direct_message_request_and_listing_bypass(client):
     host = register(client, "host@example.com", "房东")
     stranger = register(client, "stranger@example.com", "路人")

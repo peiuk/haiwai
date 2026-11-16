@@ -16,6 +16,7 @@ from app.feed import author_names
 from app.guard import first_status
 from app.privacy import is_room_member
 from app.recommend import country_blocked, is_roaming
+from app.rooms import require_not_banned
 from app.reports import ReportBody, report_receipt
 from app.models import (
     Channel,
@@ -238,6 +239,7 @@ def create_comment(
         raise APIError(403, "REGION_BLOCKED", "当前国家看不到这个频道")
     if not _can_view(session, room, user):
         raise APIError(403, "ROOM_PRIVATE", "这个房间需要先加入")
+    require_not_banned(session, [room.id], user.id)
     if body.content_id and body.parent_id:
         raise APIError(400, "VALIDATION_FAILED", "留言不能同时挂在帖子和另一条留言上")
     if body.content_id:

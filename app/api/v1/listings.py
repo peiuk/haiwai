@@ -357,6 +357,9 @@ def _owned_listing(session: Session, content_id: str, user: User) -> tuple[Conte
     ext = session.get(ListingExt, content_id)
     if content is None or ext is None or content.author_id != user.id or content.deleted_at is not None:
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
+    # 只有上过线的信息能结案 / 刷新：否则被拒或待审的可以「结案再刷新」绕过审核直接发布
+    if content.status not in {"published", "withdrawn"}:
+        raise APIError(409, "LISTING_NOT_LIVE", "这条信息还没通过审核，不能结案或刷新")
     return content, ext
 
 
