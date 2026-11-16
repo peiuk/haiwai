@@ -13,7 +13,7 @@ _CATEGORIES = {"房产", "招聘", "市场", "生活", "交流", "活动"}
 
 
 _TOKEN = re.compile(r"^[\w\u4e00-\u9fff_]{1,12}$")
-_HASH = re.compile(r"#([\w\u4e00-\u9fff_]{1,12})")
+_HASH = re.compile(r"[#\uff03]([\w\u4e00-\u9fff_]{1,12})")  # \u4e2d\u6587\u8f93\u5165\u6cd5\u5e38\u6253\u51fa\u5168\u89d2 \uff03
 
 
 def keyword_source_for(source: str | None, keywords: list[str]) -> str | None:

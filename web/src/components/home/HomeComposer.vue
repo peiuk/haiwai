@@ -4,6 +4,7 @@
 // 发布逻辑复用 POST /contents（同 PublishView）。
 import { computed, ref, watch } from "vue";
 import { jsonBody, request, uploadFile, type PublishResponse } from "../../api";
+import { hashTags } from "../../utils/post";
 import { useAuthStore } from "../../stores/auth";
 import { useToastStore } from "../../stores/toast";
 import Avatar from "../base/Avatar.vue";
@@ -23,8 +24,8 @@ const body = ref("");
 const title = ref("");
 const currentType = ref<ContentType>("text");
 const open = ref(false);
-const topics = ref<string[]>([]);
-const topicInput = ref("");
+// 话题不再单独输入：正文里写 #词 就是话题，后端按同样规则从正文里取
+const topics = computed(() => hashTags(body.value));
 // 城市话题：默认取注册时填的城市名，作为发帖自动带上的话题之一（可删除）。
 const cityTopic = ref("");
 const cityInited = ref(false);
@@ -49,19 +50,6 @@ const canPublish = computed(() => {
 function setType(tp: ContentType): void {
   currentType.value = tp;
   error.value = "";
-}
-
-function addTopic(raw: string): void {
-  const v = String(raw || "").replace(/^#+/, "").trim().slice(0, 20);
-  if (!v) return;
-  if (topics.value.length >= 5) return;
-  if (topics.value.includes(v)) return;
-  topics.value.push(v);
-  topicInput.value = "";
-}
-
-function removeTopic(i: number): void {
-  topics.value.splice(i, 1);
 }
 
 function triggerImage(): void {
@@ -142,7 +130,6 @@ async function submit(): Promise<void> {
       title: title.value.trim() || body.value.trim().slice(0, 40),
       body: body.value.trim(),
       post_type: currentType.value === "video" ? "video" : "text",
-      keywords: topics.value,
     };
     // 城市话题：有则默认随帖；用户删除了则显式传空串。
     if (cityTopic.value) payload.city_topic = cityTopic.value;
@@ -156,7 +143,6 @@ async function submit(): Promise<void> {
     toast.show("已发布，审核通过后会公开");
     body.value = "";
     title.value = "";
-    topics.value = [];
     imageKeys.value = [];
     videoKey.value = "";
     rightsConfirmed.value = false;
@@ -188,7 +174,7 @@ async function submit(): Promise<void> {
         v-model="body"
         :rows="open ? 4 : 1"
         maxlength="2000"
-        placeholder="分享你所在城市的发现…"
+        placeholder="分享你所在城市的发现… 写 #关键词 加话题"
         aria-label="帖子正文"
         @focus="open = true"
       ></textarea>
@@ -227,34 +213,15 @@ async function submit(): Promise<void> {
           <span>我确认这是本人原创，已取得出镜人物同意，且不含未授权音乐或影视片段。</span>
         </label>
 
-        <!-- 话题 -->
-        <div v-if="currentType === 'topic'" class="home-compose-extra">
-          <div class="field">
-            <label for="home-composer-topic">添加话题（最多 5 个）</label>
-            <input
-              id="home-composer-topic"
-              v-model="topicInput"
-              class="home-compose-topic-input"
-              maxlength="20"
-              placeholder="输入关键词，按 Enter 添加"
-              @keydown.enter.prevent="addTopic(topicInput)"
-            />
-          </div>
-          <button type="button" class="home-compose-tool" @click="addTopic(topicInput)">添加</button>
-        </div>
-        <div v-if="topics.length || cityTopic" class="home-compose-topics">
+        <p v-if="currentType === 'topic' && !topics.length" class="home-compose-hint">在正文里写 #关键词 就是话题，最多 5 个</p>
+        <div v-if="topics.length || cityTopic" class="home-compose-topics" aria-label="这条帖子会带上的话题">
           <span v-if="cityTopic" class="home-compose-topic home-compose-city-topic" title="城市话题">
             <BaseIcon name="i-pin" :size="12" />{{ cityTopic }}
             <button type="button" :aria-label="`删除城市话题 ${cityTopic}`" @click="cityTopic = ''">
               <BaseIcon name="i-close" :size="13" />
             </button>
           </span>
-          <span v-for="(t, i) in topics" :key="t" class="home-compose-topic">
-            #{{ t }}
-            <button type="button" :aria-label="`删除话题 ${t}`" @click="removeTopic(i)">
-              <BaseIcon name="i-close" :size="13" />
-            </button>
-          </span>
+          <span v-for="t in topics" :key="t" class="home-compose-topic">#{{ t }}</span>
         </div>
 
         <!-- 已选图片缩略图预览（上传成功即显示小图） -->
@@ -281,9 +248,6 @@ async function submit(): Promise<void> {
         </button>
         <button type="button" class="home-compose-tool" title="添加视频" @click="triggerVideo">
           <BaseIcon name="i-video" :size="16" /><span>视频</span>
-        </button>
-        <button type="button" class="home-compose-tool" title="添加话题" @click="currentType = 'topic'; open = true">
-          <BaseIcon name="i-hash" :size="16" /><span>话题</span>
         </button>
         <span class="home-compose-spacer"></span>
         <span class="home-compose-count" :class="{ over: countOver }">{{ count }} / {{ MAX_LEN }}</span>
@@ -412,8 +376,12 @@ async function submit(): Promise<void> {
   color: var(--muted);
   font-size: 12px;
 }
-.home-compose-extra input,
-.home-compose-topic-input {
+.home-compose-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.home-compose-extra input {
   width: 100%;
   min-height: 44px;
   padding: 7px 10px;

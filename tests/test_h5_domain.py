@@ -621,16 +621,6 @@ def test_listing_contact_keywords_like_and_recommendation(client):
     assert blocked_contact.json()["code"] == "CONTACT_LIMIT"
     assert "私信咨询" in blocked_contact.json()["message"]
 
-    words = client.post(
-        "/api/v1/ai/keywords",
-        headers=headers(owner),
-        json={"title": "出租单间", "body": "伦敦出租，租金面议", "category": "房产"},
-    )
-    assert words.status_code == 200
-    assert words.json()["keywords"][0] == "房产"
-    assert "租房" in words.json()["keywords"]
-    assert len(words.json()["keywords"]) <= 5
-
     liked = client.post(f"/api/v1/contents/{listing_id}/like", headers=headers(guest))
     assert liked.json()["liked"] is True
 

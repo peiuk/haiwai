@@ -15,7 +15,7 @@ from app.core.audit import write_audit
 from app.guard import blocked_term_in, first_status, hide_if_widely_reported, review_on
 from app.core.db import get_db
 from app.core.errors import APIError
-from app.keywords import clean_city_topic, collect_keywords, dump_keywords, load_keywords, resolve_keywords, suggest_keywords
+from app.keywords import clean_city_topic, collect_keywords, dump_keywords, load_keywords, resolve_keywords
 from app.privacy import can_view_content, is_private_room_content
 from app.reports import ReportBody, report_receipt
 from app.recommend import country_blocked, is_roaming
@@ -363,18 +363,6 @@ def report_content(
     hide_if_widely_reported(session, content)
     session.commit()
     return report_receipt(case)
-
-
-class KeywordBody(BaseModel):
-    title: str = ""
-    body: str = ""
-    category: str | None = None
-
-
-@router.post("/ai/keywords")
-def keywords(body: KeywordBody, _user: User = Depends(current_user)) -> dict[str, object]:
-    words = suggest_keywords(body.title, body.body, body.category)
-    return {"keywords": words, "source": "ai_auto", "max": 5}
 
 
 def _reaction(session: Session, user_id: str, content_id: str) -> ContentReaction:

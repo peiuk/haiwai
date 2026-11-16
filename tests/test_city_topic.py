@@ -55,6 +55,29 @@ def test_city_topic_overridden_by_explicit_value(client):
     assert created.json()["city_topic"] == "曼城"
 
 
+def test_hash_tags_in_body_and_city_are_searchable(client):
+    """正文里写 #词（半角或全角 ＃）就是关键词；城市自动带上；两者都能搜到。"""
+    from app.models import Content
+
+    token = _register_with_city(client, "city-hash@example.com", "伦敦")
+    verify(client, token, "+447700900905")
+    created = client.post(
+        "/api/v1/contents",
+        headers=headers(token),
+        json={"title": "周末去哪", "body": "推荐一家火锅 #伦敦美食 ＃周末好去处"},
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["keywords"] == ["伦敦美食", "周末好去处"]
+    assert created.json()["city_topic"] == "伦敦"
+    session = client.session_factory()
+    session.get(Content, created.json()["content_id"]).status = "published"
+    session.commit()
+    session.close()
+    for q in ("#周末好去处", "伦敦美食", "#伦敦"):
+        hits = client.get("/api/v1/search", params={"q": q}).json()["contents"]
+        assert [h["content_id"] for h in hits] == [created.json()["content_id"]], q
+
+
 def test_city_topic_absent_when_user_has_no_city(client):
     """用户注册未填城市 → 发帖不带城市话题。"""
     token = register(client, "city-none@example.com", "无城市用户")

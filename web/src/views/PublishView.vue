@@ -6,7 +6,7 @@
 // 官方外链登记（EmbedForm）从本页移除，另设入口（不在发布页混排）。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { hasOwnTitle } from "../utils/post";
+import { hashTags, hasOwnTitle } from "../utils/post";
 import {
   ApiRequestError,
   request,
@@ -29,7 +29,6 @@ import Checkbox from "../components/base/Checkbox.vue";
 import NoticeBar from "../components/base/NoticeBar.vue";
 import UploadField from "../components/common/UploadField.vue";
 import MultiUploadField from "../components/common/MultiUploadField.vue";
-import AiKeywordChips from "../components/publish/AiKeywordChips.vue";
 import ListingForm from "../components/publish/ListingForm.vue";
 
 const auth = useAuthStore();
@@ -49,7 +48,6 @@ const TYPE_OPTIONS: { value: ContentType; label: string; icon: string }[] = [
 const currentType = ref<ContentType>("text");
 const typePickerOpen = ref(false);
 const showImage = ref(false);
-const showTopicInput = ref(false);
 const showExtras = ref(false);
 const currentTypeMeta = computed(
   () => TYPE_OPTIONS.find((t) => t.value === currentType.value) ?? TYPE_OPTIONS[0],
@@ -64,12 +62,11 @@ const error = ref("");
 const body = ref("");
 const title = ref("");
 const channelId = ref("");
-const topics = ref<string[]>([]);
-const topicInput = ref("");
+// 话题不再单独输入：正文里写 #词 就是话题，后端按同样规则从正文里取
+const topics = computed(() => hashTags(body.value));
 // 城市话题：默认取注册时填的城市名，作为发帖自动带上的话题之一（可删除）。
 const cityTopic = ref("");
 const cityInited = ref(false);
-const aiWords = ref<string[]>([]);
 const videoKey = ref("");
 // 发视频两种方式：上传原创视频文件，或贴 YouTube / 哔哩哔哩外链（站内播放，不用确认原创）
 const videoSource = ref<"upload" | "link">("upload");
@@ -88,8 +85,6 @@ watch(currentType, () => {
 });
 
 const MAX_LEN = 2000;
-
-const userKeywords = computed(() => topics.value.slice(0, 5));
 
 // 「发布到」分三组：平台频道、我管的房间、其他公开房间。房间多了靠分组和下拉自身的滚动。
 const myRooms = ref<ChannelsResponse["items"]>([]);
@@ -110,7 +105,7 @@ const canPublish = computed(() => {
   if (currentType.value === "info" || busy.value || countOver.value) return false;
   if (!body.value.trim() || body.value.trim().length < 2) return false;
   if (currentType.value === "video" && !videoReady.value) return false;
-  if (currentType.value === "topic" && userKeywords.value.length === 0) return false;
+  if (currentType.value === "topic" && topics.value.length === 0) return false;
   return true;
 });
 
@@ -179,24 +174,8 @@ function setType(tp: ContentType): void {
   currentType.value = tp;
   typePickerOpen.value = false;
   submitError.value = "";
-  if (tp === "topic") showTopicInput.value = true;
 }
 
-// ---- 话题标签（#标签 可删 pill）----
-function addTopic(raw: string): void {
-  const v = String(raw || "").replace(/^#+/, "").trim().slice(0, 20);
-  if (!v) return;
-  if (topics.value.length >= 5) {
-    toast.show("最多 5 个话题");
-    return;
-  }
-  if (topics.value.includes(v)) return;
-  topics.value.push(v);
-  topicInput.value = "";
-}
-function removeTopic(index: number): void {
-  topics.value.splice(index, 1);
-}
 // ---- 图片上传（MultiUploadField，多选最多 4 张，带预览/进度）----
 
 const needPhone = ref(false);
@@ -223,8 +202,8 @@ async function submit(): Promise<void> {
     submitError.value = videoSource.value === "link" ? "请贴上视频链接" : "发视频需要上传视频文件，并勾选版权确认";
     return;
   }
-  if (currentType.value === "topic" && userKeywords.value.length === 0) {
-    submitError.value = "发话题需要至少一个话题";
+  if (currentType.value === "topic" && topics.value.length === 0) {
+    submitError.value = "发话题需要在正文里写至少一个 #话题";
     return;
   }
   busy.value = true;
@@ -233,7 +212,6 @@ async function submit(): Promise<void> {
       title: title.value.trim() || body.value.trim().slice(0, 40),
       body: body.value.trim(),
       post_type: currentType.value === "video" && videoSource.value === "upload" ? "video" : "text",
-      keywords: [...userKeywords.value, ...aiWords.value],
     };
     // 城市话题：有则默认随帖（后端也会用 city_label 兜底）；用户删除了则显式传空串。
     if (cityTopic.value) payload.city_topic = cityTopic.value;
@@ -246,8 +224,6 @@ async function submit(): Promise<void> {
       payload.video_key = videoKey.value;
       payload.rights_confirmed = rightsConfirmed.value;
     }
-    if (aiWords.value.length > 0) payload.keyword_source = "ai_auto";
-    else if (userKeywords.value.length > 0) payload.keyword_source = "user";
 
     const result = await request<PublishResponse>("/api/v1/contents", jsonBody(payload));
     success.value = result.status === "pending" ? "已提交，审核通过后会公开" : "已发布";
@@ -261,8 +237,6 @@ async function submit(): Promise<void> {
     }
     body.value = "";
     title.value = "";
-    topics.value = [];
-    aiWords.value = [];
     videoKey.value = "";
     videoUrl.value = "";
     imageKeys.value = [];
@@ -271,7 +245,6 @@ async function submit(): Promise<void> {
     cityTopic.value = auth.profile?.city_label ?? "";
     cityInited.value = true;
     showImage.value = false;
-    showTopicInput.value = false;
     showExtras.value = false;
     channelId.value = "";
     clearDraft();
@@ -327,7 +300,6 @@ function saveDraft(): void {
     const draft = {
       body: body.value,
       title: title.value,
-      topics: topics.value,
       type: currentType.value,
       channelId: channelId.value,
       cityTopic: cityTopic.value,
@@ -346,13 +318,12 @@ function restoreDraft(): void {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return;
     const draft = JSON.parse(raw) as {
-      body: string; title: string; topics: string[]; type: ContentType; channelId: string;
+      body: string; title: string; type: ContentType; channelId: string;
       cityTopic?: string; imageKeys?: string[]; videoKey?: string; rightsConfirmed?: boolean;
       videoSource?: "upload" | "link"; videoUrl?: string;
     };
     body.value = draft.body ?? "";
     title.value = draft.title ?? "";
-    topics.value = draft.topics ?? [];
     if (draft.type) currentType.value = draft.type;
     if (draft.channelId) channelId.value = draft.channelId;
     if (draft.cityTopic) cityTopic.value = draft.cityTopic;
@@ -390,10 +361,10 @@ watch(() => route.query.channel, (value) => {
 
 // 输入变化 → 防抖保存草稿
 watch(
-  [body, title, topics, currentType, channelId, cityTopic, imageKeys, videoKey, videoSource, videoUrl, rightsConfirmed],
+  [body, title, currentType, channelId, cityTopic, imageKeys, videoKey, videoSource, videoUrl, rightsConfirmed],
   () => {
     const hasContent =
-      body.value.trim() || title.value.trim() || topics.value.length || imageKeys.value.length || videoKey.value || videoUrl.value;
+      body.value.trim() || title.value.trim() || imageKeys.value.length || videoKey.value || videoUrl.value;
     // 内容全删掉时连草稿一起删：否则下次进来会恢复出已经删掉的文字
     if (hasContent) saveDraft();
     else clearDraft();
@@ -461,7 +432,7 @@ watch(
           class="body-input"
           rows="6"
           maxlength="2000"
-          placeholder="有什么新鲜事想分享？"
+          placeholder="有什么新鲜事想分享？写 #关键词 加话题"
           aria-label="正文"
           @keydown.ctrl.enter.exact.prevent="publishByKeyboard"
           @keydown.meta.enter.exact.prevent="publishByKeyboard"
@@ -472,21 +443,15 @@ watch(
           原创视频才允许上传文件；上传前请确认人物同意、无未授权音乐或影视片段。
         </NoticeBar>
 
-        <div v-if="showTopicInput || currentType === 'topic'" class="topics-field">
-          <div class="topics-input-row">
-            <span class="hash-prefix">#</span>
-            <input v-model="topicInput" class="topic-input" type="text" maxlength="20" placeholder="添加话题，按 Enter 确认" aria-label="话题" @keydown.enter.prevent="addTopic(topicInput)" />
-            <button type="button" class="topic-add" @click="addTopic(topicInput)">添加</button>
-          </div>
-          <div v-if="topics.length || cityTopic" class="topics">
-            <span v-if="cityTopic" class="tag city-tag" title="城市话题">
-              <BaseIcon name="i-pin" :size="12" />{{ cityTopic }}
-              <button type="button" :aria-label="`移除城市话题 ${cityTopic}`" @click="cityTopic = ''">
-                <BaseIcon name="i-close" :size="13" />
-              </button>
-            </span>
-            <span v-for="(t, i) in topics" :key="t" class="tag">#{{ t }}<button type="button" :aria-label="`移除话题 ${t}`" @click="removeTopic(i)"><BaseIcon name="i-close" :size="13" /></button></span>
-          </div>
+        <p v-if="currentType === 'topic' && !topics.length" class="topics-hint">在正文里写 #关键词 就是话题，最多 5 个</p>
+        <div v-if="topics.length || cityTopic" class="topics" aria-label="这条帖子会带上的话题">
+          <span v-if="cityTopic" class="tag city-tag" title="城市话题">
+            <BaseIcon name="i-pin" :size="12" />{{ cityTopic }}
+            <button type="button" :aria-label="`移除城市话题 ${cityTopic}`" @click="cityTopic = ''">
+              <BaseIcon name="i-close" :size="13" />
+            </button>
+          </span>
+          <span v-for="t in topics" :key="t" class="tag">#{{ t }}</span>
         </div>
 
         <!-- 原创视频字段 -->
@@ -533,16 +498,11 @@ watch(
 
         <div v-if="showExtras" class="extra-fields publish-more">
           <TextField id="publish-title" v-model="title" label="标题（可选）" hint="不填则取正文前 40 字" />
-          <AiKeywordChips
-            v-if="currentType === 'text' || currentType === 'topic'"
-            :title="title" :body="body" :user-keyword-count="userKeywords.length" @change="aiWords = $event"
-          />
         </div>
 
         <!-- 工具栏：按需展开附件、话题和可选设置 -->
         <div class="toolbar">
           <button v-if="currentType !== 'video'" type="button" class="tool-btn" :class="{ active: showImage || imageKeys.length }" aria-label="添加图片" :aria-pressed="showImage" @click="showImage = !showImage"><BaseIcon name="i-image" :size="19" /></button>
-          <button type="button" class="tool-btn" :class="{ active: showTopicInput || currentType === 'topic' }" aria-label="添加话题" :aria-pressed="showTopicInput || currentType === 'topic'" @click="showTopicInput = !showTopicInput"><BaseIcon name="i-hash" :size="19" /></button>
           <button type="button" class="tool-btn" :class="{ active: showExtras }" aria-label="更多发布设置" :aria-expanded="showExtras" @click="showExtras = !showExtras"><BaseIcon name="i-more" :size="19" /></button>
           <span class="spacer"></span>
           <span class="count" :class="{ over: countOver }">{{ count }} / {{ MAX_LEN }}</span>
@@ -709,48 +669,15 @@ watch(
   gap: var(--sp-3);
 }
 
-/* 话题标签（#标签 可删 pill）*/
-.topics-field { display: grid; gap: 8px; }
-.topics-input-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 0 8px 0 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg);
-}
-.hash-prefix { font-size: 15px; font-weight: 700; color: var(--muted); }
-.topic-input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 14px;
-  outline: none;
-}
-.topic-add {
-  flex-shrink: 0;
-  min-height: 30px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.topic-add:hover { background: var(--accent); color: var(--on-accent); }
+/* 话题：正文里 #词 的预览，城市话题可删 */
+.topics-hint { margin: 0; color: var(--muted); font-size: 13px; }
 .topics { display: flex; flex-wrap: wrap; gap: 6px; }
 .topics .tag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-height: 28px;
-  padding: 0 6px 0 12px;
+  padding: 0 12px;
   border-radius: var(--r-pill);
   background: var(--accent-soft);
   color: var(--accent-ink);

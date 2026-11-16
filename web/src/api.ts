@@ -524,13 +524,6 @@ export type ContentDetail = {
 
 // ---- Phase 4：发布 / 分类信息 / 外链同意 -------------------------------
 
-// POST /ai/keywords 响应
-export type KeywordResponse = {
-  keywords: string[];
-  source: "ai_auto";
-  max: number;
-};
-
 // POST /contents 与 /listings 通用响应
 export type PublishResponse = {
   content_id: string;

@@ -128,17 +128,12 @@ note(
     /category\.trim\(\) !== ""/.test(listingForm),
 );
 
-// ⑥ AI 关键词（check-h5 / §18.5）
-const chips = src("components/publish/AiKeywordChips.vue");
+// ⑥ 话题：正文里写 #词，前端预览与后端同一规则（≤5 个 / 单个 ≤12 字）
 const keywordsPy = read("app/keywords.py");
-const publishView = src("views/PublishView.vue");
+const postUtils = src("utils/post.ts");
 note(
-  "⑥ AI 关键词：≤5 个 / 单个 ≤12 字 / 用户已填不触发",
-  /slice\(0, result\.max \?\? 5\)/.test(chips) &&
-    /length <= 12/.test(chips) &&
-    /AI_MAX = 5/.test(keywordsPy) &&
-    /userKeywords\.value\.length/.test(publishView) &&
-    /keyword_source = "ai_auto"/.test(publishView),
+  "⑥ 话题：正文 #词 ≤5 个 / 单个 ≤12 字，前后端同规则",
+  /AI_MAX = 5/.test(keywordsPy) && /_HASH = re\.compile\(r"\[#/.test(keywordsPy) && /\{1,12\}/.test(postUtils) && /length >= 5/.test(postUtils),
 );
 
 // ⑦ 全站合规（§7.1 / §7.4 / §7.5）
