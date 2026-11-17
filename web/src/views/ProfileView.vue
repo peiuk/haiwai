@@ -5,12 +5,11 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
+  jsonBody,
   request,
   toMessage,
   type MeProfile,
   type BlocksResponse,
-  type Channel,
-  type ChannelsResponse,
   type FavoritesResponse,
   type MyPostsResponse,
   type MyRoomsResponse,
@@ -58,8 +57,7 @@ const roomGroups = computed(() => [
 ]);
 
 // ---- 我的帖子 ----
-type MyPost = { content_id: string; title: string; status: string; summary: string | null };
-const posts = ref<MyPost[]>([]);
+const posts = ref<MyPostsResponse["items"]>([]);
 
 // ---- 收藏 ----
 const favorites = ref<FavoritesResponse["items"]>([]);
@@ -137,8 +135,24 @@ async function loadAll(): Promise<void> {
 }
 
 // ---- 状态文案 ----
+// ---- 我的分类信息：续期 / 结案 ----
+const listingBusy = ref("");
+
+async function listingAction(contentId: string, action: "renew" | "close"): Promise<void> {
+  listingBusy.value = contentId;
+  try {
+    await request(`/api/v1/listings/${contentId}/${action}`, jsonBody(action === "close" ? { reason: "withdrawn" } : {}));
+    toast.show(action === "close" ? "已结案，联系方式已关闭" : "已续期，30 天后到期");
+    posts.value = (await request<MyPostsResponse>("/api/v1/me/posts")).items;
+  } catch (err) {
+    toast.show(toMessage(err)); // 例如还没到可以续期的时间（到期前 3 天内才能续）
+  } finally {
+    listingBusy.value = "";
+  }
+}
+
 function statusLabel(status: string): string {
-  return ({ published: "已公开", pending: "审核中", rejected: "未通过", removed: "已下架" } as Record<string, string>)[status] ?? status;
+  return ({ published: "已公开", pending: "审核中", rejected: "未通过", removed: "已下架", withdrawn: "已结案" } as Record<string, string>)[status] ?? status;
 }
 function reportStatusLabel(status: string): string {
   return ({ open: "处理中", resolved: "已处理", dismissed: "已驳回" } as Record<string, string>)[status] ?? status;
@@ -223,33 +237,20 @@ async function loadMoreRooms(): Promise<void> {
 
 // ---- 创建房间 ----
 
+// 房间不属于任何频道；想出现在某个频道里，由官方指定房间位，或把帖子推送到频道（审核后）。
 const roomForm = ref({
   name: "",
-  parent_channel_id: "",
   room_type: "general",
   is_private: false,
 });
-const parentChannels = ref<Channel[]>([]);
 const roomFormOpen = ref(false);
 const roomFormBusy = ref(false);
 const roomFormError = ref("");
 
-const officialParents = computed(() =>
-  parentChannels.value.filter((c) => c.kind.startsWith("official")),
-);
-
-async function openCreateRoom(): Promise<void> {
-  roomForm.value = { name: "", parent_channel_id: "", room_type: "general", is_private: false };
+function openCreateRoom(): void {
+  roomForm.value = { name: "", room_type: "general", is_private: false };
   roomFormError.value = "";
   roomFormOpen.value = true;
-  if (!parentChannels.value.length) {
-    try {
-      const body = await request<ChannelsResponse>("/api/v1/channels");
-      parentChannels.value = body.items;
-    } catch (err) {
-      roomFormError.value = toMessage(err);
-    }
-  }
 }
 
 async function submitCreateRoom(): Promise<void> {
@@ -331,21 +332,30 @@ watch(
         <h3>我的帖子 <span>{{ posts.length }} 条</span></h3>
         <p v-if="!posts.length" class="me-empty">还没有发布内容。</p>
         <template v-else>
-          <component
-            :is="post.status === 'published' ? 'button' : 'div'"
-            v-for="post in posts"
-            :key="post.content_id"
-            class="me-row"
-            :type="post.status === 'published' ? 'button' : undefined"
-            @click="post.status === 'published' && router.push({ name: 'content', params: { id: post.content_id } })"
-          >
-            <BaseIcon name="i-reply" :size="20" />
-            <span class="mr-main">
-              <span class="mr-t">{{ post.title }}</span>
-              <span v-if="post.summary && hasOwnTitle(post.title, post.summary)" class="mr-s">{{ post.summary }}</span>
-            </span>
-            <span class="status-pill" :class="post.status">{{ statusLabel(post.status) }}</span>
-          </component>
+          <template v-for="post in posts" :key="post.content_id">
+            <component
+              :is="post.status === 'published' ? 'button' : 'div'"
+              class="me-row"
+              :type="post.status === 'published' ? 'button' : undefined"
+              @click="post.status === 'published' && router.push({ name: 'content', params: { id: post.content_id } })"
+            >
+              <BaseIcon name="i-reply" :size="20" />
+              <span class="mr-main">
+                <span class="mr-t">{{ post.title }}</span>
+                <span v-if="post.summary && hasOwnTitle(post.title, post.summary)" class="mr-s">{{ post.summary }}</span>
+              </span>
+              <span class="status-pill" :class="post.status">{{ statusLabel(post.status) }}</span>
+            </component>
+            <!-- 分类信息 30 天过期：发布页承诺了「可在我的续期」，入口在这里 -->
+            <div v-if="post.type === 'listing' && (post.status === 'published' || post.status === 'withdrawn')" class="listing-actions">
+              <BaseButton size="sm" variant="outline" :loading="listingBusy === post.content_id" @click="listingAction(post.content_id, 'renew')">
+                {{ post.closed ? "重新上架 30 天" : "续期 30 天" }}
+              </BaseButton>
+              <BaseButton v-if="!post.closed" size="sm" variant="ghost" :disabled="listingBusy === post.content_id" @click="listingAction(post.content_id, 'close')">
+                已成交，结案
+              </BaseButton>
+            </div>
+          </template>
         </template>
       </div>
 
@@ -518,13 +528,6 @@ watch(
               required
             />
           </label>
-          <label class="field">
-            <span class="field-label">挂在官方频道下</span>
-            <select id="room-parent-channel" v-model="roomForm.parent_channel_id" class="field-input" required>
-              <option value="" disabled>请选择官方频道</option>
-              <option v-for="c in officialParents" :key="c.id" :value="c.id">{{ c.name_hans }}</option>
-            </select>
-          </label>
           <fieldset class="field">
             <legend class="field-label">房间类型</legend>
             <div class="room-type-grid">
@@ -629,6 +632,7 @@ watch(
 .favorites-list { padding-left: var(--sp-4); border-top: 1px solid var(--border); }
 .favorites-list h4 { margin: var(--sp-3) var(--sp-4) var(--sp-1); font-size: var(--fs-13); }
 .favorites-list a.me-row { text-decoration: none; }
+.listing-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: 0 var(--sp-4) var(--sp-3) calc(var(--sp-4) + 32px); }
 .load-error { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); }
 .account-details > summary { cursor: pointer; list-style: none; justify-content: space-between; }
 .account-details > summary::-webkit-details-marker { display: none; }

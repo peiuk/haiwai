@@ -9,13 +9,13 @@ from app.keywords import load_keywords
 from app.models import Channel, ChannelItem, ChannelSubscription, Content, ContentReaction, ListingExt, User, as_utc, utcnow
 from app.privacy import viewable
 
-MAX_LISTING_IMAGES = 4
+MAX_LISTING_IMAGES = 6
 # shortcut: 关注流只看最新的这么多条收录（未读数也只在这个范围里数）；要翻到更早的内容时改成按游标在数据库里分页。
 FEED_WINDOW = 500
 
 
 def image_keys_of(content: Content) -> list[str]:
-    """返回规范化后的图片 key 列表：去重、去空、最多 4 张，并兼容只有单列 image_key 的旧数据。"""
+    """返回规范化后的图片 key 列表：去重、去空、最多 6 张，并兼容只有单列 image_key 的旧数据。"""
     raw = getattr(content, "image_keys_json", None) or "[]"
     try:
         parsed = json.loads(raw)

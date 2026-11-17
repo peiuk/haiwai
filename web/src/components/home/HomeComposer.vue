@@ -13,11 +13,10 @@ import BaseIcon from "../base/BaseIcon.vue";
 const auth = useAuthStore();
 const toast = useToastStore();
 
-type ContentType = "text" | "video" | "topic";
+type ContentType = "text" | "video";
 const TYPES: { value: ContentType; label: string; icon: string }[] = [
   { value: "text", label: "图文", icon: "i-image" },
   { value: "video", label: "视频", icon: "i-video" },
-  { value: "topic", label: "话题", icon: "i-hash" },
 ];
 
 const body = ref("");
@@ -32,7 +31,6 @@ const cityInited = ref(false);
 const imageKeys = ref<string[]>([]);
 const imageBusy = ref(false);
 const videoKey = ref("");
-const rightsConfirmed = ref(false);
 const busy = ref(false);
 const error = ref("");
 
@@ -42,8 +40,7 @@ const countOver = computed(() => count.value > MAX_LEN);
 
 const canPublish = computed(() => {
   if (!body.value.trim() || body.value.trim().length < 2) return false;
-  if (currentType.value === "video" && (!videoKey.value || !rightsConfirmed.value)) return false;
-  if (currentType.value === "topic" && topics.value.length === 0) return false;
+  if (currentType.value === "video" && !videoKey.value) return false;
   return true;
 });
 
@@ -63,10 +60,10 @@ async function onImage(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
   if (!files.length) return;
-  const room = 4 - imageKeys.value.length;
+  const room = 6 - imageKeys.value.length;
   const picked = files.slice(0, room);
   if (picked.length < files.length) {
-    toast.show("最多上传 4 张图片");
+    toast.show("最多上传 6 张图片");
   }
   imageBusy.value = true;
   let failed = 0;
@@ -135,17 +132,13 @@ async function submit(): Promise<void> {
     if (cityTopic.value) payload.city_topic = cityTopic.value;
     else if (cityInited.value) payload.city_topic = "";
     if (imageKeys.value.length) payload.image_keys = imageKeys.value;
-    if (currentType.value === "video") {
-      payload.video_key = videoKey.value;
-      payload.rights_confirmed = rightsConfirmed.value;
-    }
+    if (currentType.value === "video") payload.video_key = videoKey.value;
     await request<PublishResponse>("/api/v1/contents", jsonBody(payload));
     toast.show("已发布，审核通过后会公开");
     body.value = "";
     title.value = "";
     imageKeys.value = [];
     videoKey.value = "";
-    rightsConfirmed.value = false;
     currentType.value = "text";
     open.value = false;
     // 发布成功后恢复默认城市话题（下次发帖仍默认带上）
@@ -196,7 +189,7 @@ async function submit(): Promise<void> {
           </button>
         </div>
 
-        <!-- 视频标题 / 版权确认 -->
+        <!-- 视频标题 -->
         <div v-if="currentType === 'video'" class="home-compose-extra">
           <div class="field">
             <label for="home-composer-title">视频标题（选填）</label>
@@ -208,12 +201,7 @@ async function submit(): Promise<void> {
             />
           </div>
         </div>
-        <label v-if="currentType === 'video'" class="home-compose-check">
-          <input id="home-composer-rights" v-model="rightsConfirmed" type="checkbox" />
-          <span>我确认这是本人原创，已取得出镜人物同意，且不含未授权音乐或影视片段。</span>
-        </label>
 
-        <p v-if="currentType === 'topic' && !topics.length" class="home-compose-hint">在正文里写 #关键词 就是话题，最多 5 个</p>
         <div v-if="topics.length || cityTopic" class="home-compose-topics" aria-label="这条帖子会带上的话题">
           <span v-if="cityTopic" class="home-compose-topic home-compose-city-topic" title="城市话题">
             <BaseIcon name="i-pin" :size="12" />{{ cityTopic }}
@@ -376,11 +364,6 @@ async function submit(): Promise<void> {
   color: var(--muted);
   font-size: 12px;
 }
-.home-compose-hint {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-}
 .home-compose-extra input {
   width: 100%;
   min-height: 44px;
@@ -391,21 +374,6 @@ async function submit(): Promise<void> {
   color: var(--text);
   font: inherit;
   font-size: 13px;
-}
-.home-compose-check {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 10px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.home-compose-check input {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  accent-color: var(--accent-strong);
 }
 .home-compose-topics {
   display: flex;

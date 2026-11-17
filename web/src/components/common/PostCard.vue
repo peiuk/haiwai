@@ -296,9 +296,9 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 媒体：图片网格（点击开灯箱） / 视频（内联自动播放） -->
-      <div v-if="imageKeys.length" class="post-media" :class="`media--n${Math.min(imageKeys.length, 4)}`">
+      <div v-if="imageKeys.length" class="post-media" :class="`media--n${Math.min(imageKeys.length, 6)}`">
         <img
-          v-for="(key, i) in imageKeys.slice(0, 4)"
+          v-for="(key, i) in imageKeys.slice(0, 6)"
           :key="key"
           :src="`/api/v1/uploads/${key}`"
           :alt="`${title} 图片 ${i + 1}`"
@@ -630,6 +630,14 @@ a.post-avatar:hover {
 }
 .media--n4 {
   grid-template-columns: repeat(2, 1fr);
+}
+/* 5 张：左边大图占两行，右边 2×2；6 张：3×2 */
+.media--n5,
+.media--n6 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.media--n5 .media-frame:first-child {
+  grid-row: span 2;
 }
 .media-frame {
   width: 100%;

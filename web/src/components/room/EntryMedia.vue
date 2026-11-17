@@ -39,6 +39,7 @@ defineProps<{
     :src="`/api/v1/uploads/${videoKey}`"
     :poster="poster ? `/api/v1/uploads/${poster}` : undefined"
     controls
+    controlslist="nodownload"
     playsinline
     preload="metadata"
     :aria-label="`${title} 视频`"

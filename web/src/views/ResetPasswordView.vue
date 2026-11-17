@@ -41,7 +41,7 @@ async function submit(): Promise<void> {
     </div>
     <div v-else-if="!token" class="adm-login-card">
       <h1>链接不完整</h1>
-      <p>请打开管理员发给你的完整重置链接。</p>
+      <p>请打开邮件里（或管理员发给你）的完整重置链接。</p>
       <RouterLink class="adm-login-back" to="/">返回首页</RouterLink>
     </div>
     <form v-else class="adm-login-card" @submit.prevent="submit">

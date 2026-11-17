@@ -117,7 +117,7 @@ const images = computed(() => {
   const d = detail.value;
   if (!d) return [];
   const keys = d.image_keys?.length ? d.image_keys : d.image_key ? [d.image_key] : [];
-  return keys.slice(0, 4).map((k) => `/api/v1/uploads/${k}`);
+  return keys.slice(0, 6).map((k) => `/api/v1/uploads/${k}`);
 });
 const publishedText = computed(() => {
   const at = detail.value?.published_at;
@@ -349,6 +349,26 @@ function leaveOverlay(): void {
   if (!props.standalone) emit("close");
 }
 
+// 删除回复：回复作者本人、帖子作者或房主（后端给 can_delete）。第一次点只变成「确认删除」，再点才真删。
+const confirmingReply = ref("");
+
+async function removeComment(comment: RoomComment): Promise<void> {
+  if (confirmingReply.value !== comment.id) {
+    confirmingReply.value = comment.id;
+    return;
+  }
+  try {
+    await request(`/api/v1/contents/${props.contentId}/comments/${comment.id}`, { method: "DELETE" });
+    comments.value = comments.value.filter((item) => item.id !== comment.id);
+    repliesTotal.value = Math.max(0, repliesTotal.value - 1);
+    toast.show("回复已删除");
+  } catch (err) {
+    toast.show(err instanceof Error ? err.message : "删除没有成功");
+  } finally {
+    confirmingReply.value = "";
+  }
+}
+
 async function toggleCommentLike(comment: RoomComment): Promise<void> {
   if (!props.contentId || needLogin("点赞", () => void toggleCommentLike(comment))) return;
   try {
@@ -482,6 +502,7 @@ watch(detail, async (value) => {
                 class="cd-video"
                 :src="`/api/v1/uploads/${detail.video_key}`"
                 controls
+                controlslist="nodownload"
                 playsinline
                 preload="metadata"
                 :aria-label="`${detail.title} 视频`"
@@ -569,6 +590,9 @@ watch(detail, async (value) => {
                     @click="toggleCommentLike(comment)"
                   >
                     <BaseIcon :name="comment.liked ? 'i-heart-fill' : 'i-heart'" :size="16" /> {{ comment.like_count || "" }}
+                  </button>
+                  <button v-if="comment.can_delete" class="cd-reply-like" type="button" @click="removeComment(comment)">
+                    {{ confirmingReply === comment.id ? "确认删除" : "删除" }}
                   </button>
                 </div>
               </li>

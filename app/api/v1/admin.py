@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import LoginBody, bearer, current_user, issue_tokens, throttle
+from app.api.v1.auth import RESET_LINK_HOURS, LoginBody, bearer, current_user, issue_tokens, throttle
 from app.api.v1.channels import TextBody
 from app.api.v1.uploads import delete_object
 from app.core.audit import client_ip, recent_server_errors, write_audit
@@ -25,6 +25,7 @@ from app.feed import image_keys_of
 from app.models import (
     AuditLog,
     Channel,
+    ChannelCollaborator,
     ChannelItem,
     CommentLike,
     ContactView,
@@ -67,6 +68,9 @@ def require_super(admin: User = Depends(require_admin)) -> User:
     """超级管理员才能做的事：彻底删除、管理频道和国家、任免管理员、导出数据。"""
     if not admin.is_super:
         raise APIError(403, "SUPER_ONLY", "这项操作需要超级管理员权限")
+    # 超级管理员能导出全部用户数据、彻底删除：只凭密码不够。开发环境不强制，免得本地每次都要掏手机。
+    if not admin.totp_secret and get_settings().app_env != "dev":
+        raise APIError(403, "TOTP_SETUP_REQUIRED", "超级管理员要先在「账号安全」里开启两步验证，才能做这项操作")
     return admin
 
 
@@ -81,7 +85,7 @@ class AdminLoginBody(LoginBody):
 @router.post("/login")
 def admin_login(body: AdminLoginBody, request: Request, session: Session = Depends(get_db)) -> dict[str, str]:
     """后台独立登录：密码对但不是管理员也拒绝，不给普通账号发后台用的令牌。"""
-    throttle(session, f"admin-login:{body.email}", limit=10, window_seconds=15 * 60)
+    throttle(session, f"admin-login:{body.email}:{client_ip(request)}", limit=10, window_seconds=15 * 60)
     # 同一个来源换着邮箱试也要拦
     throttle(session, f"admin-login-ip:{client_ip(request)}", limit=30, window_seconds=15 * 60)
     user = session.scalar(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
@@ -133,19 +137,23 @@ def _paged(session: Session, query, order, page: int) -> tuple[list, int]:
 
 
 def _was_taken_down(session: Session, target_type: str, target_id: str) -> bool:
-    """这条内容 / 留言是不是被管理员下架的；作者自己删的不能被后台"复活"。"""
-    return (
-        session.scalar(
-            select(AuditLog.id)
-            .where(
-                AuditLog.target_type == target_type,
-                AuditLog.target_id == target_id,
-                AuditLog.action.in_((f"admin.{target_type}.remove", "moderation.remove")),
-            )
-            .limit(1)
+    """这条内容 / 留言是不是被管理员下架的；作者（或房主）自己删的不能被后台"复活"。
+
+    看最近一次「下架 / 恢复 / 删除」是谁做的：只查有没有过管理员下架记录的话，
+    下架 → 恢复 → 作者自己删 之后，那条旧记录还在，后台仍然能把它恢复出来。
+    """
+    by_admin = (f"admin.{target_type}.remove", "moderation.remove")
+    latest = session.scalar(
+        select(AuditLog.action)
+        .where(
+            AuditLog.target_type == target_type,
+            AuditLog.target_id == target_id,
+            AuditLog.action.in_((*by_admin, f"admin.{target_type}.restore", "content.delete", "room.content.remove", "comment.remove")),
         )
-        is not None
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .limit(1)
     )
+    return latest in by_admin
 
 
 def _history(session: Session, target_type: str, target_id: str) -> list[dict[str, object]]:
@@ -180,7 +188,23 @@ def _cases(session: Session, where) -> list[dict[str, object]]:
     ]
 
 
-_PENDING_CONTENT = (Content.status == "pending", Content.deleted_at.is_(None))
+# 房间投稿（非房主 / 协作者发在已上线房间里、还没公开过的帖子）归房主审，不进后台队列；
+# 管理员点了「通过」会绕过房主。公开过又被举报隐藏的（published_at 有值）仍归后台。
+_ROOM_SUBMISSION = (
+    select(ChannelItem.content_id)
+    .join(Channel, Channel.id == ChannelItem.channel_id)
+    .where(
+        ChannelItem.content_id == Content.id,
+        Channel.kind == "room",
+        Channel.is_active.is_(True),
+        func.coalesce(Channel.owner_id, "") != func.coalesce(Content.author_id, ""),
+        ~select(ChannelCollaborator.user_id)
+        .where(ChannelCollaborator.channel_id == Channel.id, ChannelCollaborator.user_id == Content.author_id)
+        .exists(),
+    )
+    .exists()
+)
+_PENDING_CONTENT = (Content.status == "pending", Content.deleted_at.is_(None), or_(Content.published_at.is_not(None), ~_ROOM_SUBMISSION))
 _PENDING_COMMENT = (RoomComment.status == "pending", RoomComment.removed_at.is_(None))
 _PENDING_CHANNEL = (
     Channel.review_status == "pending",
@@ -482,9 +506,6 @@ def remove_user_avatar(
     return {"user_id": target.id, "avatar_key": ""}
 
 
-RESET_LINK_HOURS = 24
-
-
 @guarded.post("/users/{user_id}/reset-link")
 def create_reset_link(
     user_id: str,
@@ -715,6 +736,12 @@ def set_content_featured(
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
     if body.featured and content.status != "published":
         raise APIError(409, "NO_CHANGE", "只有已发布的内容可以设为精选")
+    in_private_room = select(ChannelItem.content_id).join(Channel, Channel.id == ChannelItem.channel_id).where(
+        ChannelItem.content_id == content.id, Channel.kind == "room", Channel.is_private.is_(True)
+    )
+    # 推荐流整体排除私密房间的内容（只给成员看），精选了也不会出现，干脆不让设
+    if body.featured and session.scalar(in_private_room.limit(1)) is not None:
+        raise APIError(409, "PRIVATE_ROOM", "私密房间的帖子只给成员看，不能设为精选")
     if (content.featured_at is not None) == body.featured:
         raise APIError(409, "NO_CHANGE", "已经是这个状态")
     content.featured_at = utcnow() if body.featured else None

@@ -240,7 +240,7 @@ watch(userId, () => {
           </div>
           <p v-if="profile.bio" class="profile-bio" data-ugc>{{ profile.bio }}</p>
           <p v-if="profile.city_label || joinedText" class="profile-sub">
-            <span v-if="profile.city_label"><BaseIcon name="i-pin" :size="15" /> {{ profile.city_label }}</span>
+            <RouterLink v-if="profile.city_label" class="profile-city" :to="{ name: 'search', query: { q: `#${profile.city_label}` } }"><BaseIcon name="i-pin" :size="15" /> {{ profile.city_label }}</RouterLink>
             <span v-if="joinedText">{{ joinedText }}</span>
           </p>
           <p class="profile-counts">
@@ -544,10 +544,18 @@ watch(userId, () => {
   color: var(--muted);
   font-size: var(--fs-14);
 }
-.profile-sub span {
+.profile-sub span,
+.profile-city {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+.profile-city {
+  color: inherit;
+  text-decoration: none;
+}
+.profile-city:hover {
+  text-decoration: underline;
 }
 .profile-counts strong {
   color: var(--text);

@@ -34,8 +34,9 @@ _UNITS = {
     "sale": {"总价"},
     "commercial": {"月", "总价"},
     "secondhand": {""},
-    "job": {"小时", "月", "年"},
+    "job": {"小时", "天", "周", "月"},
 }
+NEGOTIABLE = "面议"  # 价格面议：不带单位
 _CURRENCY = {"UK": "GBP", "JP": "JPY", "CA": "CAD"}
 
 
@@ -54,7 +55,7 @@ class ListingBody(BaseModel):
     keywords: list[str] = []
     city_topic: str | None = None
     keyword_source: str | None = None
-    # image_key 兼容旧客户端的单图提交；新客户端优先使用 image_keys（最多 4 张）。
+    # image_key 兼容旧客户端的单图提交；新客户端优先使用 image_keys（最多 6 张）。
     image_key: str | None = None
     image_keys: list[str] = []
 
@@ -107,7 +108,9 @@ def _kind_for(body: ListingBody) -> str:
     expected = {"房产": {"rent", "sale", "commercial"}, "市场": {"secondhand"}, "招聘": {"job"}}
     if body.kind not in expected[body.category]:
         raise APIError(400, "VALIDATION_FAILED", "分类和类型不匹配")
-    if body.price_unit not in _UNITS[body.kind]:
+    if body.price_amount == NEGOTIABLE:
+        body.price_unit = ""
+    elif body.price_unit not in _UNITS[body.kind]:
         raise APIError(400, "VALIDATION_FAILED", "价格单位不正确")
     return body.kind
 

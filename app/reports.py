@@ -1,6 +1,10 @@
+from fastapi import Request
 from pydantic import BaseModel, field_validator, model_validator
+from sqlalchemy.orm import Session
 
-from app.models import ModerationCase
+from app.api.v1.auth import throttle
+from app.core.audit import client_ip
+from app.models import ModerationCase, User
 
 REASONS = {
     "scam": "诈骗、虚假信息或可疑交易",
@@ -33,6 +37,11 @@ class ReportBody(BaseModel):
             raise ValueError("补充说明最多 300 个字")
         self.detail = note
         return self
+
+
+def limit_reports(session: Session, request: Request, user: User | None) -> None:
+    """举报限流：登录用户按账号、游客按来源 IP，一小时 10 次。不然脚本对每个用户、每条帖子各举报一次，真举报就被埋掉了。"""
+    throttle(session, f"report:{user.id if user else client_ip(request)}", limit=10, window_seconds=60 * 60)
 
 
 def report_receipt(case: ModerationCase) -> dict[str, str]:

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// 分类信息详情图片横滑（MASTER §22.7）：16:10，最多 4 张，滚动吸附。
-// 后端 image_keys_json 支持 1–4 张，旧数据回退到单列 image_key；无图时显示占位而不是虚构图片。
+// 分类信息详情图片横滑（MASTER §22.7）：16:10，最多 6 张，滚动吸附。
+// 后端 image_keys_json 支持 1–6 张，旧数据回退到单列 image_key；无图时显示占位而不是虚构图片。
 import { computed, ref } from "vue";
 import BaseIcon from "../base/BaseIcon.vue";
 
@@ -9,7 +9,7 @@ const props = withDefaults(
   { keys: () => [], alt: "分类信息图片" },
 );
 
-const images = computed(() => (props.keys ?? []).filter(Boolean).slice(0, 4));
+const images = computed(() => (props.keys ?? []).filter(Boolean).slice(0, 6));
 const strip = ref<HTMLElement | null>(null);
 const index = ref(0);
 

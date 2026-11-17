@@ -176,7 +176,7 @@ watch(channelId, () => void load(), { immediate: true });
           <div v-else class="room-grid">
             <RouterLink v-for="room in visibleRooms" :key="room.id" :to="{ name: 'room', params: { id: room.id } }" class="room-card">
               <strong data-ugc>{{ room.name_hans }}</strong>
-              <span>{{ room.is_private ? "私密" : "公开" }} · {{ room.room_type_label }}</span>
+              <span>{{ room.slot_label ? `${room.slot_label} · ` : "" }}{{ room.is_private ? "私密" : "公开" }} · {{ room.room_type_label }}</span>
             </RouterLink>
           </div>
           <BaseButton v-if="roomCount < (detail.rooms?.length ?? 0)" variant="ghost" size="sm" @click="roomCount += 6">查看更多房间</BaseButton>

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // 分类信息多图上传：逐个走 /uploads/sign → PUT → object_key，最终只把 key 数组交给表单。
-// 上限与后端 MAX_LISTING_IMAGES 对齐（4 张）；单图接口由 UploadField 负责。
+// 上限与后端 MAX_LISTING_IMAGES 对齐（6 张）；单图接口由 UploadField 负责。
 import { computed, ref } from "vue";
 import { toMessage, uploadFile } from "../../api";
 import { useToastStore } from "../../stores/toast";
+import BaseIcon from "../base/BaseIcon.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -16,7 +17,7 @@ const props = withDefaults(
     hint?: string;
     disabled?: boolean;
   }>(),
-  { max: 4, hint: "", disabled: false },
+  { max: 6, hint: "", disabled: false },
 );
 
 const emit = defineEmits<{ (e: "update:modelValue", value: string[]): void }>();
@@ -94,28 +95,30 @@ function remove(index: number): void {
 
 <template>
   <div class="multi-upload">
-    <label :for="id">{{ label }}（{{ modelValue.length }}/{{ max }}）</label>
-    <input
-      :id="id"
-      class="input"
-      type="file"
-      multiple
-      :accept="accept"
-      :disabled="disabled || busy || atLimit"
-      @change="onFile"
-    />
-    <p v-if="hint" class="field-hint">{{ hint }}</p>
-    <p v-if="busy" class="field-status" aria-live="polite">上传中…</p>
-    <p v-else-if="atLimit" class="field-status">已达上限，移除一张后可继续添加</p>
-    <ul v-if="modelValue.length" class="thumb-list">
-      <li v-for="(key, index) in modelValue" :key="key" class="thumb-item">
-        <img class="thumb" :src="`/api/v1/uploads/${key}`" :alt="`第 ${index + 1} 张图片预览`" loading="lazy" />
-        <span class="thumb-name" :title="names[index] || key">{{ names[index] || key.slice(0, 8) }}</span>
-        <button type="button" class="remove-btn" :disabled="disabled" :aria-label="`移除第 ${index + 1} 张图片`" @click="remove(index)">
-          移除
+    <p class="mu-label"><span>{{ label }}</span><span class="mu-count">{{ modelValue.length }}/{{ max }}</span></p>
+    <ul class="mu-grid">
+      <li v-for="(key, index) in modelValue" :key="key" class="mu-tile">
+        <img :src="`/api/v1/uploads/${key}`" :alt="`第 ${index + 1} 张图片预览`" :title="names[index] || undefined" loading="lazy" />
+        <span v-if="index === 0 && max > 1" class="mu-cover">封面</span>
+        <button type="button" class="mu-remove" :disabled="disabled" :aria-label="`移除第 ${index + 1} 张图片`" @click="remove(index)">
+          <BaseIcon name="i-close" :size="14" />
         </button>
       </li>
+      <li v-if="busy" class="mu-tile mu-busy" aria-live="polite">
+        <BaseIcon name="i-image" :size="22" />
+        <span>上传中…</span>
+      </li>
+      <li v-else-if="!atLimit">
+        <!-- 真正的 input 藏起来但仍可 Tab 聚焦，点整块虚线框就是选图 -->
+        <input :id="id" class="mu-input" type="file" multiple :accept="accept" :disabled="disabled" @change="onFile" />
+        <label :for="id" class="mu-tile mu-add" :class="{ 'is-disabled': disabled }">
+          <span class="mu-add-icon"><BaseIcon name="i-plus" :size="20" /></span>
+          <span class="mu-add-text">添加图片</span>
+          <span class="mu-add-sub">还能加 {{ remaining }} 张</span>
+        </label>
+      </li>
     </ul>
+    <p v-if="hint" class="field-hint">{{ hint }}</p>
     <p v-if="error" class="field-error" role="alert">{{ error }}</p>
   </div>
 </template>
@@ -123,70 +126,151 @@ function remove(index: number): void {
 <style scoped>
 .multi-upload {
   display: grid;
-  gap: var(--sp-1);
+  gap: var(--sp-2);
 }
-label {
+.mu-label {
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-2);
   font-size: var(--fs-13);
   font-weight: 600;
 }
-.input {
-  width: 100%;
-  min-height: var(--tap);
-  padding: var(--sp-2);
-  border: 1px solid var(--line);
+.mu-count {
+  color: var(--muted);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.mu-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--sp-2);
+}
+.mu-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
   border-radius: var(--r-md);
-  background: var(--bg);
-  color: var(--text);
+  overflow: hidden;
+  background: var(--surface2);
+}
+.mu-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: inherit;
+}
+.mu-cover {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: var(--fs-11);
+}
+.mu-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.mu-remove:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+.mu-remove:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+}
+.mu-busy {
+  align-content: center;
+  gap: 4px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  font-size: var(--fs-12);
+  animation: mu-pulse 1.2s ease-in-out infinite;
+}
+@keyframes mu-pulse {
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mu-busy { animation: none; }
+}
+.mu-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+.mu-add {
+  align-content: center;
+  gap: 2px;
+  border: 1.5px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.mu-add:hover,
+.mu-input:focus-visible + .mu-add {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.mu-input:focus-visible + .mu-add {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mu-add.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mu-add-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.mu-add-text {
   font-size: var(--fs-13);
+  font-weight: 600;
+}
+.mu-add-sub {
+  font-size: var(--fs-11);
 }
 .field-hint,
-.field-status,
 .field-error {
   margin: 0;
   font-size: var(--fs-12);
 }
-.field-hint,
-.field-status {
+.field-hint {
   color: var(--muted);
 }
 .field-error {
   color: var(--danger);
-}
-.thumb-list {
-  list-style: none;
-  margin: var(--sp-2) 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-  gap: var(--sp-2);
-}
-.thumb-item {
-  display: grid;
-  gap: var(--sp-1);
-  min-width: 0;
-}
-.thumb {
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  object-fit: cover;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface2);
-}
-.thumb-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
-  font-size: var(--fs-11);
-}
-.remove-btn {
-  min-height: var(--tap);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--accent-ink);
-  font-size: var(--fs-12);
-  cursor: pointer;
 }
 </style>

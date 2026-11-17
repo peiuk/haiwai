@@ -1,13 +1,14 @@
 import json
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.embed import embed_fields
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
+from app.api.v1.channels import TextBody  # 标题 + 正文的长度规则只留这一份
 from app.api.v1.uploads import owned_upload
 from app.api.v1.me import active_channel
 from app.api.v1.room_social import (
@@ -24,8 +25,8 @@ from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.keywords import clean_city_topic, collect_keywords, dump_keywords, load_keywords, resolve_keywords
-from app.privacy import can_view_content, is_private_room_content, require_not_blocked_by
-from app.reports import ReportBody, report_receipt
+from app.privacy import can_view_content, is_private_room_content, is_room_editor, require_not_blocked_by
+from app.reports import ReportBody, limit_reports, report_receipt
 from app.recommend import country_blocked, is_roaming
 from app.rooms import drop_pushes, notify_room_update, require_not_banned
 from app.feed import author_names, MAX_LISTING_IMAGES, image_keys_of
@@ -37,7 +38,6 @@ from app.models import (
     Content,
     ContentReaction,
     ModerationCase,
-    Notification,
     RoomComment,
     User,
     utcnow,
@@ -45,34 +45,12 @@ from app.models import (
 
 router = APIRouter()
 REVIEW_LIMIT = 3
-
-
-class TextBody(BaseModel):
-    """标题 + 正文：发帖和编辑共用同一套长度规则。"""
-
-    title: str
-    body: str
-
-    @field_validator("title")
-    @classmethod
-    def title_length(cls, value: str) -> str:
-        title = value.strip()
-        if not title or len(title) > 200:
-            raise ValueError("标题需要 1 到 200 个字")
-        return title
-
-    @field_validator("body")
-    @classmethod
-    def body_length(cls, value: str) -> str:
-        text = value.strip()
-        if not text or len(text) > 4000:
-            raise ValueError("正文需要 1 到 4000 个字")
-        return text
+HOURLY_REPLY_LIMIT = 30  # 一个人一小时在全站帖子下最多回复这么多条
 
 
 class PostBody(TextBody):
     channel_id: str | None = None
-    # image_key 兼容旧客户端单图；新客户端用 image_keys（最多 4 张）。
+    # image_key 兼容旧客户端单图；新客户端用 image_keys（最多 6 张）。
     image_key: str | None = None
     image_keys: list[str] = []
     video_key: str | None = None
@@ -176,12 +154,14 @@ def create_post(
     # 后台关了帖子审核时，新用户的前几条也直接发布；敏感词照样拦。
     # 已上线房间里的帖子由房主管（能删），不进后台审核；还没上线的房间仍要等第一条通过才上线。
     in_live_room = channel is not None and channel.kind == "room" and channel.is_active
-    status = "pending" if not in_live_room and review_on(session, "post", user) and (prior or 0) < REVIEW_LIMIT else "published"
+    # 房间里只有房主 / 协作者能直接发；其他人发的算投稿，等房主通过（channels.decide_submission）。
+    # 页面上本来就是这样分的，这里不拦的话直接调接口就能绕过房主。
+    is_submission = in_live_room and not is_room_editor(session, channel, user)
+    needs_admin = not in_live_room and review_on(session, "post", user) and (prior or 0) < REVIEW_LIMIT
+    status = "pending" if is_submission or needs_admin else "published"
     if status == "published" and blocked_term_in(session, body.title, body.body):
         status = "pending"  # 命中敏感词 / 链接黑名单：不直接发布，先给管理员看
     if body.post_type == "video":
-        if not body.rights_confirmed:
-            raise APIError(400, "RIGHTS_REQUIRED", "发布视频前需要确认是原创且有权使用")
         if not body.video_key:
             raise APIError(400, "VALIDATION_FAILED", "发视频需要先上传一段视频")
         uploaded = owned_upload(session, user, body.video_key)
@@ -216,7 +196,7 @@ def create_post(
         image_key=keys[0] if keys else None,
         image_keys_json=json.dumps(keys),
         video_key=body.video_key if body.post_type == "video" else None,
-        rights_confirmed=body.rights_confirmed if body.post_type == "video" else False,
+        rights_confirmed=body.post_type == "video",  # 不再单独勾选：上传即按用户协议视为本人原创
         published_at=now if status == "published" else None,
         **embed,
     )
@@ -253,11 +233,16 @@ def delete_content(
     room = None if own else _home_room(session, content)
     if not own and (room is None or room.owner_id != user.id):
         raise APIError(403, "FORBIDDEN", "只能删除自己的内容，或自己房间里的帖子")
+    from app.api.v1.admin import _delete_files, _release_uploads  # 放在函数里：admin 很重，只有这里用到
+
     content.status = "deleted"
     content.deleted_at = utcnow()
     drop_pushes(session, content.id)
+    # 作者 / 房主删的帖子不能恢复：图片视频一并删掉（不删的话知道原链接的人还能打开）；别的帖子还在用的不动
+    orphaned = _release_uploads(session, set(image_keys_of(content)) | {content.video_key}, content.id)
     write_audit(session, user.id, "content.delete" if own else "room.content.remove", "content", content.id)
     session.commit()
+    _delete_files(orphaned)  # 提交成功后再删文件
     return {"content_id": content.id, "status": "deleted"}
 
 
@@ -299,9 +284,17 @@ def edit_content(
     content.summary_hant = None
     content.keywords_json = dump_keywords(words)
     content.keyword_source = source
-    # 和发帖同一道敏感词检查：不然先发正常内容、过审后再改成违规内容，就绕过了所有检查
-    if content.status == "published" and blocked_term_in(session, body.title, body.body):
+    content.featured_at = None  # 精选的是改之前的版本
+    # 改完按发帖的同一套规则再过一遍：不然先发正常内容、过审后再改成别的，审的和公开的就不是同一个版本。
+    # 房间里非房主 / 协作者的帖子回到房主那里；别处的，新用户（过审帖不满 3 条，不算这一条）回到后台；敏感词照拦。
+    in_live_room = room is not None and room.is_active
+    if content.status == "published" and (
+        blocked_term_in(session, body.title, body.body)
+        or (in_live_room and not is_room_editor(session, room, user))
+        or (not in_live_room and review_on(session, "post", user) and _approved_posts(session, user.id) - 1 < REVIEW_LIMIT)
+    ):
         content.status = "pending"
+        content.published_at = None  # 重新算作没发布过：房主的投稿队列和后台队列靠它分辨
     write_audit(session, user.id, "content.edit", "content", content.id)
     session.commit()
     return {"content_id": content.id, "status": content.status, "keywords": words}
@@ -390,9 +383,11 @@ def get_content(
 def report_content(
     content_id: str,
     body: ReportBody,
+    request: Request,
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
+    limit_reports(session, request, user)
     content = session.get(Content, content_id)
     if content is None or content.deleted_at is not None or content.status != "published" or not can_view_content(session, content, user):
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
@@ -522,6 +517,7 @@ def list_replies(
     # 作者和 @ 到的人都整批查：原来每条回复各查一次，热门帖几百条回复就是几百次查询
     authors = author_names(session, [row.author_id for row in rows])
     real_handles = mentioned_handles(session, [row.body for row in rows])
+    manages = user is not None and _manages_replies(session, content, user)
     for row in rows:
         author_name, author_handle, author_avatar = authors.get(row.author_id, ("", "", ""))
         items.append(
@@ -538,6 +534,7 @@ def list_replies(
                 "image_key": row.image_key,
                 "parent_id": row.parent_id,
                 "status": row.status,
+                "can_delete": manages or (user is not None and row.author_id == user.id),
                 "created_at": row.created_at.isoformat(),
             }
         )
@@ -555,9 +552,8 @@ def create_reply(
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
     content = _visible_content(session, content_id, user)
+    # 发到「我的动态」的帖子不在任何频道里（item 为空）：照样能回复，只是回复不挂在哪个频道下
     item = session.scalars(select(ChannelItem).where(ChannelItem.content_id == content.id)).first()
-    if item is None:
-        raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
     require_not_banned(session, session.scalars(select(ChannelItem.channel_id).where(ChannelItem.content_id == content.id)), user.id)
     parent = None
     if body.parent_id:
@@ -579,8 +575,16 @@ def create_reply(
     )
     if (recent or 0) >= 5:
         raise APIError(429, "RATE_LIMITED", "回复太频繁")
+    # 上面那条只管「同一个帖子」，换着帖子回就没有上限；这里按人封顶
+    hourly = session.scalar(
+        select(func.count())
+        .select_from(RoomComment)
+        .where(RoomComment.author_id == user.id, RoomComment.created_at >= now - timedelta(hours=1))
+    )
+    if (hourly or 0) >= HOURLY_REPLY_LIMIT:
+        raise APIError(429, "RATE_LIMITED", "这个小时回复得太多了，请稍后再试")
     comment = RoomComment(
-        room_id=item.channel_id,
+        room_id=item.channel_id if item is not None else None,
         content_id=content.id,
         parent_id=body.parent_id,
         author_id=user.id,
@@ -591,16 +595,7 @@ def create_reply(
     session.add(comment)
     session.flush()
     if first_status(session, "comment", body.body, user=user) == "published":
-        publish_comment(session, comment)
-    if content.author_id and content.author_id != user.id:
-        session.add(
-            Notification(
-                user_id=content.author_id,
-                kind="reply",
-                body=f"{user.display_name} 回复了「{content.title}」"[:200],
-                content_id=content.id,
-            )
-        )
+        publish_comment(session, comment)  # 给帖子作者的回复通知也在这里面发：待审的回复不通知
     session.commit()
     return {"comment_id": comment.id, "status": comment.status}
 
@@ -630,12 +625,21 @@ def remove_reply(
     comment = session.get(RoomComment, comment_id)
     if content is None or comment is None or comment.content_id != content.id or comment.removed_at is not None:
         raise APIError(404, "COMMENT_NOT_FOUND", "留言不存在")
-    if comment.author_id != user.id and content.author_id != user.id:
+    if comment.author_id != user.id and not _manages_replies(session, content, user):
         raise APIError(403, "FORBIDDEN", "不能处理这条留言")
     comment.status = "removed"
     comment.removed_at = utcnow()
+    write_audit(session, user.id, "comment.remove", "comment", comment.id)
     session.commit()
     return {"comment_id": comment.id, "status": comment.status}
+
+
+def _manages_replies(session: Session, content: Content, user: User) -> bool:
+    """能删这条帖子下别人回复的人：帖子作者，或帖子所在房间的房主。"""
+    if content.author_id == user.id:
+        return True
+    room = _home_room(session, content)
+    return room is not None and room.owner_id == user.id
 
 
 @router.post("/contents/{content_id}/repost")

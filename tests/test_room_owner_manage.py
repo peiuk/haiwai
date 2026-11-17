@@ -1,4 +1,4 @@
-"""房间内容房主自己管：成员帖子不进后台审核、房主能删、作者能改、后台精选的房间帖进推荐和发现。"""
+"""房间内容房主自己管：房主 / 协作者直接发、成员的帖子等房主通过、房主能删、作者能改、后台精选的房间帖进推荐和发现。"""
 from app.models import BlockedTerm, Content, utcnow
 from tests.test_rooms import headers, official_channel, register, verify
 
@@ -14,22 +14,45 @@ def _live_room(client, owner: str, name: str = "自管房间", private: bool = F
     return room_id
 
 
-def _member_post(client, member: str, room_id: str, title: str = "成员的帖子", body: str = "第一次发帖") -> str:
-    posted = client.post("/api/v1/contents", headers=headers(member), json={"channel_id": room_id, "title": title, "body": body})
+def _post(client, token: str, room_id: str, title: str = "帖子", body: str = "第一次发帖") -> dict:
+    posted = client.post("/api/v1/contents", headers=headers(token), json={"channel_id": room_id, "title": title, "body": body})
     assert posted.status_code == 200, posted.text
-    # 新用户的前几条本来要后台审；已上线房间里的帖子不用
-    assert posted.json()["status"] == "published"
-    return posted.json()["content_id"]
+    return posted.json()
 
 
-def test_room_owner_deletes_a_members_post_but_strangers_cannot(client):
+def _accepted_member_post(client, owner: str, member: str, room_id: str) -> str:
+    """成员直接调发帖接口也只算投稿：先待审，房主通过后才公开。"""
+    post = _post(client, member, room_id, "成员的帖子")
+    assert post["status"] == "pending"
+    accepted = client.post(
+        f"/api/v1/channels/{room_id}/submissions/{post['content_id']}/decision", headers=headers(owner), json={"decision": "accept"}
+    )
+    assert accepted.status_code == 200, accepted.text
+    return post["content_id"]
+
+
+def _pending_ids(client, admin: str) -> set[str]:
+    return {item["content_id"] for item in client.get("/api/v1/admin/queue", headers=headers(admin)).json()["contents"]}
+
+
+def test_member_posts_wait_for_the_owner_not_the_admin(client):
     owner = register(client, "manage-owner@example.com")
     verify(client, owner, "+447700900601")
     member = register(client, "manage-member@example.com")
     verify(client, member, "+447700900602")
     stranger = register(client, "manage-stranger@example.com")
-    content_id = _member_post(client, member, _live_room(client, owner))
+    room_id = _live_room(client, owner)
 
+    # 房主自己发的直接公开（新用户也不进后台审核）
+    assert _post(client, owner, room_id, "房主的帖子")["status"] == "published"
+
+    post = _post(client, member, room_id, "成员的帖子")
+    assert post["status"] == "pending"
+    waiting = client.get(f"/api/v1/channels/{room_id}/submissions", headers=headers(owner)).json()["items"]
+    assert [item["content_id"] for item in waiting] == [post["content_id"]]
+    assert client.get(f"/api/v1/contents/{post['content_id']}", headers=headers(stranger)).status_code == 404
+
+    content_id = _accepted_member_post(client, owner, member, room_id)
     seen_by_owner = client.get(f"/api/v1/contents/{content_id}", headers=headers(owner)).json()
     assert (seen_by_owner["can_edit"], seen_by_owner["can_delete"]) == (False, True)
     seen_by_stranger = client.get(f"/api/v1/contents/{content_id}", headers=headers(stranger)).json()
@@ -41,42 +64,48 @@ def test_room_owner_deletes_a_members_post_but_strangers_cannot(client):
     assert client.get(f"/api/v1/contents/{content_id}", headers=headers(member)).status_code == 404
 
 
-def test_only_the_author_edits_and_banned_words_send_it_back_to_review(client):
+def test_only_the_author_edits_and_the_edit_is_reviewed_again(client):
     owner = register(client, "edit-owner@example.com")
     verify(client, owner, "+447700900611")
     member = register(client, "edit-member@example.com")
     verify(client, member, "+447700900612")
-    content_id = _member_post(client, member, _live_room(client, owner))
+    room_id = _live_room(client, owner)
+    content_id = _accepted_member_post(client, owner, member, room_id)
     url = f"/api/v1/contents/{content_id}"
 
     # 房主不能改别人的帖子（管不了就删），游客更不行
     assert client.patch(url, headers=headers(owner), json={"title": "房主改的", "body": "替别人说话"}).status_code == 403
     assert client.patch(url, json={"title": "游客", "body": "游客"}).status_code == 401
-
-    edited = client.patch(url, headers=headers(member), json={"title": "改过的标题", "body": "改过的正文 #新话题"})
-    assert edited.status_code == 200, edited.text
-    assert edited.json()["status"] == "published"
-    shown = client.get(url, headers=headers(member)).json()
-    assert (shown["title"], shown["body"], shown["keywords"]) == ("改过的标题", "改过的正文 #新话题", ["新话题"])
-    assert shown["can_edit"] is True
-
     assert client.patch(url, headers=headers(member), json={"title": " ", "body": "空标题"}).status_code == 422
 
+    # 成员改完回到房主那里：审的和公开的要是同一个版本
+    edited = client.patch(url, headers=headers(member), json={"title": "改过的标题", "body": "改过的正文 #新话题"})
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["status"] == "pending"
+    assert client.get(url, headers=headers(owner)).status_code == 404  # 待审：别人看不到
+    shown = client.get(url, headers=headers(member)).json()  # 作者自己还能看、能再改
+    assert (shown["title"], shown["body"], shown["keywords"], shown["can_edit"]) == ("改过的标题", "改过的正文 #新话题", ["新话题"], True)
+
+    # 房主改自己的帖子不用再审；命中敏感词的照样拦，而且是后台来审
+    own = _post(client, owner, room_id, "房主的帖子")["content_id"]
+    own_url = f"/api/v1/contents/{own}"
     with client.session_factory() as session:
+        session.get(Content, own).featured_at = utcnow()
+        session.commit()
+    assert client.patch(own_url, headers=headers(owner), json={"title": "房主改过", "body": "正常内容"}).json()["status"] == "published"
+    with client.session_factory() as session:
+        assert session.get(Content, own).featured_at is None  # 精选的是改之前的版本
         session.add(BlockedTerm(term="casino"))
         session.commit()
-    hidden = client.patch(url, headers=headers(member), json={"title": "改过的标题", "body": "来 Casino 玩"})
-    assert hidden.json()["status"] == "pending"
-    assert client.get(url, headers=headers(owner)).status_code == 404  # 待审：别人看不到
-    assert client.get(url, headers=headers(member)).status_code == 200  # 作者自己还能看、能再改
+    assert client.patch(own_url, headers=headers(owner), json={"title": "房主改过", "body": "来 Casino 玩"}).json()["status"] == "pending"
 
 
 def test_featured_room_post_reaches_for_you_and_discover(client):
     owner = register(client, "featured-owner@example.com")
     verify(client, owner, "+447700900621")
     parent_id = official_channel(client)
-    public_post = _member_post(client, owner, _live_room(client, owner, parent_id=parent_id), title="公开房间的帖子")
-    private_post = _member_post(client, owner, _live_room(client, owner, "私密房间", True, parent_id), title="私密房间的帖子")
+    public_post = _post(client, owner, _live_room(client, owner, parent_id=parent_id), "公开房间的帖子")["content_id"]
+    private_post = _post(client, owner, _live_room(client, owner, "私密房间", True, parent_id), "私密房间的帖子")["content_id"]
     uk = {"X-Region": "UK"}
 
     def shown() -> tuple[set[str], set[str]]:

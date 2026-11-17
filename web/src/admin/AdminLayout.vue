@@ -23,6 +23,7 @@ const NAV: { to: string; label: string; badge?: Badge }[] = [
   { to: "/admin/regions", label: "国家" },
   { to: "/admin/terms", label: "敏感词" },
   { to: "/admin/audit", label: "操作日志" },
+  { to: "/admin/mail", label: "邮件设置" },
   { to: "/admin/security", label: "账号安全" },
 ];
 

@@ -35,7 +35,12 @@ const contactBusy = ref(false);
 
 const CURRENCY_SYMBOL: Record<string, string> = { GBP: "£", JPY: "¥", CAD: "C$" };
 const currencySymbol = computed(() => CURRENCY_SYMBOL[props.item.currency] ?? "¤");
-const priceLabel = computed(() => `${currencySymbol.value}${props.item.price_amount}${props.item.price_unit ? `/${props.item.price_unit}` : ""}`);
+// 「面议」这类非数字价格不带货币符号
+const priceLabel = computed(() => {
+  const { price_amount: amount, price_unit: unit } = props.item;
+  if (!Number.isFinite(Number(amount))) return amount;
+  return `${currencySymbol.value}${amount}${unit ? `/${unit}` : ""}`;
+});
 
 const daysLeft = computed(() => {
   if (!props.item.expires_at) return null;
@@ -155,7 +160,7 @@ async function viewContact(): Promise<void> {
       </template>
 
       <template v-else-if="detail">
-        <!-- §22.7 详情：返回后第一屏是图片横滑（16:10，最多 4 张） -->
+        <!-- §22.7 详情：返回后第一屏是图片横滑（16:10，最多 6 张） -->
         <ImageStrip :keys="detail.image_keys ?? []" :alt="`${detail.title} 的图片`" />
 
         <SourceBlock
@@ -174,8 +179,11 @@ async function viewContact(): Promise<void> {
         </dl>
 
         <p class="detail-author">
-          发布者：{{ detail.author_name || detail.source_name || "—" }}
-          <template v-if="detail.author_handle"> · @{{ detail.author_handle }}</template>
+          发布者：<RouterLink v-if="detail.author_id" class="detail-link" :to="{ name: 'user', params: { id: detail.author_id } }" data-ugc>
+            {{ detail.author_name || detail.author_handle }}<template v-if="detail.author_handle"> · @{{ detail.author_handle }}</template>
+          </RouterLink>
+          <span v-else data-ugc>{{ detail.source_name || "—" }}</span>
+          · 发布在 <RouterLink class="detail-link" :to="{ name: 'channel', params: { id: detail.channel_id } }">{{ detail.channel_name }}</RouterLink>
         </p>
 
         <!-- 防骗提示 -->
@@ -359,6 +367,14 @@ async function viewContact(): Promise<void> {
 }
 .detail-desc {
   line-height: 1.6;
+}
+.detail-link {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.detail-link:hover {
+  text-decoration: underline;
 }
 .detail-attrs {
   display: grid;

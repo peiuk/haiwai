@@ -46,16 +46,21 @@ def decide(
     now = utcnow()
     if body.decision == "approve":
         content.status = "published"
-        content.published_at = now
+        # 公开过、被举报后先隐藏的帖子复核通过：原样放回去。只有第一次公开才算新帖（改时间、通知房间成员），
+        # 不然一条旧帖被举报一轮就顶到信息流最前面，还给所有人再推一遍。
+        first_time = content.published_at is None
+        if first_time:
+            content.published_at = now
         items = session.scalars(select(ChannelItem).where(ChannelItem.content_id == content.id)).all()
         for item in items:
-            item.added_at = now
             channel = session.get(Channel, item.channel_id)
             if channel is not None and channel.kind == "room" and not channel.is_active and channel.review_status == "pending":
                 channel.is_active = True
                 channel.review_status = "approved"
-            if channel is not None:
-                notify_room_update(session, channel, content)
+            if first_time:
+                item.added_at = now
+                if channel is not None:
+                    notify_room_update(session, channel, content)
     else:
         content.status = "rejected"
         drop_pushes(session, content.id)

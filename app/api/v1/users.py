@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
@@ -11,7 +11,7 @@ from app.keywords import load_keywords
 from app.models import Channel, Content, ModerationCase, User, UserBlock, UserFollow
 from app.privacy import viewable
 from app.rooms import ROOM_TYPE_LABELS
-from app.reports import ReportBody, report_receipt
+from app.reports import ReportBody, limit_reports, report_receipt
 
 router = APIRouter()
 
@@ -87,9 +87,11 @@ def _published(user_id: str) -> tuple:
 def report_user(
     user_id: str,
     body: ReportBody,
+    request: Request,
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
+    limit_reports(session, request, user)
     profile = _profile(session, user_id)
     if user is not None and profile.id == user.id:
         raise APIError(403, "SELF_REPORT", "不能举报自己")

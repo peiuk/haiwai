@@ -26,9 +26,18 @@ function prefillContact(): void {
     contact.value = phone;
   }
 }
-onMounted(prefillContact);
+// 区域默认带出资料里填的城市；没填就留空让用户自己写。
+function prefillArea(): void {
+  const city = auth.profile?.city_label?.trim();
+  if (city && !area.value.trim()) area.value = city;
+}
+onMounted(() => {
+  prefillContact();
+  prefillArea();
+});
 // profile 可能异步加载（登录后 refreshProfile），就绪后再补一次。
 watch(() => auth.profile?.phone, prefillContact);
+watch(() => auth.profile?.city_label, prefillArea);
 
 const category = ref("房产");
 const propertyKind = ref("rent");
@@ -37,6 +46,13 @@ const title = ref("");
 const body = ref("");
 const area = ref("");
 const priceAmount = ref("");
+// 价格方式：填金额，或「面议」（提交时金额就是「面议」，不带单位）
+const NEGOTIABLE = "面议";
+const priceMode = ref<"amount" | "negotiable">("amount");
+const PRICE_MODES = [
+  { value: "amount", label: "填写金额" },
+  { value: "negotiable", label: NEGOTIABLE },
+];
 const priceUnit = ref("月");
 const contact = ref("");
 const attrs = ref<Record<string, string>>({});
@@ -63,7 +79,7 @@ const UNITS: Record<string, string[]> = {
   sale: ["总价"],
   commercial: ["月", "总价"],
   secondhand: [""],
-  job: ["小时", "月", "年"],
+  job: ["小时", "天", "周", "月"],
 };
 
 const kind = computed(() => {
@@ -125,7 +141,7 @@ watch(
 async function submit(): Promise<void> {
   error.value = "";
   success.value = "";
-  if (!title.value.trim() || !body.value.trim() || !area.value.trim() || !priceAmount.value.trim() || !contact.value.trim()) {
+  if (!title.value.trim() || !body.value.trim() || !area.value.trim() || (priceMode.value === "amount" && !priceAmount.value.trim()) || !contact.value.trim()) {
     error.value = "标题、描述、区域、价格和联系方式都是必填项";
     return;
   }
@@ -144,8 +160,8 @@ async function submit(): Promise<void> {
         category: category.value,
         kind: kind.value,
         area: area.value.trim(),
-        price_amount: priceAmount.value.trim(),
-        price_unit: priceUnit.value,
+        price_amount: priceMode.value === "negotiable" ? NEGOTIABLE : priceAmount.value.trim(),
+        price_unit: priceMode.value === "negotiable" ? "" : priceUnit.value,
         contact: contact.value.trim(),
         attrs: attrs.value,
         keywords: [],
@@ -160,7 +176,10 @@ async function submit(): Promise<void> {
     body.value = "";
     area.value = "";
     priceAmount.value = "";
+    priceMode.value = "amount";
     contact.value = "";
+    prefillArea();
+    prefillContact();
     attrs.value = {};
     imageKeys.value = [];
     emit("submitted");
@@ -205,8 +224,11 @@ async function submit(): Promise<void> {
     <TextField id="listing-area" v-model="area" label="区域" :maxlength="80" placeholder="例如：London Ealing" required />
 
     <div class="price-row">
-      <TextField id="listing-price" v-model="priceAmount" label="价格" type="number" required />
-      <SelectField v-if="showUnit" id="listing-unit" v-model="priceUnit" label="单位" :options="unitOptions" />
+      <SelectField id="listing-price-mode" v-model="priceMode" label="价格方式" :options="PRICE_MODES" />
+      <template v-if="priceMode === 'amount'">
+        <TextField id="listing-price" v-model="priceAmount" label="价格" type="number" required />
+        <SelectField v-if="showUnit" id="listing-unit" v-model="priceUnit" label="单位" :options="unitOptions" />
+      </template>
     </div>
 
     <div v-if="attrFields.length > 0" class="attr-grid">
@@ -224,10 +246,10 @@ async function submit(): Promise<void> {
     <MultiUploadField
       id="listing-image"
       v-model="imageKeys"
-      label="信息图片（可选，最多 4 张）"
+      label="信息图片（可选，最多 6 张）"
       accept="image/jpeg,image/png,image/webp"
       :max-mb="5"
-      :max="4"
+      :max="6"
       hint="jpeg / png / webp，单张最大 5MB；详情中以 16:10 横滑展示，第一张为封面"
     />
 

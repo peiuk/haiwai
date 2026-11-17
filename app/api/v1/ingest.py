@@ -2,27 +2,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import current_user
-from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.api.v1.admin import require_admin
 from app.core.audit import write_audit
-from app.ingest import ingest_fixture
 from app.models import User
 from app.news import NewsUnavailable, run_daily_news
 
 router = APIRouter(prefix="/admin/ingest", tags=["ingest"])
-
-
-@router.post("/fixture")
-def fetch_fixture(
-    _: User = Depends(current_user),
-    session: Session = Depends(get_db),
-) -> dict[str, int]:
-    if get_settings().app_env != "dev":
-        raise APIError(404, "NOT_FOUND", "不存在")
-    return ingest_fixture(session)
 
 
 @router.post("/news")

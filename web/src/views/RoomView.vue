@@ -350,6 +350,7 @@ onMounted(load);
         :room-type="detail.room_type"
         :seasons="detail.seasons ?? []"
         :is-owner="Boolean(detail.is_owner)"
+        :is-private="Boolean(detail.is_private)"
         :sort-basis="detail.sort_basis ?? ''"
         @reorder="onReorder"
       />

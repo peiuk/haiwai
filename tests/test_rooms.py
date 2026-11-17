@@ -48,6 +48,22 @@ def official_channel(client) -> str:
     return channel_id
 
 
+def admin_for(client) -> str:
+    """后台接口要真管理员：房间位和推送审核都走它。"""
+    from tests.test_admin import register as register_admin
+
+    return register_admin(client, "rooms-boss@example.com", admin=True)
+
+
+def approve_push(client, boss: str, content_id: str) -> None:
+    done = client.post(f"/api/v1/admin/pushes/{content_id}/decision", headers=headers(boss), json={"decision": "approve"})
+    assert done.status_code == 200, done.text
+
+
+def set_slot(client, boss: str, channel_id: str, room_id: str):
+    return client.post(f"/api/v1/admin/channels/{channel_id}/slots", headers=headers(boss), json={"room_id": room_id, "label": "推荐"})
+
+
 def test_erasing_account_takes_rooms_offline_and_deletes_uploads(client):
     """「删除账号」承诺删除资料、帖子和房间：房间不再公开，上传文件连磁盘一起删。"""
     from app.models import RefreshSession, UploadObject
@@ -91,8 +107,10 @@ def test_room_needs_official_parent_then_announce_and_accept(client):
         json={"name": "英国官方租房", "parent_channel_id": parent_id},
     )
     assert official_name.status_code == 422
-    missing = client.post("/api/v1/channels", headers=headers(owner), json={"name": "伦敦看房笔记"})
-    assert missing.status_code == 422
+    # 房间不再必须挂在频道下：不选频道也能建，国家跟着房主当前的国家
+    independent = client.post("/api/v1/channels", headers=headers(owner), json={"name": "不挂频道的房间"})
+    assert independent.status_code == 200, independent.text
+    assert client.get("/api/v1/me/channels", headers=headers(owner)).json()["items"][0]["parent_channel_id"] is None
 
     created = client.post(
         "/api/v1/channels",
@@ -152,8 +170,10 @@ def test_room_needs_official_parent_then_announce_and_accept(client):
     assert changed.status_code == 200
     changed_detail = client.get(f"/api/v1/channels/{room_id}").json()
     assert changed_detail["room_type"] == "series" and changed_detail["room_type_label"] == "剧集系列"
-    # 频道页的房间列表也给中文名（原来只有 room_type，页面上露出了「general」）
-    parent_rooms = client.get(f"/api/v1/channels/{changed_detail['parent_channel_id']}", headers=headers(owner)).json()["rooms"]
+    # 频道页的房间列表也给中文名（原来只有 room_type，页面上露出了「general」）；房间要后台放进房间位才会出现
+    boss = admin_for(client)
+    assert set_slot(client, boss, parent_id, room_id).status_code == 200
+    parent_rooms =client.get(f"/api/v1/channels/{changed_detail['parent_channel_id']}", headers=headers(owner)).json()["rooms"]
     assert {room["id"]: room["room_type_label"] for room in parent_rooms}[room_id] == "剧集系列"
     rejected = client.patch(f"/api/v1/channels/{room_id}", headers=headers(owner), json={"room_type": "drama"})
     assert rejected.status_code == 422
@@ -439,17 +459,11 @@ def test_video_entry_requires_rights_confirmation(client):
         headers=headers(owner),
         json={"decision": "approve"},
     ).status_code == 200
-    blocked = client.post(
-        f"/api/v1/channels/{room_id}/entries",
-        headers=headers(owner),
-        json={"title": "街头", "body": "自己拍的"},
-    )
-    assert blocked.status_code == 400
-    assert blocked.json()["code"] == "RIGHTS_REQUIRED"
+    # 原创视频不再要求勾选确认，上传即视为本人原创
     added = client.post(
         f"/api/v1/channels/{room_id}/entries",
         headers=headers(owner),
-        json={"title": "街头", "body": "自己拍的", "rights_confirmed": True},
+        json={"title": "街头", "body": "自己拍的"},
     )
     assert added.status_code == 200, added.text
     assert added.json()["sort_key"] == "V0001"
@@ -536,6 +550,8 @@ def test_owner_switches_room_between_private_and_public(client):
         f"/api/v1/channels/{room_id}/announcements", headers=headers(owner), json={"title": "公告", "body": "大家好"}
     ).json()["content_id"]
     assert client.post(f"/api/v1/channels/{room_id}/pushes/{content_id}", headers=headers(owner)).status_code == 200
+    assert client.get(f"/api/v1/channels/{parent_id}/items").json()["items"] == []  # 等审核，频道里还看不到
+    approve_push(client, admin_for(client), content_id)
     assert client.get(f"/api/v1/channels/{parent_id}/items").json()["items"]
 
     # 改成私密：推到频道的帖子撤回，外人看不到房间内容
@@ -567,11 +583,13 @@ def test_parent_channel_lists_rooms_and_pushed_posts_name_the_room(client):
     )
     room_id = created.json()["channel_id"]
     client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"})
-    hidden = client.get(f"/api/v1/channels/{parent_id}").json()["rooms"]
-    assert hidden == []
-    owned = client.get(f"/api/v1/channels/{parent_id}", headers=headers(owner)).json()["rooms"]
-    assert owned[0]["id"] == room_id
-    assert owned[0]["has_published"] is False
+    boss = admin_for(client)
+    # 房间不会因为父频道自动出现在频道里，要后台放进房间位
+    assert client.get(f"/api/v1/channels/{parent_id}").json()["rooms"] == []
+    assert set_slot(client, boss, parent_id, room_id).status_code == 200
+    listed = client.get(f"/api/v1/channels/{parent_id}").json()["rooms"]
+    assert listed[0]["id"] == room_id and listed[0]["slot_label"] == "推荐"
+    assert listed[0]["has_published"] is False
     announced = client.post(
         f"/api/v1/channels/{room_id}/announcements",
         headers=headers(owner),
@@ -597,12 +615,19 @@ def test_parent_channel_lists_rooms_and_pushed_posts_name_the_room(client):
         headers=headers(owner),
         json={"title": "内部", "body": "不公开"},
     )
+    assert set_slot(client, boss, parent_id, private_id).status_code == 404  # 私密房间不能放进公开频道的房间位
     guest_ids = [item["id"] for item in client.get(f"/api/v1/channels/{parent_id}").json()["rooms"]]
-    owner_ids = [item["id"] for item in client.get(f"/api/v1/channels/{parent_id}", headers=headers(owner)).json()["rooms"]]
     assert private_id not in guest_ids
-    assert private_id in owner_ids
     pushed = client.post(f"/api/v1/channels/{room_id}/pushes/{content_id}", headers=headers(owner))
-    assert pushed.status_code == 200, pushed.text
+    assert pushed.status_code == 200 and pushed.json()["status"] == "pending", pushed.text
+    assert client.get(f"/api/v1/channels/{parent_id}/items").json()["items"] == []
+    pending = client.get("/api/v1/admin/pushes", headers=headers(boss)).json()
+    assert [row["content_id"] for row in pending["items"]] == [content_id]
+    assert (pending["items"][0]["room_name"], pending["items"][0]["channel_name"]) == ("空房间", "英国租房")
+    approve_push(client, boss, content_id)
+    assert client.get("/api/v1/admin/pushes", headers=headers(boss)).json()["items"] == []
+    again = client.post(f"/api/v1/admin/pushes/{content_id}/decision", headers=headers(boss), json={"decision": "reject"})
+    assert again.status_code == 409  # 处理过的不能再改
     card = client.get(f"/api/v1/channels/{parent_id}/items").json()["items"][0]
     assert card["origin_room_id"] == room_id
     assert card["origin_room_name"] == "空房间"
@@ -706,6 +731,8 @@ def test_author_delete_removes_pushed_card(client):
     content_id = announced.json()["content_id"]
     pushed = client.post(f"/api/v1/channels/{room_id}/pushes/{content_id}", headers=headers(owner))
     assert pushed.status_code == 200, pushed.text
+    approve_push(client, admin_for(client), content_id)
+    assert content_id in [item["content_id"] for item in client.get(f"/api/v1/channels/{parent_id}/items").json()["items"]]
     denied = client.delete(f"/api/v1/contents/{content_id}", headers=headers(other))
     assert denied.status_code == 403
     removed = client.delete(f"/api/v1/contents/{content_id}", headers=headers(owner))
@@ -936,7 +963,7 @@ def test_my_rooms_lists_rooms_i_can_post_to(client):
         ).json()["channel_id"]
 
     mine = create(owner, "我的综合")
-    create(owner, "我的剧集", "series")
+    series = create(owner, "我的剧集", "series")
     rejected = create(owner, "被拒房")
     shared = create(other, "别人的房")
     others_only = create(other, "别人自己的")
@@ -947,7 +974,7 @@ def test_my_rooms_lists_rooms_i_can_post_to(client):
     assert client.put(f"/api/v1/channels/{shared}/collaborators/{owner_id}", headers=headers(other)).status_code == 200
 
     ids = [item["id"] for item in client.get("/api/v1/channels/mine", headers=headers(owner)).json()["items"]]
-    assert set(ids) == {mine, shared}
+    assert set(ids) == {mine, series, shared}
     assert others_only not in ids
     assert client.get("/api/v1/channels/mine").status_code == 401
 
@@ -1149,6 +1176,7 @@ def test_taken_down_room_hides_its_posts_and_owner_cannot_post_on(client):
         f"/api/v1/channels/{room_id}/announcements", headers=headers(owner), json={"title": "下架测试公告", "body": "内容"}
     ).json()["content_id"]
     assert client.post(f"/api/v1/channels/{room_id}/pushes/{content_id}", headers=headers(owner)).status_code == 200
+    approve_push(client, admin_for(client), content_id)
     owner_id = client.get("/api/v1/me", headers=headers(owner)).json()["user_id"]
 
     def visible() -> list[bool]:
@@ -1178,3 +1206,56 @@ def test_erased_account_no_longer_counts_as_follower(client):
     assert client.get(f"/api/v1/users/{star_id}").json()["follower_count"] == 1
     assert client.delete("/api/v1/me", headers=headers(fan)).status_code == 200
     assert client.get(f"/api/v1/users/{star_id}").json()["follower_count"] == 0
+
+
+def test_push_to_any_channel_is_reviewed_and_rejected_can_be_retried(client):
+    """房间不属于任何频道：房主可以把帖子推到任意官方频道，后台审核；被拒的可以再推；房间位可以撤掉。"""
+    channel_id = official_channel(client)
+    owner = register(client, "free-owner@example.com")
+    verify(client, owner, "+447700900391")
+    boss = admin_for(client)
+    room_id = client.post("/api/v1/channels", headers=headers(owner), json={"name": "自由房间"}).json()["channel_id"]
+    client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"})
+    content_id = client.post(
+        f"/api/v1/channels/{room_id}/announcements", headers=headers(owner), json={"title": "想上频道", "body": "内容"}
+    ).json()["content_id"]
+    base = f"/api/v1/channels/{room_id}/pushes/{content_id}"
+
+    assert client.post(base, headers=headers(owner)).json()["code"] == "CHANNEL_REQUIRED"  # 没有父频道又没选频道
+    assert client.post(base, headers=headers(owner), json={"channel_id": room_id}).status_code == 404  # 只能推官方频道
+    assert client.post(base, headers=headers(owner), json={"channel_id": channel_id}).json()["status"] == "pending"
+
+    # 房主在自己房间的条目上看得到推送状态，别人看不到
+    mine = client.get(f"/api/v1/channels/{room_id}/items", headers=headers(owner)).json()["items"][0]
+    assert (mine["push_status"], mine["push_channel_name"]) == ("pending", "英国租房")
+    assert client.get(f"/api/v1/channels/{room_id}/items").json()["items"][0]["push_status"] is None
+
+    rejected = client.post(f"/api/v1/admin/pushes/{content_id}/decision", headers=headers(boss), json={"decision": "reject", "reason": "不合适"})
+    assert rejected.status_code == 200
+    assert client.get(f"/api/v1/channels/{channel_id}/items").json()["items"] == []
+    assert client.post(base, headers=headers(owner), json={"channel_id": channel_id}).json()["status"] == "pending"  # 被拒后可再推
+    approve_push(client, boss, content_id)
+    assert [item["content_id"] for item in client.get(f"/api/v1/channels/{channel_id}/items").json()["items"]] == [content_id]
+
+    assert set_slot(client, boss, channel_id, room_id).status_code == 200
+    assert [row["room_id"] for row in client.get(f"/api/v1/admin/channels/{channel_id}/slots", headers=headers(boss)).json()["items"]] == [room_id]
+    assert client.post(f"/api/v1/admin/channels/{channel_id}/slots/{room_id}/delete", headers=headers(boss), json={}).status_code == 200
+    assert client.get(f"/api/v1/channels/{channel_id}").json()["rooms"] == []
+
+
+def test_series_episodes_need_no_season_or_body_and_can_be_added_in_bulk(client):
+    """剧集只填集号就行（不分季、正文可不写），一次加十来集不会被每小时 5 条的发帖限制拦住。"""
+    owner = register(client, "bulk-owner@example.com")
+    verify(client, owner, "+447700900392")
+    room_id = client.post(
+        "/api/v1/channels", headers=headers(owner), json={"name": "追更剧", "room_type": "series"}
+    ).json()["channel_id"]
+    client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"})
+    url = f"/api/v1/channels/{room_id}/entries"
+
+    for number in range(1, 13):
+        added = client.post(url, headers=headers(owner), json={"title": f"第 {number} 集", "episode": number})
+        assert added.status_code == 200, added.text
+        assert added.json()["sort_key"] == f"S01E{number:03d}"
+    assert client.post(url, headers=headers(owner), json={"title": "重复", "episode": 3}).json()["code"] == "EPISODE_TAKEN"
+    assert client.post(url, headers=headers(owner), json={"title": "没集号"}).status_code == 400

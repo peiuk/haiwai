@@ -263,7 +263,7 @@ export type FeedItem = {
   author_handle: string;
   keywords: string[];
   type: string;
-  /** 多图 key（最多 4 张），首图与 image_key 一致 */
+  /** 多图 key（最多 6 张），首图与 image_key 一致 */
   image_keys?: string[];
   /** 视频 key（post_type=video 时存在） */
   video_key?: string | null;
@@ -350,6 +350,7 @@ export type RoomComment = {
   like_count: number;
   liked: boolean;
   status: string;
+  can_delete?: boolean; // 留言作者本人，或帖子作者 / 房主
   created_at: string;
 };
 
@@ -390,7 +391,7 @@ export type RoomDetail = {
   seasons?: number[];
   owner?: { user_id: string; display_name: string; handle: string } | null;
   collaborators?: { user_id: string; display_name: string; handle: string }[];
-  rooms?: { id: string; name_hans: string; room_type: string; room_type_label: string; is_private: boolean; is_active: boolean; has_published: boolean }[];
+  rooms?: { id: string; name_hans: string; room_type: string; room_type_label: string; is_private: boolean; is_active: boolean; has_published: boolean; slot_label?: string }[];
 };
 
 // 房间条目（series/film/video/general 共用的 item 结构）
@@ -412,6 +413,9 @@ export type RoomItem = {
   image_keys?: string[];
   origin_room_id?: string | null;
   origin_room_name?: string | null;
+  /** 房主看自己的房间时才有：推送到频道的状态（pending / approved / rejected）和目标频道名 */
+  push_status?: string | null;
+  push_channel_name?: string | null;
   video_key: string | null;
   rights_confirmed: boolean;
   author_id: string | null;
@@ -589,7 +593,7 @@ export type ListingCardItem = {
   author_id?: string;
   author_name?: string;
   author_handle?: string;
-  /** 详情图片（后端 image_keys_json，最多 4 张；横滑容器按数组渲染） */
+  /** 详情图片（后端 image_keys_json，最多 6 张；横滑容器按数组渲染） */
   image_keys?: string[];
 };
 
@@ -682,6 +686,8 @@ export type MyPost = {
   title: string;
   status: string;
   summary: string | null;
+  type?: string; // listing = 分类信息：「我的帖子」里可以续期 / 结案
+  closed?: boolean; // 分类信息是否已结案
 };
 
 export type MyPostsResponse = { items: MyPost[] };

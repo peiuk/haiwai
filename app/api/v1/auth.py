@@ -1,5 +1,7 @@
+import hmac
 import re
 import secrets
+import time
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
@@ -14,6 +16,7 @@ from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import APIError
 from app.keywords import clean_city_topic
+from app.mail import mail_config, mail_ready, send_mail
 from app.core.security import (
     create_access_token,
     hash_password,
@@ -49,13 +52,14 @@ bearer = HTTPBearer(auto_error=False)
 
 
 class ConsentInput(BaseModel):
-    purpose: str
-    version: str
+    # 上限和数据库列宽一致：超了在 PostgreSQL 上会直接 500（SQLite 不检查长度，测试发现不了）
+    purpose: str = Field(max_length=48)
+    version: str = Field(max_length=32)
     granted: bool = True
 
 
 class RegisterBody(BaseModel):
-    email: str
+    email: str = Field(max_length=255)
     password: str
     display_name: str
     consents: list[ConsentInput] = []
@@ -64,6 +68,7 @@ class RegisterBody(BaseModel):
     city_code: str | None = None
     handle: str | None = None
     avatar_tone: str = "a"
+    code: str = Field(default="", max_length=8)  # 邮箱验证码；后台没配置发信邮箱时不用填
 
     @field_validator("email")
     @classmethod
@@ -232,8 +237,54 @@ def join_channels_by_code(session: Session, user_id: str, codes: list[str]) -> i
     return joined
 
 
+CODE_WINDOW_SECONDS = 10 * 60
+
+
+def email_code(email: str, step: int) -> str:
+    """注册验证码 = 密钥对「邮箱 + 时间段」做 HMAC 取 4 位：不用建表存，同一时间段内重发还是同一个码。"""
+    digest = hmac.new(get_settings().app_secret_key.encode(), f"register:{email}:{step}".encode(), "sha256").digest()
+    return f"{int.from_bytes(digest[:4], 'big') % 10000:04d}"
+
+
+def email_code_ok(email: str, code: str) -> bool:
+    step = int(time.time()) // CODE_WINDOW_SECONDS
+    # 收下当前和上一个时间段的码：刚好跨段时发出的码也还能用，有效期 10 到 20 分钟
+    return any(secrets.compare_digest(code, email_code(email, s)) for s in (step, step - 1))
+
+
+class RegisterCodeBody(BaseModel):
+    email: str = Field(max_length=255)
+
+
+@router.post("/register-code")
+def register_code(body: RegisterCodeBody, request: Request, session: Session = Depends(get_db)) -> dict[str, bool]:
+    """注册前给邮箱发 4 位验证码。后台还没配置发信邮箱时不发，返回 required=False，注册照常不要验证码（不然网站没人能注册）。"""
+    email = body.email.strip().lower()
+    if "@" not in email.strip("@"):
+        raise APIError(400, "INVALID_EMAIL", "邮箱格式不正确")
+    config = mail_config(session)
+    if not mail_ready(config):
+        return {"required": False}
+    throttle(session, f"regcode:{email}", limit=5, window_seconds=60 * 60)  # 也防有人拿它往别人邮箱里灌邮件
+    throttle(session, f"regcode-ip:{client_ip(request)}", limit=10, window_seconds=60 * 60)
+    if session.scalar(select(User.id).where(User.email == email)):
+        raise APIError(409, "DUPLICATE_EMAIL", "这个邮箱已经注册")
+    code = email_code(email, int(time.time()) // CODE_WINDOW_SECONDS)
+    text = f"你好：\n\n你的海外圈注册验证码是 {code}，10 分钟内有效。\n\n不是你本人操作的话，不用理会这封邮件。"
+    try:
+        send_mail(config, email, f"海外圈注册验证码 {code}", text)
+    except APIError:
+        raise APIError(503, "MAIL_FAILED", "验证码邮件没发出去，请稍后再试或联系平台管理员") from None
+    return {"required": True}
+
+
 @router.post("/register")
 def register(body: RegisterBody, request: Request, session: Session = Depends(get_db)) -> dict[str, object]:
+    if mail_ready(mail_config(session)):
+        # 验证码先查（且单独限次）：输错几次不该占掉下面「一小时注册 5 个」的名额；5 次 / 15 分钟挡住猜 4 位码
+        throttle(session, f"regcode-try:{body.email}", limit=5, window_seconds=15 * 60)
+        if not email_code_ok(body.email, body.code.strip()):
+            raise APIError(400, "INVALID_CODE", "验证码不正确或已过期")
     # 同一个来源一小时最多注册 5 个号：挡住脚本批量注册（再拿去刷上传、发广告）。
     # 单元测试全部来自同一个地址、每个用例要注册好几个号，所以测试里关掉（有单独的用例打开它测）。
     if not get_settings().testing:
@@ -276,7 +327,7 @@ class VerifyPhoneBody(BaseModel):
     @classmethod
     def normalize_phone(cls, value: str) -> str:
         digits = "".join(ch for ch in value if ch.isdigit())
-        if len(digits) < 8:
+        if len(digits) < 8 or len(digits) > 20:
             raise ValueError("请填写有效手机号")
         return f"+{digits}"
 
@@ -305,7 +356,8 @@ def verify_phone(
 
 @router.post("/login")
 def login(body: LoginBody, request: Request, session: Session = Depends(get_db)) -> dict[str, str]:
-    throttle(session, f"login:{body.email}", limit=10, window_seconds=15 * 60)
+    # 按「邮箱 + 来源」计数：只按邮箱的话，别人拿你的邮箱乱试 10 次就能让你自己也登不上
+    throttle(session, f"login:{body.email}:{client_ip(request)}", limit=10, window_seconds=15 * 60)
     # 同一个来源拿一个密码换着邮箱试（撞库）也要拦；30 次够一家人共用一个网络
     throttle(session, f"login-ip:{client_ip(request)}", limit=30, window_seconds=15 * 60)
     user = session.scalar(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
@@ -323,6 +375,45 @@ def login(body: LoginBody, request: Request, session: Session = Depends(get_db))
     return tokens
 
 
+RESET_LINK_HOURS = 24
+
+
+class ForgotPasswordBody(BaseModel):
+    email: str = Field(max_length=255)
+
+
+@router.post("/forgot-password")
+def forgot_password(body: ForgotPasswordBody, request: Request, session: Session = Depends(get_db)) -> dict[str, bool]:
+    """自助找回密码：给这个邮箱发一次性重置链接。邮箱注册过没有都回同样的结果，不让人拿这个接口探测账号。"""
+    email = body.email.strip().lower()
+    throttle(session, f"forgot:{email}", limit=3, window_seconds=60 * 60)  # 也防有人拿它往别人邮箱里灌邮件
+    throttle(session, f"forgot-ip:{client_ip(request)}", limit=10, window_seconds=60 * 60)
+    config = mail_config(session)
+    if not mail_ready(config):
+        raise APIError(409, "MAIL_NOT_CONFIGURED", "网站还没有开通邮件找回密码，请联系平台管理员")
+    user = session.scalar(select(User).where(User.email == email, User.deleted_at.is_(None)))
+    if user is None:
+        return {"sent": True}
+    token = new_refresh_token()
+    text = (
+        f"{user.display_name}，你好：\n\n有人（希望是你本人）在海外圈申请重置这个账号的密码。"
+        f"点下面的链接设置新密码，{RESET_LINK_HOURS} 小时内有效，只能用一次：\n\n"
+        f"{config['site_url']}/reset-password?token={token}\n\n不是你本人操作的话，不用理会这封邮件，密码不会变。"
+    )
+    try:
+        send_mail(config, user.email, "重置你的海外圈密码", text)
+    except APIError as exc:
+        # 对外不说发没发出去（说了等于告诉对方这个邮箱注册过）；记进操作日志，管理员在后台看得到
+        write_audit(session, user.id, "account.reset_mail_failed", "user", user.id, exc.message)
+    else:
+        # 发出去了才换凭证：之前没用掉的链接作废，同一时间只有最新的一个有效
+        session.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id, PasswordReset.used_at.is_(None)))
+        session.add(PasswordReset(user_id=user.id, token_hash=hash_refresh_token(token), expires_at=utcnow() + timedelta(hours=RESET_LINK_HOURS)))
+        write_audit(session, user.id, "account.reset_mail", "user", user.id)
+    session.commit()
+    return {"sent": True}
+
+
 class ResetPasswordBody(BaseModel):
     token: str
     password: str = Field(min_length=8, max_length=200)
@@ -330,7 +421,7 @@ class ResetPasswordBody(BaseModel):
 
 @router.post("/reset-password")
 def reset_password(body: ResetPasswordBody, session: Session = Depends(get_db)) -> dict[str, bool]:
-    """用管理员生成的一次性链接设置新密码。成功后所有设备上的登录都失效，要用新密码重新登录。"""
+    """用一次性链接（邮件里收到的，或管理员生成的）设置新密码。成功后所有设备上的登录都失效，要用新密码重新登录。"""
     digest = hash_refresh_token(body.token.strip())
     throttle(session, f"reset:{digest[:16]}", limit=10, window_seconds=15 * 60)
     row = session.scalar(select(PasswordReset).where(PasswordReset.token_hash == digest))

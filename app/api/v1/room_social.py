@@ -1,7 +1,7 @@
 import re
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
@@ -17,7 +17,7 @@ from app.guard import first_status
 from app.privacy import is_room_member, require_not_blocked_by
 from app.recommend import country_blocked, is_roaming
 from app.rooms import require_not_banned
-from app.reports import ReportBody, report_receipt
+from app.reports import ReportBody, limit_reports, report_receipt
 from app.models import (
     Channel,
     ChannelCollaborator,
@@ -97,6 +97,12 @@ def publish_comment(session: Session, comment: RoomComment) -> None:
                 body=f"{name} 在留言里提到了你"[:200],
                 content_id=comment.content_id,
             )
+        )
+    # 回复通知也等留言公开了才发：待审的回复别人看不到，先通知等于绕过审核往作者那里推东西
+    content = session.get(Content, comment.content_id) if comment.content_id else None
+    if content is not None and content.author_id and content.author_id != comment.author_id:
+        session.add(
+            Notification(user_id=content.author_id, kind="reply", body=f"{name} 回复了「{content.title}」"[:200], content_id=content.id)
         )
 
 
@@ -225,6 +231,7 @@ def list_comments(
                 "like_count": counts.get(row.id, 0),
                 "liked": row.id in liked,
                 "status": row.status,
+                "can_delete": user is not None and user.id in (row.author_id, room.owner_id),
                 "created_at": row.created_at.isoformat(),
             }
         )
@@ -314,9 +321,11 @@ def report_comment(
     channel_id: str,
     comment_id: str,
     body: ReportBody,
+    request: Request,
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
+    limit_reports(session, request, user)
     room = _room(session, channel_id)
     comment = session.get(RoomComment, comment_id)
     if comment is None or comment.room_id != room.id or comment.removed_at is not None or comment.status != "published":

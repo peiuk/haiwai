@@ -1,4 +1,5 @@
 """管理后台：频道 / 房间和国家的管理。新增、编辑、删除频道和开关国家只有超级管理员能做。"""
+from datetime import timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends
@@ -6,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from app.api.v1.admin import PAGE, Reasoned, _count, _delete_files, _like, _names, _paged, _release_uploads, require_admin, require_super
+from app.api.v1.admin import PAGE, Reasoned, _because, _count, _delete_files, _like, _names, _paged, _release_uploads, notify_user, require_admin, require_super
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
@@ -15,6 +16,7 @@ from app.models import (
     Channel,
     ChannelCollaborator,
     ChannelItem,
+    ChannelRoomSlot,
     ChannelSubscription,
     CommentLike,
     Content,
@@ -36,8 +38,13 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 
 
 @router.get("/channels")
-def list_channels(q: str = "", region: str = "", page: int = 1, session: Session = Depends(get_db)) -> dict[str, object]:
+def list_channels(q: str = "", region: str = "", scope: str = "", page: int = 1, session: Session = Depends(get_db)) -> dict[str, object]:
     query = select(Channel)
+    # scope：official=后台管理的官方频道，room=用户自己创建的房间；不传则两种都列（兼容旧调用）
+    if scope == "official":
+        query = query.where(Channel.kind != "room")
+    elif scope == "room":
+        query = query.where(Channel.kind == "room")
     if region.strip():
         query = query.where(Channel.region_code == region.strip().upper())
     if q.strip():
@@ -79,6 +86,155 @@ def channel_options(session: Session = Depends(get_db)) -> dict[str, list[dict[s
         select(Channel.id, Channel.name_hans).where(Channel.is_active.is_(True)).order_by(Channel.kind, Channel.name_hans).limit(200)
     ).all()
     return {"items": [{"channel_id": row.id, "name": row.name_hans} for row in rows]}
+
+
+# ---- 房间位：官方给频道指定的房间（推荐 / VIP 置顶），相当于官方置顶 ----
+
+
+class SlotBody(BaseModel):
+    room_id: str
+    sort_order: int = Field(default=0, ge=0, le=999)
+    label: str = Field(default="", max_length=16)  # 前台显示的标签；付费位请写「赞助」
+    days: int | None = Field(default=None, ge=1, le=3650)  # 有效天数；不填是长期
+
+
+@router.get("/channels/{channel_id}/slots")
+def list_slots(channel_id: str, session: Session = Depends(get_db)) -> dict[str, object]:
+    rows = session.execute(
+        select(ChannelRoomSlot, Channel)
+        .join(Channel, Channel.id == ChannelRoomSlot.room_id)
+        .where(ChannelRoomSlot.channel_id == channel_id)
+        .order_by(ChannelRoomSlot.sort_order, Channel.name_hans)
+    ).all()
+    names = _names(session, [room.owner_id for _slot, room in rows])
+    return {
+        "items": [
+            {
+                "room_id": room.id,
+                "name": room.name_hans,
+                "owner_name": names.get(room.owner_id or "", ""),
+                "is_active": room.is_active,
+                "sort_order": slot.sort_order,
+                "label": slot.label,
+                "expires_at": slot.expires_at,
+            }
+            for slot, room in rows
+        ]
+    }
+
+
+@router.post("/channels/{channel_id}/slots")
+def put_slot(
+    channel_id: str,
+    body: SlotBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, str]:
+    channel = session.get(Channel, channel_id)
+    if channel is None or not (channel.kind or "").startswith("official"):
+        raise APIError(404, "CHANNEL_NOT_FOUND", "房间位只能设在官方频道上")
+    room = session.get(Channel, body.room_id)
+    if room is None or room.kind != "room" or room.is_private:
+        raise APIError(404, "ROOM_NOT_FOUND", "房间不存在，或是私密房间")
+    slot = session.get(ChannelRoomSlot, (channel.id, room.id))
+    if slot is None:
+        slot = ChannelRoomSlot(channel_id=channel.id, room_id=room.id)
+        session.add(slot)
+    slot.sort_order = body.sort_order
+    slot.label = body.label.strip()
+    slot.expires_at = utcnow() + timedelta(days=body.days) if body.days else None
+    write_audit(session, admin.id, "admin.slot.set", "channel", channel.id, room.name_hans)
+    session.commit()
+    return {"channel_id": channel.id, "room_id": room.id}
+
+
+@router.post("/channels/{channel_id}/slots/{room_id}/delete")
+def delete_slot(
+    channel_id: str,
+    room_id: str,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, bool]:
+    slot = session.get(ChannelRoomSlot, (channel_id, room_id))
+    if slot is None:
+        raise APIError(404, "SLOT_NOT_FOUND", "这个房间位不存在")
+    session.delete(slot)
+    write_audit(session, admin.id, "admin.slot.remove", "channel", channel_id, room_id)
+    session.commit()
+    return {"removed": True}
+
+
+# ---- 房间推送审核：房主把帖子推到官方频道，通过后才出现在频道里 ----
+
+
+@router.get("/pushes")
+def list_pushes(status: str = "pending", page: int = 1, session: Session = Depends(get_db)) -> dict[str, object]:
+    rows, total = _paged(session, select(RoomPostPush).where(RoomPostPush.status == status), (RoomPostPush.pushed_at,), page)
+    channels = {
+        row.id: row.name_hans
+        for row in session.scalars(select(Channel).where(Channel.id.in_({r.room_id for r in rows} | {r.channel_id for r in rows}))).all()
+    }
+    titles = {
+        row.id: row.title
+        for row in session.scalars(select(Content).where(Content.id.in_([r.content_id for r in rows]))).all()
+    }
+    names = _names(session, [row.pushed_by for row in rows])
+    return {
+        "total": total,
+        "page_size": PAGE,
+        "items": [
+            {
+                "content_id": row.content_id,
+                "title": titles.get(row.content_id, ""),
+                "room_id": row.room_id,
+                "room_name": channels.get(row.room_id, ""),
+                "channel_id": row.channel_id,
+                "channel_name": channels.get(row.channel_id, ""),
+                "owner_name": names.get(row.pushed_by, ""),
+                "pushed_at": row.pushed_at,
+            }
+            for row in rows
+        ],
+    }
+
+
+class PushDecision(Reasoned):
+    decision: Literal["approve", "reject"]
+
+
+@router.post("/pushes/{content_id}/decision")
+def decide_push(
+    content_id: str,
+    body: PushDecision,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, str]:
+    push = session.get(RoomPostPush, content_id)
+    if push is None or push.status != "pending":
+        raise APIError(409, "ALREADY_DECIDED", "这条推送已经处理过，或已被撤回")
+    content = session.get(Content, content_id)
+    room = session.get(Channel, push.room_id)
+    channel = session.get(Channel, push.channel_id)
+    title = (content.title if content is not None else "") or "（无标题）"
+    if body.decision == "approve":
+        usable = (
+            content is not None and content.status == "published" and content.deleted_at is None
+            and room is not None and room.is_active and not room.is_private
+            and channel is not None and channel.is_active
+        )
+        if not usable:
+            raise APIError(409, "PUSH_STALE", "帖子、房间或频道的状态已经变了，不能通过，请拒绝")
+        push.status = "approved"
+        if session.get(ChannelItem, (channel.id, content_id)) is None:
+            session.add(ChannelItem(channel_id=channel.id, content_id=content_id, origin_room_id=room.id, added_at=utcnow()))
+        message = f"你的帖子「{title}」已推送到频道「{channel.name_hans}」"
+    else:
+        push.status = "rejected"
+        message = f"你的帖子「{title}」没有通过推送到频道的审核{_because(body.note)}"
+    write_audit(session, admin.id, f"admin.push.{body.decision}", "content", content_id, body.note)
+    notify_user(session, push.pushed_by, message, content_id=content_id, actor_id=admin.id)
+    session.commit()
+    return {"content_id": content_id, "status": push.status}
 
 
 class CertifiedBody(BaseModel):
@@ -268,6 +424,7 @@ def _purge_channel(session: Session, channel: Channel) -> tuple[int, list[str]]:
     session.execute(delete(CommentLike).where(CommentLike.comment_id.in_([row.id for row in doomed])))
     session.execute(delete(RoomComment).where(RoomComment.room_id == channel.id))
     session.execute(delete(RoomPostPush).where((RoomPostPush.room_id == channel.id) | (RoomPostPush.channel_id == channel.id)))
+    session.execute(delete(ChannelRoomSlot).where((ChannelRoomSlot.room_id == channel.id) | (ChannelRoomSlot.channel_id == channel.id)))
     for room in rooms:
         room.parent_channel_id = None
     # 针对这个频道的未处理举报没有对象可处理了，直接结案

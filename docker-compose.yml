@@ -17,14 +17,25 @@ services:
     env_file: [.env]
     environment:
       DATABASE_URL: postgresql+psycopg://ukcn:${POSTGRES_PASSWORD:-ukcn}@db:5432/ukcn
+      # 请求都经过下面的 web（nginx）：不设的话所有用户算同一个来源，全站每小时只能注册 5 个号
+      TRUST_PROXY: "true"
     depends_on:
       db:
         condition: service_healthy
+    # 只绑本机：对外的入口是 web。直接对外开放的话，别人可以绕过 nginx 伪造 X-Forwarded-For，躲开登录限流
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     # 用户上传的图片 / 视频（没配对象存储时存在这里）。不挂卷的话重建容器就全丢了。
     volumes:
       - uploads:/srv/data/uploads
+    restart: unless-stopped
+  # 对外入口：前端页面 + 把 /api 转给 api（web/nginx.conf）。没配 HTTPS，证书请在它前面再加一层。
+  web:
+    build: ./web
+    depends_on:
+      - api
+    ports:
+      - "80:80"
     restart: unless-stopped
   # 每天伦敦时间 8 点抓 GOV.UK 资讯、AI 写成中文稿进「待审核」。单独一个进程，api 的多个 worker 不会重复调用 AI。
   news:

@@ -145,7 +145,7 @@ class Content(Base):
     source_name: Mapped[str | None] = mapped_column(String(96))
     licence_ref: Mapped[str | None] = mapped_column(Text)
     image_key: Mapped[str | None] = mapped_column(String(64))
-    # 分类信息多图（最多 4 张，JSON 数组）。image_key 保留为首图，供旧消费方兼容。
+    # 分类信息多图（最多 6 张，JSON 数组）。image_key 保留为首图，供旧消费方兼容。
     image_keys_json: Mapped[str] = mapped_column(Text, default="[]")
     video_key: Mapped[str | None] = mapped_column(String(64))
     rights_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -332,6 +332,21 @@ class RoomPostPush(Base):
     channel_id: Mapped[str] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"))
     pushed_by: Mapped[str] = mapped_column(ForeignKey("app_user.id"))
     pushed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # pending=等后台审核（此时还没有 ChannelItem，频道里看不到）；approved=已进频道；rejected=被拒，房主可以重新推
+    status: Mapped[str] = mapped_column(String(16), default="approved")
+
+
+class ChannelRoomSlot(Base):
+    """官方给某个频道指定的房间位（推荐 / VIP 置顶）。房间不再靠 parent_channel_id 自动出现在频道里。"""
+
+    __tablename__ = "channel_room_slot"
+
+    channel_id: Mapped[str] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), primary_key=True)
+    room_id: Mapped[str] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), primary_key=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)  # 小的在前
+    label: Mapped[str] = mapped_column(String(16), default="")  # 前台标签，如「推荐」「赞助」；付费位要写明
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 为空=长期
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class UserFollow(Base):
@@ -383,7 +398,8 @@ class RoomComment(Base):
     __table_args__ = (Index("ix_comment_status_created", "status", "created_at"), Index("ix_comment_content", "content_id"))
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    room_id: Mapped[str] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"))
+    # 帖子所在的频道 / 房间；发到「我的动态」的帖子不在任何频道里，它下面的回复这一项为空
+    room_id: Mapped[str | None] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"))
     content_id: Mapped[str | None] = mapped_column(String(36))
     parent_id: Mapped[str | None] = mapped_column(String(36))
     author_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
@@ -473,12 +489,12 @@ class ReviewClaim(Base):
 
 
 class SiteSetting(Base):
-    """全站开关，后台改。目前只有 review.post / review.listing / review.comment（on / off，没有记录等于 on）。"""
+    """全站设置，后台改。review.post / review.listing / review.comment（on / off，没有记录等于 on）；mail（发信邮箱，JSON，见 app/mail.py）。"""
 
     __tablename__ = "site_setting"
 
     key: Mapped[str] = mapped_column(String(32), primary_key=True)
-    value: Mapped[str] = mapped_column(String(64))
+    value: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 

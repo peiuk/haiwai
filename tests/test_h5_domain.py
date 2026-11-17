@@ -108,9 +108,6 @@ def test_settings_script_and_block_list(client):
 
     other_id = session.scalar(select(User.id).where(User.email == "blocked-person@example.com"))
     session.close()
-    assert client.get("/api/v1/me/script", headers=headers(owner)).json()["script_pref"] == "hans"
-    updated = client.put("/api/v1/me/script", headers=headers(owner), json={"script_pref": "hant"})
-    assert updated.json()["script_pref"] == "hant"
     assert client.put(f"/api/v1/me/blocks/{other_id}", headers=headers(owner)).status_code == 200
     listed = client.get("/api/v1/me/blocks", headers=headers(owner)).json()["items"]
     assert listed == [{"user_id": other_id, "display_name": "路人"}]
@@ -330,19 +327,6 @@ def test_video_post_needs_rights_and_topic_needs_a_tag(client):
     key = signed.json()["object_key"]
     stored = client.put(f"/api/v1/uploads/{key}", headers=headers(owner), content=b"\x00\x00\x00\x18ftyp")
     assert stored.status_code == 200, stored.text
-    missing = client.post(
-        "/api/v1/contents",
-        headers=headers(owner),
-        json={
-            "channel_id": channel_id,
-            "title": "一段视频",
-            "body": "自己拍的街道",
-            "post_type": "video",
-            "video_key": key,
-        },
-    )
-    assert missing.status_code == 400
-    assert missing.json()["code"] == "RIGHTS_REQUIRED"
     posted = client.post(
         "/api/v1/contents",
         headers=headers(owner),
@@ -352,7 +336,6 @@ def test_video_post_needs_rights_and_topic_needs_a_tag(client):
             "body": "自己拍的街道",
             "post_type": "video",
             "video_key": key,
-            "rights_confirmed": True,
         },
     )
     assert posted.status_code == 200, posted.text
@@ -780,7 +763,7 @@ def test_direct_message_request_and_listing_bypass(client):
     assert row["unread"] == 2
     notes = client.get("/api/v1/me/notifications", headers=headers(host))
     assert notes.json()["items"][0]["unread"] is True
-    cleared = client.post("/api/v1/me/notifications/read", headers=headers(host))
+    cleared = client.post("/api/v1/me/notifications/read-all", headers=headers(host))
     assert cleared.json()["marked"] == 1
     marked = client.post(f"/api/v1/me/messages/{thread_id}/read", headers=headers(host))
     assert marked.status_code == 200

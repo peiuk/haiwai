@@ -193,7 +193,7 @@ watch(
             @click="onNavClick(item)"
           >
             <span class="nav-icon">
-              <BaseIcon :name="item.icon" :size="22" />
+              <BaseIcon :name="item.icon" :size="24" />
               <span
                 v-if="item.key === 'messages' && unreadTotal > 0"
                 class="nav-badge"
@@ -372,12 +372,12 @@ watch(
 .nav-link {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  min-height: var(--tap);
+  gap: var(--sp-3);
+  min-height: 48px;
   padding: 0 var(--sp-3);
   border-radius: var(--r-pill);
   color: var(--text);
-  font-size: var(--fs-15);
+  font-size: var(--fs-19);
   font-weight: var(--fw-semibold);
 }
 /* 导航图标 + 未读角标（桌面左导航与手机底栏共用） */

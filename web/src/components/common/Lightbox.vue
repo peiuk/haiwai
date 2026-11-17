@@ -84,6 +84,7 @@ onBeforeUnmount(() => {
         :src="images[current]"
         class="lightbox-img"
         controls
+        controlslist="nodownload"
         autoplay
         playsinline
       ></video>

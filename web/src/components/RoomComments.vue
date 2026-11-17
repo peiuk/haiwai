@@ -133,6 +133,25 @@ async function toggleLike(comment: RoomComment): Promise<void> {
   }
 }
 
+// 删除留言：作者本人或房主（后端给 can_delete）。第一次点只变成「确认删除」，再点才真删。
+const confirming = ref("");
+
+async function remove(comment: RoomComment): Promise<void> {
+  if (confirming.value !== comment.id) {
+    confirming.value = comment.id;
+    return;
+  }
+  try {
+    await request(`/api/v1/channels/${props.roomId}/comments/${comment.id}`, { method: "DELETE" });
+    items.value = items.value.filter((item) => item.id !== comment.id);
+    toast.show("留言已删除");
+  } catch (err) {
+    toast.show(err instanceof Error ? err.message : "删除没有成功");
+  } finally {
+    confirming.value = "";
+  }
+}
+
 watch(() => props.roomId, () => void load(true));
 onMounted(() => void load(true));
 </script>
@@ -192,6 +211,9 @@ onMounted(() => void load(true));
           @click="toggleLike(comment)"
         >
           {{ comment.liked ? "已赞" : "赞" }} {{ comment.like_count }}
+        </button>
+        <button v-if="comment.can_delete" class="btn btn--ghost btn--sm" type="button" @click="remove(comment)">
+          {{ confirming === comment.id ? "确认删除" : "删除" }}
         </button>
         <ReportButton
           kind="comment"

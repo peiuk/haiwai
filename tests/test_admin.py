@@ -402,6 +402,12 @@ def test_certify_feature_and_announce(client):
     with client.session_factory() as session:
         assert session.get(Channel, room_id).certified is True and session.get(Channel, channel_id).certified is True
 
+    # 官方频道和用户房间分开列：scope=official 不含房间，scope=room 只含房间
+    def kinds(scope):
+        return {row["kind"] for row in client.get(f"/api/v1/admin/channels?scope={scope}", headers=headers(boss)).json()["items"]}
+    assert kinds("room") == {"room"}
+    assert kinds("official") and "room" not in kinds("official")
+
     # 精选
     url = f"/api/v1/admin/contents/{content_id}/featured"
     assert client.post(url, headers=headers(boss), json={"featured": True}).status_code == 200
@@ -446,6 +452,21 @@ def test_featured_content_ranks_first_for_guests(client):
     feed = client.get("/api/v1/me/feed?tab=foryou").json()["items"]
     assert feed[0]["content_id"] == picked
     assert (feed[0]["featured"], feed[0]["reason"]) == (True, "编辑精选")
+
+
+def test_private_room_post_cannot_be_featured(client):
+    boss = register(client, "boss@example.com", admin=True)
+    boss_id = user_id(client, "boss@example.com")
+    with client.session_factory() as session:
+        room = Channel(code="room-secret", name_hans="私密", name_hant="私密", kind="room", is_private=True, is_active=True, region_code="UK")
+        content = Content(type="post", status="published", title="成员可见", author_id=boss_id)
+        session.add_all([room, content])
+        session.flush()
+        session.add(ChannelItem(channel_id=room.id, content_id=content.id))
+        session.commit()
+        content_id = content.id
+    made = client.post(f"/api/v1/admin/contents/{content_id}/featured", headers=headers(boss), json={"featured": True})
+    assert (made.status_code, made.json()["code"]) == (409, "PRIVATE_ROOM")
 
 
 COUNTRY = ["资讯", "交流", "招聘", "房产", "市场", "商务"]

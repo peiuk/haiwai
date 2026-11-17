@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,7 @@ from app.models import (
     ContentReaction,
     DmMessage,
     DmThread,
+    ListingExt,
     ModerationCase,
     Notification,
     RefreshSession,
@@ -481,18 +482,6 @@ def my_reports(user: User = Depends(current_user), session: Session = Depends(ge
     }
 
 
-@router.post("/notifications/read")
-def read_notifications(user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, int]:
-    rows = session.scalars(
-        select(Notification).where(Notification.user_id == user.id, Notification.read_at.is_(None))
-    ).all()
-    now = utcnow()
-    for row in rows:
-        row.read_at = now
-    session.commit()
-    return {"marked": len(rows)}
-
-
 @router.post("/notifications/read-all")
 def read_all_notifications(user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, int]:
     rows = session.scalars(
@@ -522,15 +511,31 @@ def read_notification(
 
 
 @router.get("/posts")
-def my_posts(user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, list[dict[str, str | None]]]:
+def my_posts(user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, list[dict[str, object]]]:
     rows = session.scalars(
         select(Content)
         .where(Content.author_id == user.id, Content.deleted_at.is_(None))
         .order_by(Content.created_at.desc())
     ).all()
+    # 分类信息带上「是否已结案」：「我的发布」里据此显示「续期」/「已成交」
+    closed = set(
+        session.scalars(
+            select(ListingExt.content_id).where(
+                ListingExt.content_id.in_([row.id for row in rows if row.type == "listing"] or [""]),
+                ListingExt.closed_reason.is_not(None),
+            )
+        )
+    )
     return {
         "items": [
-            {"content_id": row.id, "title": row.title, "status": row.status, "summary": row.summary}
+            {
+                "content_id": row.id,
+                "title": row.title,
+                "status": row.status,
+                "summary": row.summary,
+                "type": row.type,
+                "closed": row.id in closed,
+            }
             for row in rows
         ]
     }
@@ -629,41 +634,18 @@ def my_feed(
 @router.post("/feed/seen")
 def mark_feed_seen(user: User = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, str]:
     user.feed_seen_at = utcnow()
+    # 关注流里的「未读」按每个频道的 last_read_at 算：看过关注流就把它们一起推到现在，
+    # 不然加入频道之后的每条帖子永远标着未读（前端从不单独调「标记频道已读」）。
+    session.execute(update(ChannelSubscription).where(ChannelSubscription.user_id == user.id).values(last_read_at=user.feed_seen_at))
     session.commit()
     return {"seen_at": user.feed_seen_at.isoformat()}
 
 
-class ScriptBody(BaseModel):
-    script_pref: str
-
-    @field_validator("script_pref")
-    @classmethod
-    def known_script(cls, value: str) -> str:
-        if value not in {"hans", "hant"}:
-            raise ValueError("简繁偏好只能是 hans 或 hant")
-        return value
-
-
-@router.get("/script")
-def get_script(user: User = Depends(current_user)) -> dict[str, str]:
-    return {"script_pref": user.script_pref}
-
-
-@router.put("/script")
-def update_script(
-    body: ScriptBody,
-    user: User = Depends(current_user),
-    session: Session = Depends(get_db),
-) -> dict[str, str]:
-    user.script_pref = body.script_pref
-    session.commit()
-    return {"script_pref": user.script_pref}
-
-
 class RegionBody(BaseModel):
     region_code: str
-    source: str = "manual"
-    consent_id: str | None = None
+    # 上限和数据库列宽一致：超了在 PostgreSQL 上会直接 500
+    source: str = Field(default="manual", max_length=32)
+    consent_id: str | None = Field(default=None, max_length=36)
     locked: bool = False
     browse_region_code: str | None = None
 
@@ -820,6 +802,11 @@ def export_account(user: User, session: Session) -> dict[str, object]:
     subscriptions = session.scalars(select(ChannelSubscription).where(ChannelSubscription.user_id == user.id)).all()
     posts = session.scalars(select(Content).where(Content.author_id == user.id)).all()
     consents = session.scalars(select(ConsentRecord).where(ConsentRecord.user_id == user.id)).all()
+    comments = session.scalars(select(RoomComment).where(RoomComment.author_id == user.id).order_by(RoomComment.created_at)).all()
+    messages = session.scalars(select(DmMessage).where(DmMessage.sender_id == user.id).order_by(DmMessage.created_at)).all()
+    contacts = dict(
+        session.execute(select(ListingExt.content_id, ListingExt.contact).where(ListingExt.content_id.in_([row.id for row in posts] or [""]))).all()
+    )
     return {
         "user": {
             "email": user.email,
@@ -830,7 +817,19 @@ def export_account(user: User, session: Session) -> dict[str, object]:
             "phone": user.phone,
         },
         "subscriptions": [row.channel_id for row in subscriptions],
-        "posts": [{"content_id": row.id, "title": row.title, "status": row.status} for row in posts],
+        "posts": [
+            {
+                "content_id": row.id,
+                "title": row.title,
+                "status": row.status,
+                "body": row.body or row.summary or "",
+                "contact": contacts.get(row.id, ""),  # 分类信息里留的联系方式
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in posts
+        ],
+        "comments": [{"body": row.body, "created_at": row.created_at.isoformat()} for row in comments],
+        "messages": [{"body": row.body, "created_at": row.created_at.isoformat()} for row in messages],  # 只有本人发出的
         "consents": [{"purpose": row.purpose, "version": row.version, "granted": row.granted} for row in consents],
     }
 
@@ -857,16 +856,27 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
         if channel is not None and channel.subscriber_count > 0:
             channel.subscriber_count -= 1
         session.delete(subscription)
-    posts = session.scalars(select(Content).where(Content.author_id == user.id, Content.deleted_at.is_(None))).all()
+    # 隐私政策承诺「删除或匿名化」：帖子不只是标成已删除，正文和分类信息里的联系方式（电话、微信）也抹掉，
+    # 不然它们原样留在数据库和备份里。以前自己删过的帖子同样处理。
+    posts = session.scalars(select(Content).where(Content.author_id == user.id)).all()
     for post in posts:
-        post.status = "deleted"
-        post.deleted_at = now
-    # 留言也是这个人写的内容：一并移除（和后台「下架全部」同样处理）
+        if post.deleted_at is None:
+            post.status = "deleted"
+            post.deleted_at = now
+        post.title = "已注销用户的内容"
+        post.summary = None
+        post.body = None
+        post.keywords_json = "[]"
+    session.execute(
+        update(ListingExt).where(ListingExt.content_id.in_([post.id for post in posts] or [""])).values(contact="", area="")
+    )
+    # 留言也是这个人写的内容：一并移除（和后台「下架全部」同样处理），文字也抹掉
     session.execute(
         update(RoomComment)
         .where(RoomComment.author_id == user.id, RoomComment.removed_at.is_(None))
         .values(status="removed", removed_at=now)
     )
+    session.execute(update(RoomComment).where(RoomComment.author_id == user.id).values(body=""))
     # 页面承诺「删除资料、帖子和房间」：自建房间下线，上传的文件连磁盘一起删
     # （不删的话文件仍留在服务器，知道原链接的人还能打开）。
     for room in session.scalars(select(Channel).where(Channel.owner_id == user.id, Channel.kind == "room")).all():

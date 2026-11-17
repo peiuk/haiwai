@@ -5,19 +5,12 @@ import { computed, ref, watch } from "vue";
 import ContentDetail from "../ContentDetail.vue";
 import PostCard from "../common/PostCard.vue";
 import InfiniteSentinel from "../common/InfiniteSentinel.vue";
-import {
-  jsonBody,
-  request,
-  type FeedItem,
-  type FeedResponse,
-} from "../../api";
+import { request, type FeedItem, type FeedResponse } from "../../api";
 import { useAuthStore } from "../../stores/auth";
-import { useToastStore } from "../../stores/toast";
 import { useLoginPromptStore } from "../../stores/loginPrompt";
 import { usePostReactions } from "../../composables/usePostReactions";
 
 const auth = useAuthStore();
-const toast = useToastStore();
 
 const feed = ref<FeedItem[]>([]);
 const cursor = ref<string | null>(null);
@@ -25,7 +18,6 @@ const loading = ref(false);
 const error = ref("");
 const pageError = ref(false);
 const activeContentId = ref<string | null>(null);
-const reportCases = ref<Record<string, string>>({});
 
 const hasMore = computed(() => !!cursor.value && !pageError.value);
 
@@ -76,22 +68,6 @@ const { toggleLike, toggleFavorite, repost: repostItem } = usePostReactions();
 
 function repost(item: FeedItem): Promise<void> {
   return repostItem(item, item.channel_id);
-}
-
-function onReported(contentId: string, caseId: string): void {
-  reportCases.value = { ...reportCases.value, [contentId]: caseId };
-}
-
-async function removeReported(contentId: string): Promise<void> {
-  const caseId = reportCases.value[contentId];
-  if (!caseId) return;
-  try {
-    await request(`/api/v1/moderation/cases/${caseId}/decision`, jsonBody({ decision: "remove" }));
-    toast.show("已从关注流下架");
-    await load();
-  } catch (err) {
-    toast.show(err instanceof Error ? err.message : "下架没有成功");
-  }
 }
 
 function openDetail(item: FeedItem): void {
@@ -149,12 +125,7 @@ load();
       @favorite="toggleFavorite(item)"
       @repost="repost(item)"
       @open="openDetail(item)"
-      @reported="onReported(item.content_id, $event)"
-    >
-      <template v-if="reportCases[item.content_id]" #extra>
-        <button class="btn btn--ghost btn--sm" type="button" @click="removeReported(item.content_id)">下架</button>
-      </template>
-    </PostCard>
+    />
 
     <InfiniteSentinel
       v-if="auth.isLoggedIn && feed.length"

@@ -18,6 +18,7 @@ import { useThemeStore } from "../../stores/theme";
 import { useToastStore } from "../../stores/toast";
 import BaseButton from "../base/BaseButton.vue";
 import Checkbox from "../base/Checkbox.vue";
+import Modal from "../base/Modal.vue";
 import TextField from "../base/TextField.vue";
 
 const auth = useAuthStore();
@@ -36,6 +37,15 @@ const phoneCode = ref("");
 const busy = ref(false);
 const error = ref("");
 const profile = ref<MeProfile | null>(null);
+// 注册的邮箱验证码弹窗
+const codeOpen = ref(false);
+const regCode = ref("");
+const codeError = ref("");
+// 忘记密码弹窗
+const forgotOpen = ref(false);
+const forgotEmail = ref("");
+const forgotDone = ref(false);
+const forgotError = ref("");
 
 async function loadProfile(): Promise<void> {
   if (!auth.isLoggedIn) {
@@ -64,8 +74,50 @@ async function submitAuth(): Promise<void> {
       error.value = "注册需要同意服务条款与隐私政策";
       return;
     }
+    if (password.value.length < 8) {
+      error.value = "密码至少 8 位";
+      return;
+    }
+    const cityLabel = city.value.trim();
+    if (cityLabel && (cityLabel.length > 12 || /\s/.test(cityLabel))) {
+      error.value = "城市需要 1 到 12 个字，不能有空格";
+      return;
+    }
+    // 先发邮箱验证码，弹窗里填好再真正注册；后台没配发信邮箱时 required=false，直接注册
+    if (await sendCode()) {
+      regCode.value = "";
+      codeError.value = "";
+      codeOpen.value = true;
+      return;
+    }
+    if (error.value) return;
+  }
+  await finishAuth();
+}
+
+/** 发注册验证码。返回是否需要填验证码；出错时写进 error（弹窗开着就写进弹窗）并返回 false。 */
+async function sendCode(): Promise<boolean> {
+  busy.value = true;
+  try {
+    const body = await request<{ required: boolean }>("/api/v1/auth/register-code", jsonBody({ email: email.value.trim() }), false);
+    if (codeOpen.value) toast.show("验证码已重新发送");
+    return body.required;
+  } catch (err) {
+    if (codeOpen.value) codeError.value = toMessage(err);
+    else error.value = toMessage(err);
+    return false;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function finishAuth(): Promise<void> {
+  if (codeOpen.value && !/^\d{4}$/.test(regCode.value.trim())) {
+    codeError.value = "请输入邮件里的 4 位数字验证码";
+    return;
   }
   busy.value = true;
+  codeError.value = "";
   try {
     const payload: Record<string, unknown> = {
       email: email.value.trim(),
@@ -74,12 +126,8 @@ async function submitAuth(): Promise<void> {
     if (mode.value === "register") {
       payload.display_name = displayName.value.trim();
       const cityLabel = city.value.trim();
-      if (cityLabel && (cityLabel.length > 12 || /\s/.test(cityLabel))) {
-        error.value = "城市需要 1 到 12 个字，不能有空格";
-        busy.value = false;
-        return;
-      }
       if (cityLabel) payload.city_code = cityLabel;
+      if (codeOpen.value) payload.code = regCode.value.trim();
       payload.script_pref = theme.lang === "zh-Hant" ? "hant" : "hans";
       payload.consents = [
         { purpose: "tos", version: "v1", granted: agreedAll.value },
@@ -94,10 +142,36 @@ async function submitAuth(): Promise<void> {
     setSession(body);
     auth.login(body.access_token);
     password.value = "";
+    codeOpen.value = false;
     toast.show(mode.value === "register" ? "注册成功，已登录" : "登录成功");
     await loadProfile();
   } catch (err) {
-    error.value = toMessage(err);
+    if (codeOpen.value) codeError.value = toMessage(err);
+    else error.value = toMessage(err);
+  } finally {
+    busy.value = false;
+  }
+}
+
+function openForgot(): void {
+  forgotEmail.value = email.value.trim();
+  forgotDone.value = false;
+  forgotError.value = "";
+  forgotOpen.value = true;
+}
+
+async function sendForgot(): Promise<void> {
+  if (!forgotEmail.value.trim()) {
+    forgotError.value = "请填写注册时用的邮箱";
+    return;
+  }
+  busy.value = true;
+  forgotError.value = "";
+  try {
+    await request("/api/v1/auth/forgot-password", jsonBody({ email: forgotEmail.value.trim() }), false);
+    forgotDone.value = true;
+  } catch (err) {
+    forgotError.value = toMessage(err);
   } finally {
     busy.value = false;
   }
@@ -196,8 +270,31 @@ onMounted(loadProfile);
         <BaseButton type="submit" :loading="busy" class="submit-btn">
           {{ mode === "login" ? "登录" : "注册并登录" }}
         </BaseButton>
-        <p v-if="mode === 'login'" class="account-meta">忘记密码？请联系{{ supportContact ? `平台（${supportContact}）` : "平台管理员" }}，对方会给你一个一次性的重置链接。</p>
+        <button v-if="mode === 'login'" type="button" class="link-btn" @click="openForgot">忘记密码？</button>
       </form>
+
+      <Modal :open="codeOpen" title="输入邮箱验证码" @close="codeOpen = false">
+        <form class="modal-form" @submit.prevent="finishAuth">
+          <p class="account-meta">4 位验证码已发到 {{ email.trim() }}，10 分钟内有效。没收到请看看垃圾邮件箱。</p>
+          <TextField id="register-code" v-model="regCode" label="验证码" autocomplete="one-time-code" :maxlength="4" required />
+          <p v-if="codeError" class="form-error" role="alert">{{ codeError }}</p>
+          <BaseButton type="submit" :loading="busy" class="submit-btn">完成注册</BaseButton>
+          <button type="button" class="link-btn" :disabled="busy" @click="sendCode">没收到？重新发送</button>
+        </form>
+      </Modal>
+
+      <Modal :open="forgotOpen" title="找回密码" @close="forgotOpen = false">
+        <p v-if="forgotDone" class="account-meta">
+          如果 {{ forgotEmail.trim() }} 注册过，重置密码的链接已经发过去了，24 小时内有效、只能用一次。没收到请看看垃圾邮件箱。
+        </p>
+        <form v-else class="modal-form" @submit.prevent="sendForgot">
+          <p class="account-meta">填写注册时用的邮箱，我们把重置密码的链接发过去。</p>
+          <TextField id="forgot-email" v-model="forgotEmail" label="邮箱" type="email" autocomplete="email" required />
+          <p v-if="forgotError" class="form-error" role="alert">{{ forgotError }}</p>
+          <BaseButton type="submit" :loading="busy" class="submit-btn">发送重置链接</BaseButton>
+        </form>
+        <p class="account-meta">邮箱也用不了了？请联系{{ supportContact ? `平台（${supportContact}）` : "平台管理员" }}。</p>
+      </Modal>
     </template>
 
     <template v-else>
@@ -326,6 +423,24 @@ onMounted(loadProfile);
 }
 .account-footer .form-error {
   flex: 1;
+}
+.modal-form {
+  display: grid;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+.link-btn {
+  justify-self: center;
+  min-height: var(--tap);
+  padding: 0 var(--sp-2);
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.link-btn:hover {
+  text-decoration: underline;
 }
 .account-meta,
 .form-error {

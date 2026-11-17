@@ -25,6 +25,7 @@ const emit = defineEmits<{
 
 const episodeLabel = computed(() => {
   if (props.item.season == null || props.item.episode == null) return "";
+  if (props.item.season === 1) return `第 ${props.item.episode} 集`; // 新建的剧集不分季
   return `S${String(props.item.season).padStart(2, "0")}E${String(props.item.episode).padStart(3, "0")}`;
 });
 

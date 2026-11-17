@@ -6,6 +6,7 @@ import base64
 import binascii
 import csv
 import io
+import json
 import os
 from datetime import timedelta
 from typing import Literal
@@ -34,6 +35,7 @@ from app.core.db import get_db
 from app.core.errors import APIError
 from app.core.security import new_totp_secret, verify_totp
 from app.guard import REVIEW_KINDS, review_on
+from app.mail import mail_config, send_mail
 from app.models import AuditLog, BlockedTerm, Content, ModerationCase, ReviewClaim, SiteSetting, User, utcnow
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
@@ -200,6 +202,56 @@ def set_review(body: ReviewSwitchBody, admin: User = Depends(require_super), ses
     write_audit(session, admin.id, f"admin.review.{'on' if body.enabled else 'off'}", "setting", None, body.kind)
     session.commit()
     return review_settings(session)
+
+
+# ---- 发信邮箱（SMTP）：网站用它发「忘记密码」的重置邮件 ----
+
+EMAIL_SHAPE = r"^[^@\s]+@[^@\s]+$"
+
+
+class MailSettingsBody(BaseModel):
+    host: str = Field(max_length=120, pattern=r"^[\w.-]+$")
+    port: int = Field(ge=1, le=65535)
+    ssl: bool = True  # True：SSL 直连（一般 465）；False：先连上再 STARTTLS（一般 587）
+    # shortcut: 登录账号同时当发件地址，所以必须是邮箱；用 API key 当账号的发信服务（如 SendGrid）要再加一个发件地址字段。
+    user: str = Field(max_length=120, pattern=EMAIL_SHAPE)
+    password: str = Field(default="", max_length=200)  # 留空 = 保留原来的授权码
+    from_name: str = Field(default="", max_length=40, pattern=r"^[^\r\n]*$")
+    site_url: str = Field(max_length=120, pattern=r"^https?://[^/\s]+$")  # 邮件里的重置链接用它拼，不信请求头
+
+
+def _mail_view(session: Session) -> dict[str, object]:
+    """授权码只进不出：页面只需要知道填没填过。"""
+    config = mail_config(session)
+    return {**{key: value for key, value in config.items() if key != "password"}, "password_set": bool(config["password"])}
+
+
+@router.get("/mail-settings")
+def mail_settings(_: User = Depends(require_super), session: Session = Depends(get_db)) -> dict[str, object]:
+    return _mail_view(session)
+
+
+@router.post("/mail-settings")
+def set_mail(body: MailSettingsBody, admin: User = Depends(require_super), session: Session = Depends(get_db)) -> dict[str, object]:
+    data = body.model_dump()
+    data["password"] = body.password or mail_config(session)["password"]
+    session.merge(SiteSetting(key="mail", value=json.dumps(data, ensure_ascii=False)))
+    write_audit(session, admin.id, "admin.mail.save", "setting", None, f"{body.host}:{body.port} {body.user}")
+    session.commit()
+    return _mail_view(session)
+
+
+class MailTestBody(BaseModel):
+    to: str = Field(max_length=255, pattern=EMAIL_SHAPE)
+
+
+@router.post("/mail-settings/test")
+def test_mail(body: MailTestBody, admin: User = Depends(require_super), session: Session = Depends(get_db)) -> dict[str, bool]:
+    """用已保存的设置发一封测试邮件；发不出去回 400 和原因。"""
+    send_mail(mail_config(session), body.to, "海外圈测试邮件", "这是一封测试邮件。能收到，说明后台的发信邮箱配置好了。")
+    write_audit(session, admin.id, "admin.mail.test", "setting", None, body.to)
+    session.commit()
+    return {"sent": True}
 
 
 # ---- 导出 ----

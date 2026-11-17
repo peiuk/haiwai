@@ -5,6 +5,8 @@ import { ApiRequestError, jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
 import { ADMIN_CHANGED, adminMe, adminRequest } from "./adminApi";
 import AdminPager from "./AdminPager.vue";
+import AdminPushes from "./AdminPushes.vue";
+import AdminSlots from "./AdminSlots.vue";
 import { confirmAction } from "./confirm";
 import { KIND_LABELS, STATUS_LABELS, exact, when } from "./shared";
 import { useAdminList } from "./useAdminList";
@@ -31,10 +33,21 @@ type RegionOption = { code: string; name: string; is_open: boolean };
 const toast = useToastStore();
 const q = ref("");
 const region = ref("");
+// 分开看：官方频道由后台管理；用户房间由用户自己创建，后台只做审核、认证、上下架；待审推送是房主推到频道的帖子
+const scope = ref<"official" | "room" | "push">("official");
+const slotFor = ref<Row | null>(null); // 正在编辑房间位的官方频道
 const { items, total, page, pageSize, loading, error, busy, load, search, go, act, ask } = useAdminList<Row>(
   "/api/v1/admin/channels",
-  () => ({ q: q.value, region: region.value }),
+  () => ({ q: q.value, region: region.value, scope: scope.value }),
 );
+
+function setScope(next: "official" | "room" | "push"): void {
+  if (scope.value === next) return;
+  scope.value = next;
+  editing.value = "";
+  slotFor.value = null;
+  if (next !== "push") search();
+}
 
 const regions = ref<RegionOption[]>([]);
 const regionNames = ref<Record<string, string>>({});
@@ -154,9 +167,18 @@ function certify(item: Row): Promise<void> {
   <div>
     <header class="adm-head">
       <h1>频道 / 房间</h1>
-      <p>同一国家里按排序号从小到大排列</p>
-      <button v-if="!editing && adminMe.is_super" type="button" class="btn btn--primary btn--sm" @click="openCreate">新增频道</button>
+      <p>{{ scope === "official" ? "后台建立和管理的官方频道，同一国家里按排序号从小到大排列" : scope === "room" ? "用户自己创建的房间，房主负责运营；这里只做审核、认证、上下架" : "房主把房间里的帖子推到官方频道，通过后才会出现在频道里" }}</p>
+      <button v-if="scope === 'official' && !editing && adminMe.is_super" type="button" class="btn btn--primary btn--sm" @click="openCreate">新增频道</button>
     </header>
+
+    <div class="adm-filters" role="tablist" aria-label="频道与房间">
+      <button type="button" role="tab" class="btn btn--sm" :class="scope === 'official' ? 'btn--primary' : 'btn--outline'" :aria-selected="scope === 'official'" @click="setScope('official')">官方频道</button>
+      <button type="button" role="tab" class="btn btn--sm" :class="scope === 'room' ? 'btn--primary' : 'btn--outline'" :aria-selected="scope === 'room'" @click="setScope('room')">用户房间</button>
+      <button type="button" role="tab" class="btn btn--sm" :class="scope === 'push' ? 'btn--primary' : 'btn--outline'" :aria-selected="scope === 'push'" @click="setScope('push')">待审推送</button>
+    </div>
+
+    <AdminPushes v-if="scope === 'push'" />
+    <div v-show="scope !== 'push'">
 
     <section v-if="editing" class="adm-panel">
       <h2>{{ editing === "new" ? "新增频道" : "编辑频道" }}</h2>
@@ -208,6 +230,8 @@ function certify(item: Row): Promise<void> {
       </form>
     </section>
 
+    <AdminSlots v-if="slotFor" :key="slotFor.channel_id" :channel-id="slotFor.channel_id" :channel-name="slotFor.name" @close="slotFor = null" />
+
     <form class="adm-filters" @submit.prevent="search">
       <input v-model="q" class="input" type="search" aria-label="搜索频道" placeholder="名称或代号" />
       <select v-model="region" class="input" aria-label="按国家筛选" @change="search">
@@ -223,11 +247,12 @@ function certify(item: Row): Promise<void> {
     </p>
 
     <section class="adm-panel">
-      <p v-if="!items.length" class="adm-empty">{{ loading ? "正在加载…" : "没有符合条件的频道。" }}</p>
+      <p v-if="!items.length" class="adm-empty">{{ loading ? "正在加载…" : scope === "official" ? "没有符合条件的频道。" : "没有符合条件的用户房间。" }}</p>
       <div v-else class="adm-scroll">
         <table class="adm-table">
           <thead>
-            <tr><th>名称</th><th>国家</th><th>分类</th><th class="adm-num">排序</th><th>类型</th><th class="adm-num">成员</th><th>状态</th><th>创建时间</th><th></th></tr>
+            <tr v-if="scope === 'official'"><th>名称</th><th>国家</th><th>分类</th><th class="adm-num">排序</th><th>类型</th><th class="adm-num">成员</th><th>状态</th><th>创建时间</th><th></th></tr>
+            <tr v-else><th>房间</th><th>国家</th><th>房主</th><th class="adm-num">成员</th><th>状态</th><th>创建时间</th><th></th></tr>
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.channel_id">
@@ -237,12 +262,12 @@ function certify(item: Row): Promise<void> {
                 <span class="adm-sub adm-mono">{{ item.code }}</span>
               </td>
               <td class="adm-nowrap">{{ regionNames[item.region_code] ?? item.region_code }}</td>
-              <td class="adm-nowrap">{{ item.category || "—" }}</td>
-              <td class="adm-num">{{ item.sort_order }}</td>
-              <td class="adm-nowrap">
-                {{ KIND_LABELS[item.kind] ?? item.kind }}
-                <span v-if="item.owner_name" class="adm-sub">{{ item.owner_name }} 创建</span>
-              </td>
+              <template v-if="scope === 'official'">
+                <td class="adm-nowrap">{{ item.category || "—" }}</td>
+                <td class="adm-num">{{ item.sort_order }}</td>
+                <td class="adm-nowrap">{{ KIND_LABELS[item.kind] ?? item.kind }}</td>
+              </template>
+              <td v-else class="adm-nowrap">{{ item.owner_name || "—" }}</td>
               <td class="adm-num">{{ item.subscriber_count }}</td>
               <td class="adm-nowrap">
                 <span class="tag" :class="item.is_active ? 'tag--good' : 'tag--danger'">{{ item.is_active ? "已上架" : "已下架" }}</span>
@@ -251,6 +276,7 @@ function certify(item: Row): Promise<void> {
               <td class="adm-nowrap" :title="exact(item.created_at)">{{ when(item.created_at) }}</td>
               <td>
                 <div class="adm-actions">
+                  <button v-if="scope === 'official'" type="button" class="btn btn--outline btn--sm" @click="slotFor = item">房间位</button>
                   <button v-if="adminMe.is_super" type="button" class="btn btn--outline btn--sm" @click="openEdit(item)">编辑</button>
                   <!-- 官方频道天然认证，不需要也不能改 -->
                   <button v-if="adminMe.is_super && !item.kind.startsWith('official')" type="button" class="btn btn--outline btn--sm" :disabled="busy === item.channel_id" @click="certify(item)">{{ item.is_certified ? "取消认证" : "认证" }}</button>
@@ -265,5 +291,6 @@ function certify(item: Row): Promise<void> {
       </div>
       <AdminPager :page="page" :total="total" :page-size="pageSize" @go="go" />
     </section>
+    </div>
   </div>
 </template>

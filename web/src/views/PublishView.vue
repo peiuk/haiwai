@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 发布页：对齐原型 publish-content.html 的「纯 X 式极简」单输入框结构。
-// 一个输入框就能发；类型（发图文/发视频/发话题/发信息）用 type-picker 下拉切换，
+// 一个输入框就能发；类型（发图文/发视频/发信息）用 type-picker 下拉切换，
 // 「发分类信息」为类型下拉中的第 4 类（info）。
 // 底部「我的发布」为可折叠 X 式帖子卡流。
 // 官方外链登记（EmbedForm）从本页移除，另设入口（不在发布页混排）。
@@ -25,7 +25,6 @@ import Avatar from "../components/base/Avatar.vue";
 import BaseIcon from "../components/base/BaseIcon.vue";
 import BaseButton from "../components/base/BaseButton.vue";
 import TextField from "../components/base/TextField.vue";
-import Checkbox from "../components/base/Checkbox.vue";
 import NoticeBar from "../components/base/NoticeBar.vue";
 import UploadField from "../components/common/UploadField.vue";
 import MultiUploadField from "../components/common/MultiUploadField.vue";
@@ -38,11 +37,10 @@ const router = useRouter();
 const route = useRoute();
 
 // ---- 内容类型（对齐原型 type-picker 4 类）----
-type ContentType = "text" | "video" | "topic" | "info";
+type ContentType = "text" | "video" | "info";
 const TYPE_OPTIONS: { value: ContentType; label: string; icon: string }[] = [
   { value: "text", label: "发图文", icon: "i-image" },
   { value: "video", label: "发视频", icon: "i-video" },
-  { value: "topic", label: "发话题", icon: "i-hash" },
   { value: "info", label: "发信息", icon: "i-pin" },
 ];
 const currentType = ref<ContentType>("text");
@@ -68,14 +66,13 @@ const topics = computed(() => hashTags(body.value));
 const cityTopic = ref("");
 const cityInited = ref(false);
 const videoKey = ref("");
-// 发视频两种方式：上传原创视频文件，或贴 YouTube / 哔哩哔哩外链（站内播放，不用确认原创）
+// 发视频两种方式：上传原创视频文件，或贴 YouTube / 哔哩哔哩外链（站内播放）
 const videoSource = ref<"upload" | "link">("upload");
 const videoUrl = ref("");
 const videoReady = computed(() =>
-  videoSource.value === "link" ? Boolean(videoUrl.value.trim()) : Boolean(videoKey.value && rightsConfirmed.value),
+  videoSource.value === "link" ? Boolean(videoUrl.value.trim()) : Boolean(videoKey.value),
 );
 const imageKeys = ref<string[]>([]);
-const rightsConfirmed = ref(false);
 const busy = ref(false);
 const submitError = ref("");
 const success = ref("");
@@ -93,11 +90,18 @@ const channelGroups = computed(() => {
   const opt = (c: ChannelsResponse["items"][number]) => ({ value: c.id, label: c.name_hans });
   return [
     { label: "频道", options: channels.value.filter((c) => c.kind !== "room").map(opt) },
-    { label: "我的房间", options: myRooms.value.map(opt) },
+    // 剧集 / 视频房间按集数、视频逐条添加，选了就去房间里加（onDestChange）
+    { label: "我的房间", options: myRooms.value.map((c) => ({ value: c.id, label: c.room_type === "general" ? c.name_hans : `${c.name_hans}（去房间里添加）` })) },
     { label: "其他房间", options: channels.value.filter((c) => c.kind === "room" && !mine.has(c.id)).map(opt) },
   ].filter((g) => g.options.length);
 });
 const allTargets = computed(() => [...channels.value, ...myRooms.value]);
+function onDestChange(): void {
+  const room = myRooms.value.find((r) => r.id === channelId.value);
+  if (!room || room.room_type === "general") return;
+  channelId.value = "";
+  void router.push({ name: "room", params: { id: room.id } });
+}
 
 const count = computed(() => body.value.length);
 const countOver = computed(() => count.value > MAX_LEN);
@@ -105,7 +109,6 @@ const canPublish = computed(() => {
   if (currentType.value === "info" || busy.value || countOver.value) return false;
   if (!body.value.trim() || body.value.trim().length < 2) return false;
   if (currentType.value === "video" && !videoReady.value) return false;
-  if (currentType.value === "topic" && topics.value.length === 0) return false;
   return true;
 });
 
@@ -179,7 +182,7 @@ function setType(tp: ContentType): void {
   submitError.value = "";
 }
 
-// ---- 图片上传（MultiUploadField，多选最多 4 张，带预览/进度）----
+// ---- 图片上传（MultiUploadField，多选最多 6 张，带预览/进度）----
 
 const needPhone = ref(false);
 
@@ -202,11 +205,7 @@ async function submit(): Promise<void> {
     return;
   }
   if (currentType.value === "video" && !videoReady.value) {
-    submitError.value = videoSource.value === "link" ? "请贴上视频链接" : "发视频需要上传视频文件，并勾选版权确认";
-    return;
-  }
-  if (currentType.value === "topic" && topics.value.length === 0) {
-    submitError.value = "发话题需要在正文里写至少一个 #话题";
+    submitError.value = videoSource.value === "link" ? "请贴上视频链接" : "发视频需要先上传视频文件";
     return;
   }
   busy.value = true;
@@ -225,7 +224,6 @@ async function submit(): Promise<void> {
       payload.video_url = videoUrl.value.trim();
     } else if (currentType.value === "video") {
       payload.video_key = videoKey.value;
-      payload.rights_confirmed = rightsConfirmed.value;
     }
 
     const result = await request<PublishResponse>("/api/v1/contents", jsonBody(payload));
@@ -243,7 +241,6 @@ async function submit(): Promise<void> {
     videoKey.value = "";
     videoUrl.value = "";
     imageKeys.value = [];
-    rightsConfirmed.value = false;
     // 发布成功后恢复默认城市话题（下次发帖仍默认带上）
     cityTopic.value = auth.profile?.city_label ?? "";
     cityInited.value = true;
@@ -310,7 +307,6 @@ function saveDraft(): void {
       videoKey: videoKey.value,
       videoSource: videoSource.value,
       videoUrl: videoUrl.value,
-      rightsConfirmed: rightsConfirmed.value,
     };
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     draftSaved.value = true;
@@ -322,19 +318,19 @@ function restoreDraft(): void {
     if (!raw) return;
     const draft = JSON.parse(raw) as {
       body: string; title: string; type: ContentType; channelId: string;
-      cityTopic?: string; imageKeys?: string[]; videoKey?: string; rightsConfirmed?: boolean;
+      cityTopic?: string; imageKeys?: string[]; videoKey?: string;
       videoSource?: "upload" | "link"; videoUrl?: string;
     };
     body.value = draft.body ?? "";
     title.value = draft.title ?? "";
-    if (draft.type) currentType.value = draft.type;
+    // 旧草稿可能存着已删掉的「发话题」类型
+    if (TYPE_OPTIONS.some((t) => t.value === draft.type)) currentType.value = draft.type;
     if (draft.channelId) channelId.value = draft.channelId;
     if (draft.cityTopic) cityTopic.value = draft.cityTopic;
     if (Array.isArray(draft.imageKeys)) imageKeys.value = draft.imageKeys;
     if (draft.videoKey) videoKey.value = draft.videoKey;
     if (draft.videoSource) videoSource.value = draft.videoSource;
     if (draft.videoUrl) videoUrl.value = draft.videoUrl;
-    if (draft.rightsConfirmed) rightsConfirmed.value = draft.rightsConfirmed;
     draftSaved.value = true;
   } catch {
     clearDraft();
@@ -366,7 +362,7 @@ watch(() => route.query.channel, (value) => {
 
 // 输入变化 → 防抖保存草稿
 watch(
-  [body, title, currentType, channelId, cityTopic, imageKeys, videoKey, videoSource, videoUrl, rightsConfirmed],
+  [body, title, currentType, channelId, cityTopic, imageKeys, videoKey, videoSource, videoUrl],
   () => {
     const hasContent =
       body.value.trim() || title.value.trim() || imageKeys.value.length || videoKey.value || videoUrl.value;
@@ -388,7 +384,7 @@ watch(
       <div v-if="currentType !== 'info'" class="dest-control">
         <label class="sr-only" for="dest-select">发布到</label>
         <span class="dest-control-label" aria-hidden="true">发布到</span>
-        <select id="dest-select" v-model="channelId" class="dest-select" aria-describedby="dest-hint">
+        <select id="dest-select" v-model="channelId" class="dest-select" aria-describedby="dest-hint" @change="onDestChange">
           <option value="">我的动态</option>
           <optgroup v-for="group in channelGroups" :key="group.label" :label="group.label">
             <option v-for="opt in group.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
@@ -445,10 +441,9 @@ watch(
 
         <!-- 视频提示 -->
         <NoticeBar v-if="currentType === 'video' && videoSource === 'upload'" variant="warn">
-          原创视频才允许上传文件；上传前请确认人物同意、无未授权音乐或影视片段。
+          只能上传本人原创视频，不要带未授权的音乐或影视片段。
         </NoticeBar>
 
-        <p v-if="currentType === 'topic' && !topics.length" class="topics-hint">在正文里写 #关键词 就是话题，最多 5 个</p>
         <div v-if="topics.length || cityTopic" class="topics" aria-label="这条帖子会带上的话题">
           <span v-if="cityTopic" class="tag city-tag" title="城市话题">
             <BaseIcon name="i-pin" :size="12" />{{ cityTopic }}
@@ -483,19 +478,18 @@ watch(
             :max-mb="100"
             hint="mp4 / webm / mov，最大 100MB；上传后才会随帖子提交"
           />
-          <Checkbox id="publish-rights" v-model="rightsConfirmed" label="我确认这是原创视频：已取得出镜人物同意，且不含未授权音乐或影视片段" />
           </template>
         </div>
 
-        <!-- 图片（发图文/话题时，多选最多 4 张）-->
-        <div v-if="(currentType === 'text' || currentType === 'topic') && (showImage || imageKeys.length)" class="extra-fields">
+        <!-- 图片（发图文时，多选最多 6 张）-->
+        <div v-if="currentType === 'text' && (showImage || imageKeys.length)" class="extra-fields">
           <MultiUploadField
             id="publish-image"
             v-model="imageKeys"
-            label="图片（可选，最多 4 张）"
+            label="图片（可选，最多 6 张）"
             accept="image/jpeg,image/png,image/webp"
             :max-mb="5"
-            :max="4"
+            :max="6"
             hint="jpeg / png / webp，单张最大 5MB；第一张为封面"
           />
         </div>
@@ -674,7 +668,6 @@ watch(
 }
 
 /* 话题：正文里 #词 的预览，城市话题可删 */
-.topics-hint { margin: 0; color: var(--muted); font-size: 13px; }
 .topics { display: flex; flex-wrap: wrap; gap: 6px; }
 .topics .tag {
   display: inline-flex;

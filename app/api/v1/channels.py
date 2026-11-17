@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.orm import Session, joinedload
@@ -10,7 +10,7 @@ from app.api.v1.uploads import owned_upload
 from app.core.pagination import decode_cursor, encode_cursor, paginate_rows
 from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, content_titles, listing_map, reaction_flags, repost_context
 from app.recommend import country_blocked, effective_region
-from app.reports import ReportBody, report_receipt
+from app.reports import ReportBody, limit_reports, report_receipt
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
@@ -21,6 +21,7 @@ from app.models import (
     Channel,
     ChannelCollaborator,
     ChannelItem,
+    ChannelRoomSlot,
     ChannelSubscription,
     Content,
     ModerationCase,
@@ -128,14 +129,13 @@ def my_rooms(
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, list[dict[str, object]]]:
-    """我能直接发帖的房间（房主或协作者、综合讨论类、没被拒），给发布页的「发布到」用。新建的在前。"""
+    """我管的房间（房主或协作者、没被拒），给发布页的「发布到」用；剧集 / 视频房间前端跳回房间里添加。新建的在前。"""
     collab = select(ChannelCollaborator.channel_id).where(ChannelCollaborator.user_id == user.id)
     rows = session.scalars(
         select(Channel)
         .where(
             Channel.kind == "room",
             Channel.visibility == "public",
-            Channel.room_type == "general",
             Channel.review_status != "rejected",
             or_(Channel.owner_id == user.id, Channel.id.in_(collab)),
         )
@@ -161,46 +161,46 @@ def my_rooms(
     }
 
 
-def _channel_rooms(session: Session, channel: Channel, user: User | None) -> list[dict[str, object]]:
-    rows = session.scalars(
-        select(Channel)
+def _channel_rooms(session: Session, channel: Channel) -> list[dict[str, object]]:
+    """频道里的房间位：只列后台指定的（推荐 / VIP），按排序号；房间自己的父频道不再决定它出现在哪。"""
+    rows = session.execute(
+        select(Channel, ChannelRoomSlot.label)
+        .join(ChannelRoomSlot, ChannelRoomSlot.room_id == Channel.id)
         .where(
-            Channel.parent_channel_id == channel.id,
+            ChannelRoomSlot.channel_id == channel.id,
+            or_(ChannelRoomSlot.expires_at.is_(None), ChannelRoomSlot.expires_at > utcnow()),
             Channel.kind == "room",
             Channel.visibility == "public",
+            Channel.is_active.is_(True),
+            Channel.is_private.is_(False),
         )
-        .order_by(Channel.name_hans)
+        .order_by(ChannelRoomSlot.sort_order, Channel.name_hans)
     ).all()
     published_ids = set(
         session.scalars(
             select(ChannelItem.channel_id)
             .join(Content, Content.id == ChannelItem.content_id)
             .where(
-                ChannelItem.channel_id.in_([row.id for row in rows] or [""]),
+                ChannelItem.channel_id.in_([row.id for row, _ in rows] or [""]),
                 Content.status == "published",
                 Content.deleted_at.is_(None),
             )
             .distinct()
         ).all()
     )
-    rooms: list[dict[str, object]] = []
-    for row in rows:
-        owns = user is not None and row.owner_id == user.id
-        public = row.is_active and not row.is_private and row.id in published_ids
-        if not owns and not public:
-            continue
-        rooms.append(
-            {
-                "id": row.id,
-                "name_hans": row.name_hans,
-                "room_type": row.room_type,
-                "room_type_label": ROOM_TYPE_LABELS.get(row.room_type, row.room_type),
-                "is_private": row.is_private,
-                "is_active": row.is_active,
-                "has_published": row.id in published_ids,
-            }
-        )
-    return rooms
+    return [
+        {
+            "id": row.id,
+            "name_hans": row.name_hans,
+            "room_type": row.room_type,
+            "room_type_label": ROOM_TYPE_LABELS.get(row.room_type, row.room_type),
+            "is_private": row.is_private,
+            "is_active": row.is_active,
+            "has_published": row.id in published_ids,
+            "slot_label": label,
+        }
+        for row, label in rows
+    ]
 
 
 def _open_channel(session: Session, channel: Channel | None, user: User | None) -> Channel:
@@ -317,7 +317,7 @@ def channel_detail(
                 select(ChannelCollaborator).where(ChannelCollaborator.channel_id == channel.id)
             ).all()
         ],
-        "rooms": _channel_rooms(session, channel, user),
+        "rooms": _channel_rooms(session, channel),
     }
 
 
@@ -403,6 +403,17 @@ def channel_items(
         ).all()
         progress = {mark.content_id: mark.progress for mark in marks}
         watch_marks = {mark.content_id: mark.watch_mark or None for mark in marks}
+    # 房主看自己房间时，每条帖子带上推送到频道的状态（待审 / 已推送 / 被拒），房间页据此显示按钮
+    pushes: dict[str, tuple[str, str]] = {}
+    if user is not None and channel.kind == "room" and channel.owner_id == user.id and page_rows:
+        pushes = {
+            push.content_id: (push.status, name)
+            for push, name in session.execute(
+                select(RoomPostPush, Channel.name_hans)
+                .join(Channel, Channel.id == RoomPostPush.channel_id)
+                .where(RoomPostPush.room_id == channel.id, RoomPostPush.content_id.in_([row.content_id for row in page_rows]))
+            ).all()
+        }
     room_ids = [row.origin_room_id for row in page_rows if row.origin_room_id]
     room_names = {
         room.id: room.name_hans
@@ -425,6 +436,8 @@ def channel_items(
                 "embed_provider_code": row.content.embed_provider_code,
                 "origin_room_id": row.origin_room_id,
                 "origin_room_name": room_names.get(row.origin_room_id) if row.origin_room_id else None,
+                "push_status": pushes.get(row.content_id, (None, None))[0],
+                "push_channel_name": pushes.get(row.content_id, (None, None))[1],
                 **card_extras(row.content, listings.get(row.content_id), authors.get(row.content.author_id or "", ("", ""))),
                 "liked": flags.get(row.content_id, (False, False))[0],
                 "favorited": flags.get(row.content_id, (False, False))[1],
@@ -477,7 +490,7 @@ _ROOM_TYPES = {"general", "series", "film", "video"}
 
 class RoomBody(BaseModel):
     name: str
-    parent_channel_id: str
+    parent_channel_id: str = ""  # 可不填：房间不属于任何频道；是否出现在某个频道里由后台的房间位决定
     is_private: bool = False
     room_type: str = "general"
 
@@ -548,7 +561,7 @@ def create_room(
     # 和改名同一条规则：房间第一条帖子直接公开时房间会跟着上线，名字可能没人看过
     if blocked_term_in(session, body.name):
         raise APIError(422, "VALIDATION_FAILED", "房间名包含不允许的词，换一个吧")
-    parent = _official_parent(session, body.parent_channel_id)
+    parent = _official_parent(session, body.parent_channel_id) if body.parent_channel_id else None
     owned = session.scalar(select(func.count()).select_from(Channel).where(Channel.owner_id == user.id))
     if not user.is_trusted and (owned or 0) >= ROOM_LIMIT:
         raise APIError(409, "CHANNEL_LIMIT", f"一个人最多创建 {ROOM_LIMIT} 个房间")
@@ -561,9 +574,9 @@ def create_room(
         kind="room",
         room_type=body.room_type,
         visibility="public",
-        region_code=parent.region_code,
+        region_code=parent.region_code if parent is not None else effective_region(session, user),
         owner_id=user.id,
-        parent_channel_id=parent.id,
+        parent_channel_id=parent.id if parent is not None else None,
         is_active=False,
         is_private=body.is_private,
         review_status="pending",
@@ -709,13 +722,15 @@ def remove_collaborator(
     return {"removed": True}
 
 
-class EntryBody(BaseModel):
-    title: str
-    body: str
-    season: int | None = None
+ENTRY_HOURLY_LIMIT = 30  # 房主一次加好几集，比普通发帖的每小时 5 条宽；仍然防刷
+
+
+class EntryBody(TextBody):
+    body: str = ""  # 可以不写：剧集的一集就是一个视频；写了仍按 TextBody 的长度规则校验
+    season: int | None = None  # 页面不再让填季，不传就是第 1 季；旧数据里多季的房间照常显示
     episode: int | None = None
     rights_confirmed: bool = False
-    image_keys: list[str] = []  # 最多 4 张，第一张作封面（电影卡片左侧）
+    image_keys: list[str] = []  # 最多 6 张，第一张作封面（电影卡片左侧）
     video_key: str | None = None
     video_url: str | None = None  # 视频外链（YouTube / 哔哩哔哩），和上传视频二选一
 
@@ -726,22 +741,6 @@ class EntryBody(BaseModel):
         if len(keys) > MAX_LISTING_IMAGES:
             raise ValueError(f"最多上传 {MAX_LISTING_IMAGES} 张图片")
         return keys
-
-    @field_validator("title")
-    @classmethod
-    def entry_title(cls, value: str) -> str:
-        title = value.strip()
-        if not title or len(title) > 200:
-            raise ValueError("标题需要 1 到 200 个字")
-        return title
-
-    @field_validator("body")
-    @classmethod
-    def entry_body(cls, value: str) -> str:
-        text = value.strip()
-        if not text or len(text) > 4000:
-            raise ValueError("正文需要 1 到 4000 个字")
-        return text
 
 
 class MoveBody(BaseModel):
@@ -837,17 +836,17 @@ def add_entry(
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
     channel = _catalog_room(session, channel_id, user)
-    check_hourly_limit(session, user.id)
+    check_hourly_limit(session, user.id, ENTRY_HOURLY_LIMIT)
     video_url = (body.video_url or "").strip()
     if video_url and body.video_key:
         raise APIError(400, "VALIDATION_FAILED", "上传视频和视频外链只能选一个")
     # 外链先校验（不在白名单 / 短链直接报错），再动数据库
     embed = embed_fields(video_url) if video_url else {}
-    season = body.season
+    season = body.season if body.season is not None else 1
     episode = body.episode
     if channel.room_type == "series":
-        if season is None or episode is None or not 1 <= season <= 99 or not 1 <= episode <= 999:
-            raise APIError(400, "VALIDATION_FAILED", "剧集需要季和集")
+        if episode is None or not 1 <= season <= 99 or not 1 <= episode <= 999:
+            raise APIError(400, "VALIDATION_FAILED", "剧集需要填集号（1 到 999）")
         taken = session.scalar(
             select(ChannelItem).where(
                 ChannelItem.channel_id == channel.id,
@@ -860,9 +859,6 @@ def add_entry(
         sort_key = episode_sort_key(season, episode)
         confirmed = False
     elif channel.room_type == "video":
-        # 外链视频播放的是原站内容，不是本人上传，不用确认原创
-        if not body.rights_confirmed and not embed:
-            raise APIError(400, "RIGHTS_REQUIRED", "原创视频需要确认人物同意，且没有未授权的音乐或影视片段")
         season = None
         episode = None
         confirmed = not embed
@@ -1008,9 +1004,11 @@ def _owner_channel(session: Session, channel_id: str, user: User) -> Channel:
 def report_room(
     channel_id: str,
     body: ReportBody,
+    request: Request,
     user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
+    limit_reports(session, request, user)
     channel = session.get(Channel, channel_id)
     if channel is None or not channel.is_active or channel.visibility != "public":
         raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
@@ -1092,6 +1090,7 @@ def list_submissions(
         .where(
             ChannelItem.channel_id == channel.id,
             Content.status == "pending",
+            Content.published_at.is_(None),  # 公开过又被举报隐藏的归后台复核，房主不能自己放回去
             Content.deleted_at.is_(None),
             Content.author_id.not_in(_editor_ids(session, channel)),
         )
@@ -1165,7 +1164,7 @@ def decide_submission(
     item = session.get(ChannelItem, (channel.id, content_id))
     if content is None or item is None or content.deleted_at is not None:
         raise APIError(404, "CONTENT_NOT_FOUND", "投稿不存在")
-    if content.status != "pending":
+    if content.status != "pending" or content.published_at is not None:
         raise APIError(409, "CONTENT_ALREADY_DECIDED", "这条投稿已经处理过")
     if content.author_id in _editor_ids(session, channel):
         # 房主 / 协作者自己发的帖子在等平台审核，不能在房间里自己放行
@@ -1188,45 +1187,55 @@ def decide_submission(
     return {"content_id": content.id, "status": content.status}
 
 
+class PushBody(BaseModel):
+    channel_id: str = ""  # 推到哪个官方频道；不填则用房间的父频道（旧客户端）
+
+
+MAX_PENDING_PUSHES = 10  # 一个房间同时等审核的推送上限，免得审核队列被刷满
+
+
 @router.post("/{channel_id}/pushes/{content_id}")
 def push_room_post(
     channel_id: str,
     content_id: str,
+    body: PushBody | None = None,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
+    """房主把房间里的帖子推到任意官方频道。推送先等后台审核，通过后才在频道里出现（审核见 admin_channels）。"""
     room = _owner_channel(session, channel_id, user)
-    if room.kind != "room" or not room.parent_channel_id:
-        raise APIError(400, "PARENT_REQUIRED", "只能把房间帖子推到所属频道")
+    if room.kind != "room":
+        raise APIError(400, "NOT_A_ROOM", "只有房间的帖子可以推送")
     if room.is_private:
         raise APIError(403, "ROOM_PRIVATE", "私密房间内容不能推送到公开频道")
+    target_id = (body.channel_id if body else "") or room.parent_channel_id
+    if not target_id:
+        raise APIError(400, "CHANNEL_REQUIRED", "请选择要推送到的频道")
+    target = session.get(Channel, target_id)
+    if target is None or not target.is_active or target.visibility != "public" or not target.kind.startswith("official"):
+        raise APIError(404, "CHANNEL_NOT_FOUND", "频道不存在")
     content = session.get(Content, content_id)
     item = session.get(ChannelItem, (room.id, content_id))
     if content is None or item is None or content.status != "published":
         raise APIError(409, "CONTENT_NOT_PUBLISHED", "只有已公开的房间帖子可以推送")
     existing = session.get(RoomPostPush, content.id)
+    if existing is not None and existing.status == "rejected":
+        session.delete(existing)  # 被拒的可以改推别的频道或再推一次
+        session.flush()
+        existing = None
     if existing is None:
-        now = utcnow()
-        session.add(
-            RoomPostPush(
-                content_id=content.id,
-                room_id=room.id,
-                channel_id=room.parent_channel_id,
-                pushed_by=user.id,
-                pushed_at=now,
-            )
+        pending = session.scalar(
+            select(func.count()).select_from(RoomPostPush).where(RoomPostPush.room_id == room.id, RoomPostPush.status == "pending")
         )
+        if (pending or 0) >= MAX_PENDING_PUSHES:
+            raise APIError(409, "PUSH_PENDING_LIMIT", f"最多同时有 {MAX_PENDING_PUSHES} 条推送在等审核")
         session.add(
-            ChannelItem(
-                channel_id=room.parent_channel_id,
-                content_id=content.id,
-                origin_room_id=room.id,
-                added_at=now,
-            )
+            RoomPostPush(content_id=content.id, room_id=room.id, channel_id=target.id, pushed_by=user.id, pushed_at=utcnow(), status="pending")
         )
         write_audit(session, user.id, "room.push", "content", content.id)
         session.commit()
-    return {"content_id": content.id, "channel_id": room.parent_channel_id}
+        return {"content_id": content.id, "channel_id": target.id, "status": "pending"}
+    return {"content_id": content.id, "channel_id": existing.channel_id, "status": existing.status}
 
 
 @router.delete("/{channel_id}/pushes/{content_id}")
