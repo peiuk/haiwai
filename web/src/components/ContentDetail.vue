@@ -14,6 +14,10 @@ import { useAuthStore } from "../stores/auth";
 import { useToastStore } from "../stores/toast";
 import { useLoginPromptStore } from "../stores/loginPrompt";
 import { fmtRelativeTime } from "../utils/time";
+import { hasOwnTitle } from "../utils/post";
+import BaseButton from "./base/BaseButton.vue";
+import TextArea from "./base/TextArea.vue";
+import TextField from "./base/TextField.vue";
 import SourceBlock from "./common/SourceBlock.vue";
 import ReportButton from "./common/ReportButton.vue";
 import Lightbox from "./common/Lightbox.vue";
@@ -289,6 +293,57 @@ async function postComment(): Promise<void> {
   }
 }
 
+// ---- 作者编辑 / 作者或房主删除 ----
+const editing = ref(false);
+const editTitle = ref("");
+const editBody = ref("");
+const saving = ref(false);
+const confirmingDelete = ref(false);
+const deleting = ref(false);
+
+function startEdit(): void {
+  if (!detail.value) return;
+  const text = detail.value.body || detail.value.summary || "";
+  // 标题是自动截的正文开头时留空：保存时按新正文重新截
+  editTitle.value = hasOwnTitle(detail.value.title, text) ? detail.value.title : "";
+  editBody.value = text;
+  editing.value = true;
+}
+
+async function saveEdit(): Promise<void> {
+  const text = editBody.value.trim();
+  if (!text || !props.contentId) return;
+  saving.value = true;
+  try {
+    const saved = await request<{ status: string }>(`/api/v1/contents/${props.contentId}`, {
+      ...jsonBody({ title: editTitle.value.trim() || text.slice(0, 40), body: text }),
+      method: "PATCH",
+    });
+    editing.value = false;
+    toast.show(saved.status === "pending" ? "已保存，内容需要审核后才会重新公开" : "已保存");
+    await loadDetail();
+  } catch (err) {
+    toast.show(err instanceof Error ? err.message : "保存没有成功");
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function deletePost(): Promise<void> {
+  if (!props.contentId) return;
+  deleting.value = true;
+  try {
+    await request(`/api/v1/contents/${props.contentId}`, { method: "DELETE" });
+    toast.show("已删除");
+    if (props.standalone) goBack();
+    // shortcut: 弹窗下面的列表各页各管各的，删完整页重新加载让那张卡消失；删帖变频繁了再改成通知列表移除。
+    else window.location.reload();
+  } catch (err) {
+    toast.show(err instanceof Error ? err.message : "删除没有成功");
+    deleting.value = false;
+  }
+}
+
 /** 弹层里点进用户主页时顺手关掉弹层，返回列表时不会还挂着。 */
 function leaveOverlay(): void {
   if (!props.standalone) emit("close");
@@ -334,7 +389,18 @@ watch(detail, async (value) => {
           </button>
           <h3 id="cd-dialog-title">帖子详情</h3>
           <div class="cd-head-tools">
-            <ReportButton v-if="detail" kind="content" :id="detail.content_id" compact />
+            <template v-if="detail && !editing">
+              <template v-if="confirmingDelete">
+                <span class="cd-confirm" role="alert">删除后不能恢复</span>
+                <button class="cd-tool cd-tool--danger" type="button" :disabled="deleting" @click="deletePost">确认删除</button>
+                <button class="cd-tool" type="button" :disabled="deleting" @click="confirmingDelete = false">取消</button>
+              </template>
+              <template v-else>
+                <button v-if="detail.can_edit" class="cd-tool" type="button" @click="startEdit">编辑</button>
+                <button v-if="detail.can_delete" class="cd-tool" type="button" @click="confirmingDelete = true">删除</button>
+              </template>
+            </template>
+            <ReportButton v-if="detail && !detail.can_edit" kind="content" :id="detail.content_id" compact />
             <button v-if="!standalone" class="cd-close" type="button" aria-label="关闭帖子详情" @click="emit('close')">
               <BaseIcon name="i-close" :size="20" />
             </button>
@@ -372,10 +438,21 @@ watch(detail, async (value) => {
               </div>
 
               <p v-if="detail.repost_of" class="cd-repost">转发了「<span data-ugc>{{ detail.repost_of.title }}</span>」</p>
-              <h2 data-ugc>{{ detail.title }}</h2>
-              <p v-if="(detail.body || detail.summary) && (detail.body || detail.summary) !== detail.title" class="cd-summary" data-ugc>
-                {{ detail.body || detail.summary }}
-              </p>
+              <form v-if="editing" class="cd-edit" @submit.prevent="saveEdit">
+                <TextField id="cd-edit-title" v-model="editTitle" label="标题（可不填）" :maxlength="200" />
+                <TextArea id="cd-edit-body" v-model="editBody" label="正文" :rows="6" :maxlength="4000" required />
+                <div class="cd-edit-actions">
+                  <BaseButton type="button" variant="ghost" size="sm" :disabled="saving" @click="editing = false">取消</BaseButton>
+                  <BaseButton type="submit" variant="primary" size="sm" :loading="saving" :disabled="!editBody.trim()">保存</BaseButton>
+                </div>
+              </form>
+              <template v-else>
+                <p v-if="detail.status === 'pending'" class="notice" role="status">这条内容正在审核，通过前只有你自己看得到。</p>
+                <h2 data-ugc>{{ detail.title }}</h2>
+                <p v-if="(detail.body || detail.summary) && (detail.body || detail.summary) !== detail.title" class="cd-summary" data-ugc>
+                  {{ detail.body || detail.summary }}
+                </p>
+              </template>
 
               <div v-if="images.length" class="cd-media" :class="`cd-media--n${images.length}`">
                 <img
@@ -634,6 +711,18 @@ watch(detail, async (value) => {
   color: var(--text);
 }
 .cd-close:hover { background: var(--hover); }
+.cd-tool {
+  min-height: var(--tap);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-size: var(--fs-14);
+}
+.cd-tool:hover { background: var(--hover); }
+.cd-tool--danger { color: var(--danger); }
+.cd-confirm { color: var(--muted); font-size: var(--fs-14); }
+.cd-edit { display: grid; gap: var(--sp-3); margin-top: var(--sp-3); }
+.cd-edit-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }
 
 /* ---- 滚动区：弹窗里自己滚，独立页跟随页面滚 ---- */
 .cd-dialog .cd-scroll {

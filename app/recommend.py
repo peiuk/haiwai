@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.feed import author_names, card_extras, content_titles, reaction_flags, repost_context
@@ -98,7 +98,8 @@ def for_you(session: Session, user: User | None, limit: int | None = 12, order: 
             Content.deleted_at.is_(None),
             Content.type.not_in(("listing", "embed", "repost")),
             ChannelItem.origin_room_id.is_(None),
-            Channel.kind != "room",
+            # 房间帖子只有被后台设为精选的才进推荐（私密房间的下面整体排除）
+            or_(Channel.kind != "room", Content.featured_at.is_not(None)),
             Channel.is_active.is_(True),
             Channel.region_code.in_(regions),
             ChannelItem.content_id.not_in(private_room_content),

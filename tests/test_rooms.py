@@ -474,10 +474,16 @@ def test_wrong_country_hides_room_and_author_sees_pending(client):
         json={"decision": "approve"},
     )
     assert approved.status_code == 200, approved.text
+    # 房间帖子不进后台审核，只有命中敏感词的才待审
+    from app.models import BlockedTerm
+
+    with client.session_factory() as session:
+        session.add(BlockedTerm(term="待审词"))
+        session.commit()
     posted = client.post(
         "/api/v1/contents",
         headers=headers(owner),
-        json={"channel_id": room_id, "title": "待审", "body": "还在审核"},
+        json={"channel_id": room_id, "title": "待审", "body": "还在审核 待审词"},
     )
     assert posted.status_code == 200, posted.text
     content_id = posted.json()["content_id"]
@@ -900,8 +906,11 @@ def test_owner_can_fill_rename_and_show_a_pending_room(client):
     shown = client.get(f"/api/v1/users/{owner_id}").json()["rooms"]
     assert [(room["name_hans"], room["pending"]) for room in shown] == [("伦敦剧场", False)]
 
-    # 房主自己发的帖子等平台审核：不进房间的待审队列，也不能在房间里自己通过
-    own = client.post("/api/v1/contents", headers=headers(owner), json={"channel_id": room_id, "title": "房主帖", "body": "正文"})
+    # 房间上线后，帖子直接发布，不进后台审核
+    clean = client.post("/api/v1/contents", headers=headers(owner), json={"channel_id": room_id, "title": "房主帖", "body": "正文"})
+    assert clean.json()["status"] == "published"
+    # 命中敏感词的等平台审核：不进房间的待审队列，也不能在房间里自己通过
+    own = client.post("/api/v1/contents", headers=headers(owner), json={"channel_id": room_id, "title": "房主帖", "body": "正文 坏词"})
     assert own.status_code == 200, own.text
     assert own.json()["status"] == "pending"
     assert client.get(f"/api/v1/channels/{room_id}/submissions", headers=headers(owner)).json()["items"] == []

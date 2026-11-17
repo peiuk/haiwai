@@ -47,10 +47,31 @@ router = APIRouter()
 REVIEW_LIMIT = 3
 
 
-class PostBody(BaseModel):
-    channel_id: str | None = None
+class TextBody(BaseModel):
+    """标题 + 正文：发帖和编辑共用同一套长度规则。"""
+
     title: str
     body: str
+
+    @field_validator("title")
+    @classmethod
+    def title_length(cls, value: str) -> str:
+        title = value.strip()
+        if not title or len(title) > 200:
+            raise ValueError("标题需要 1 到 200 个字")
+        return title
+
+    @field_validator("body")
+    @classmethod
+    def body_length(cls, value: str) -> str:
+        text = value.strip()
+        if not text or len(text) > 4000:
+            raise ValueError("正文需要 1 到 4000 个字")
+        return text
+
+
+class PostBody(TextBody):
+    channel_id: str | None = None
     # image_key 兼容旧客户端单图；新客户端用 image_keys（最多 4 张）。
     image_key: str | None = None
     image_keys: list[str] = []
@@ -88,22 +109,6 @@ class PostBody(BaseModel):
         if value == "":
             return ""
         return clean_city_topic(value)
-
-    @field_validator("title")
-    @classmethod
-    def title_length(cls, value: str) -> str:
-        title = value.strip()
-        if not title or len(title) > 200:
-            raise ValueError("标题需要 1 到 200 个字")
-        return title
-
-    @field_validator("body")
-    @classmethod
-    def body_length(cls, value: str) -> str:
-        text = value.strip()
-        if not text or len(text) > 4000:
-            raise ValueError("正文需要 1 到 4000 个字")
-        return text
 
     @field_validator("post_type")
     @classmethod
@@ -168,8 +173,10 @@ def create_post(
     check_hourly_limit(session, user.id)
     prior = _approved_posts(session, user.id)
     now = utcnow()
-    # 后台关了帖子审核时，新用户的前几条也直接发布；敏感词照样拦
-    status = "pending" if review_on(session, "post") and (prior or 0) < REVIEW_LIMIT else "published"
+    # 后台关了帖子审核时，新用户的前几条也直接发布；敏感词照样拦。
+    # 已上线房间里的帖子由房主管（能删），不进后台审核；还没上线的房间仍要等第一条通过才上线。
+    in_live_room = channel is not None and channel.kind == "room" and channel.is_active
+    status = "pending" if not in_live_room and review_on(session, "post") and (prior or 0) < REVIEW_LIMIT else "published"
     if status == "published" and blocked_term_in(session, body.title, body.body):
         status = "pending"  # 命中敏感词 / 链接黑名单：不直接发布，先给管理员看
     if body.post_type == "video":
@@ -242,14 +249,62 @@ def delete_content(
     content = session.get(Content, content_id)
     if content is None or content.deleted_at is not None:
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
-    if content.author_id != user.id:
-        raise APIError(403, "FORBIDDEN", "只能删除自己的内容")
+    own = content.author_id == user.id
+    room = None if own else _home_room(session, content)
+    if not own and (room is None or room.owner_id != user.id):
+        raise APIError(403, "FORBIDDEN", "只能删除自己的内容，或自己房间里的帖子")
     content.status = "deleted"
     content.deleted_at = utcnow()
     drop_pushes(session, content.id)
-    write_audit(session, user.id, "content.delete", "content", content.id)
+    write_audit(session, user.id, "content.delete" if own else "room.content.remove", "content", content.id)
     session.commit()
     return {"content_id": content.id, "status": "deleted"}
+
+
+def _home_room(session: Session, content: Content) -> Channel | None:
+    """帖子发在哪个房间（转推到频道的那份不算）；不在房间里返回 None。"""
+    placed = session.scalar(
+        select(ChannelItem).where(ChannelItem.content_id == content.id, ChannelItem.origin_room_id.is_(None))
+    )
+    channel = session.get(Channel, placed.channel_id) if placed is not None else None
+    return channel if channel is not None and channel.kind == "room" else None
+
+
+EDITABLE_TYPES = ("post", "video", "embed")  # 分类信息有自己的字段，转发只是引用，都不走这里
+
+
+@router.patch("/contents/{content_id}")
+def edit_content(
+    content_id: str,
+    body: TextBody,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    content = session.get(Content, content_id)
+    if content is None or content.deleted_at is not None:
+        raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
+    # 只有作者能改：房主改别人的帖子会变成「替别人说话」，房主管不了的内容直接删
+    if content.author_id != user.id:
+        raise APIError(403, "FORBIDDEN", "只能编辑自己的内容")
+    if content.type not in EDITABLE_TYPES or content.status not in ("published", "pending"):
+        raise APIError(409, "NOT_EDITABLE", "这条内容不能编辑")
+    room = _home_room(session, content)
+    if room is not None:
+        require_not_banned(session, [room.id], user.id)
+    words, source = resolve_keywords([], body.title, body.body, None)
+    content.title = body.title
+    content.body = body.body
+    content.summary = body.body[:500]
+    content.title_hant = None  # 旧的繁体稿对不上新内容了，回落到简体
+    content.summary_hant = None
+    content.keywords_json = dump_keywords(words)
+    content.keyword_source = source
+    # 和发帖同一道敏感词检查：不然先发正常内容、过审后再改成违规内容，就绕过了所有检查
+    if content.status == "published" and blocked_term_in(session, body.title, body.body):
+        content.status = "pending"
+    write_audit(session, user.id, "content.edit", "content", content.id)
+    session.commit()
+    return {"content_id": content.id, "status": content.status, "keywords": words}
 
 
 @router.get("/contents/{content_id}")
@@ -325,6 +380,9 @@ def get_content(
         "status": content.status,
         "liked": liked,
         "favorited": favorited,
+        "can_edit": user is not None and content.author_id == user.id and content.type in EDITABLE_TYPES,
+        "can_delete": user is not None
+        and (content.author_id == user.id or (channel is not None and channel.kind == "room" and channel.owner_id == user.id)),
     }
 
 

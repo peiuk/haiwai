@@ -444,7 +444,8 @@ def discover_items(
             ),
         ),
         ChannelItem.origin_room_id.is_(None),
-        Channel.kind != "room",
+        # 房间帖子只有后台设为精选、且房间公开的才进发现
+        or_(Channel.kind != "room", and_(Content.featured_at.is_not(None), Channel.is_private.is_(False))),
         Channel.is_active.is_(True),
         Channel.region_code.in_(("GLOBAL", region)),  # 与 _visible 相同：国际频道 + 当前国家
     ]

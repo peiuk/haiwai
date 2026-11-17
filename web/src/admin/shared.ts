@@ -69,6 +69,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "comment.create": "发表留言",
   "comment.remove": "删除留言",
   "content.delete": "删除自己的内容",
+  "content.edit": "编辑自己的帖子",
+  "room.content.remove": "房主删除房间里的帖子",
   "embed.create": "发布视频外链",
   "embed.consent": "同意播放外站视频",
   "listing.create": "发布分类信息",

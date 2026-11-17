@@ -526,6 +526,8 @@ export type ContentDetail = {
   status: string;
   liked: boolean;
   favorited: boolean;
+  can_edit?: boolean; // 作者本人
+  can_delete?: boolean; // 作者本人，或帖子所在房间的房主
 };
 
 // ---- Phase 4：发布 / 分类信息 / 外链同意 -------------------------------
