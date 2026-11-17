@@ -218,13 +218,21 @@ async function submit(): Promise<void> {
         </div>
 
         <div v-if="topics.length || cityTopic" class="home-compose-topics" aria-label="这条帖子会带上的话题">
-          <span v-if="cityTopic" class="home-compose-topic home-compose-city-topic" title="城市话题">
-            <BaseIcon name="i-pin" :size="12" />{{ cityTopic }}
+          <!-- 话题和帖子卡片上一样能点进搜索；首页是缓存的，回来时写到一半的内容还在 -->
+          <span v-if="cityTopic" class="home-compose-topic home-compose-city-topic">
+            <RouterLink class="home-compose-topic-link" :to="{ name: 'search', query: { q: `#${cityTopic}` } }" :title="`搜索城市话题 ${cityTopic}`">
+              <BaseIcon name="i-pin" :size="12" />{{ cityTopic }}
+            </RouterLink>
             <button type="button" :aria-label="`删除城市话题 ${cityTopic}`" @click="cityTopic = ''">
               <BaseIcon name="i-close" :size="13" />
             </button>
           </span>
-          <span v-for="t in topics" :key="t" class="home-compose-topic">#{{ t }}</span>
+          <RouterLink
+            v-for="t in topics"
+            :key="t"
+            class="home-compose-topic home-compose-topic-link"
+            :to="{ name: 'search', query: { q: `#${t}` } }"
+          >#{{ t }}</RouterLink>
         </div>
 
         <!-- 已选图片缩略图预览（上传成功即显示小图） -->
@@ -435,6 +443,17 @@ async function submit(): Promise<void> {
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+.home-compose-topic-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+.home-compose-topic-link:hover,
+.home-compose-topic-link:focus-visible {
+  text-decoration: underline;
 }
 .home-compose-city-topic {
   background: var(--surface2);
