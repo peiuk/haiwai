@@ -91,6 +91,8 @@ const emit = defineEmits<{
 const displayChannel = computed(
   () => props.channelName || (props.authorName ? `${props.authorName} 的动态` : "频道"),
 );
+// 带「加入」的卡（发现 / 推荐）：左边放发帖人，频道挪到加入按钮前面，一看就知道加入的是哪个频道
+const channelBesideJoin = computed(() => props.showJoin && !!props.authorId && !!props.channelId);
 const displayHandle = computed(
   // @ 后面优先显示用户名（handle），没有时才退回昵称；都没有就不显示（不拿频道 ID 充数）。
   () => props.authorHandle || props.authorName || "",
@@ -209,28 +211,32 @@ onBeforeUnmount(() => {
       <!-- card-head -->
       <div class="post-head">
         <div class="post-meta">
+          <template v-if="channelBesideJoin">
+            <RouterLink class="post-name post-name--link" :to="{ name: 'user', params: { id: authorId! } }" data-ugc>{{ authorName || authorHandle }}</RouterLink>
+            <RouterLink v-if="authorHandle && authorName" class="post-handle post-handle--link" :to="{ name: 'user', params: { id: authorId! } }" data-ugc>@{{ authorHandle }}</RouterLink>
+          </template>
           <!-- 频道名可点进频道（MASTER：每张卡带「进频道」入口）；没有频道时只显示文字 -->
           <RouterLink
-            v-if="channelId"
+            v-else-if="channelId"
             class="post-name post-name--link"
             :to="{ name: 'channel', params: { id: channelId } }"
             data-ugc
           >{{ displayChannel }}</RouterLink>
           <span v-else class="post-name" data-ugc>{{ displayChannel }}</span>
           <BaseIcon
-            v-if="certified"
+            v-if="certified && !channelBesideJoin"
             name="i-check"
             :size="16"
             class="post-verified"
             label="官方认证"
           />
           <RouterLink
-            v-if="displayHandle && authorId"
+            v-if="!channelBesideJoin && displayHandle && authorId"
             class="post-handle post-handle--link"
             :to="{ name: 'user', params: { id: authorId } }"
             data-ugc
           >@{{ displayHandle }}</RouterLink>
-          <span v-else-if="displayHandle" class="post-handle">@{{ displayHandle }}</span>
+          <span v-else-if="!channelBesideJoin && displayHandle" class="post-handle">@{{ displayHandle }}</span>
           <span v-if="time" class="post-time">· {{ fmtRelativeTime(time) }}</span>
           <BaseIcon v-if="pinned" name="i-pin" :size="16" class="post-pin" />
           <span
@@ -244,6 +250,11 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <div class="post-head-actions">
+          <span v-if="channelBesideJoin" class="post-from">
+            来自
+            <RouterLink class="post-from-link" :to="{ name: 'channel', params: { id: channelId } }" data-ugc>{{ channelName }}</RouterLink>
+            <BaseIcon v-if="certified" name="i-check" :size="14" class="post-verified" label="官方认证" />
+          </span>
           <button
             v-if="showJoin && !isJoined"
             type="button"
@@ -480,6 +491,27 @@ a.post-avatar:hover {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+.post-from {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.post-from-link {
+  max-width: 7em; /* 窄屏时频道名先截，加入按钮始终完整 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.post-from-link:hover,
+.post-from-link:focus-visible {
+  text-decoration: underline;
 }
 .post-join {
   min-height: 30px;

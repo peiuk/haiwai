@@ -15,7 +15,9 @@ import { fmtRelativeTime } from "../../utils/time";
 import { KIND_LABEL, attrLabel } from "../../utils/listing";
 
 // time：这条信息进入内容流的时间（发现页条目的 added_at）
-const props = defineProps<{ item: ListingCardItem; time?: string }>();
+// isJoined：传了才显示「加入 / 已加入」（发现页传，和 PostCard 的加入按钮一样）
+const props = defineProps<{ item: ListingCardItem; time?: string; isJoined?: boolean }>();
+const emit = defineEmits<{ (e: "join"): void }>();
 
 const auth = useAuthStore();
 const toast = useToastStore();
@@ -111,13 +113,8 @@ async function viewContact(): Promise<void> {
 
 <template>
   <article class="listing-card" :class="{ expired: expiryBadge?.urgent }">
-    <button
-      type="button"
-      class="card-hit"
-      :aria-expanded="expanded"
-      :aria-label="`${expanded ? '收起' : '查看'} ${item.title} 的详情`"
-      @click="toggleDetail"
-    >
+    <!-- 整块点哪都展开（鼠标）；键盘用标题按钮。频道链接和加入按钮不能套在按钮里，所以外层是 div -->
+    <div class="card-hit" @click="toggleDetail">
       <span class="card-thumb">
         <img v-if="cover" :src="`/api/v1/uploads/${cover}`" alt="" loading="lazy" />
         <BaseIcon v-else name="i-image" :size="24" />
@@ -125,17 +122,32 @@ async function viewContact(): Promise<void> {
       </span>
       <span class="card-main">
         <span class="card-kicker">
-          {{ KIND_LABEL[item.kind] ?? item.category }} · {{ item.channel_name }}
+          {{ KIND_LABEL[item.kind] ?? item.category }}
           <template v-if="time"> · {{ fmtRelativeTime(time) }}</template>
         </span>
-        <span class="card-title" data-ugc>{{ item.title }}</span>
-        <span class="card-price">{{ priceLabel }}</span>
+        <button
+          type="button"
+          class="card-title-btn"
+          :aria-expanded="expanded"
+          :aria-label="`${expanded ? '收起' : '查看'} ${item.title} 的详情`"
+          @click.stop="toggleDetail"
+        >
+          <span class="card-title" data-ugc>{{ item.title }}</span>
+        </button>
+        <span class="card-source" @click.stop>
+          <span class="card-price">{{ priceLabel }}</span>
+          <span class="card-from">来自 <RouterLink class="detail-link" :to="{ name: 'channel', params: { id: item.channel_id } }">{{ item.channel_name }}</RouterLink></span>
+          <button v-if="isJoined === false" type="button" class="card-join" :aria-label="`加入频道 ${item.channel_name}`" @click="emit('join')">
+            <BaseIcon name="i-plus" :size="13" /> 加入
+          </button>
+          <span v-else-if="isJoined" class="card-joined"><BaseIcon name="i-check" :size="13" /> 已加入</span>
+        </span>
         <span class="card-meta">
           <span class="meta-area" data-ugc>{{ item.area }}</span>
           <span v-for="chip in attrChips" :key="chip" class="meta-attr" data-ugc>{{ chip }}</span>
         </span>
       </span>
-    </button>
+    </div>
 
     <div class="card-foot">
       <BaseTag :variant="item.certified ? 'good' : 'default'">
@@ -183,7 +195,6 @@ async function viewContact(): Promise<void> {
             {{ detail.author_name || detail.author_handle }}<template v-if="detail.author_handle"> · @{{ detail.author_handle }}</template>
           </RouterLink>
           <span v-else data-ugc>{{ detail.source_name || "—" }}</span>
-          · 发布在 <RouterLink class="detail-link" :to="{ name: 'channel', params: { id: detail.channel_id } }">{{ detail.channel_name }}</RouterLink>
         </p>
 
         <!-- 防骗提示 -->
@@ -233,6 +244,9 @@ async function viewContact(): Promise<void> {
   gap: 12px;
   align-items: flex-start;
   width: 100%;
+  cursor: pointer;
+}
+.card-title-btn {
   padding: 0;
   border: 0;
   background: transparent;
@@ -241,7 +255,7 @@ async function viewContact(): Promise<void> {
   text-align: left;
   cursor: pointer;
 }
-.card-hit:focus-visible,
+.card-title-btn:focus-visible,
 .detail-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -309,6 +323,43 @@ async function viewContact(): Promise<void> {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 4px;
+}
+.card-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  cursor: default;
+}
+.card-from {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.card-join {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 30px;
+  margin-left: auto;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--text);
+  border-radius: var(--r-pill);
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+.card-join:hover {
+  opacity: 0.85;
+}
+.card-joined {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-size: var(--fs-12);
+  color: var(--muted);
 }
 .meta-attr::before {
   content: "· ";

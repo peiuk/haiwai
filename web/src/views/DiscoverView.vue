@@ -301,7 +301,7 @@ watch(
           <ul v-else class="content-list">
             <template v-for="(item, index) in items" :key="item.content_id">
               <li class="content-card">
-                <ListingCard v-if="item.listing" :item="item.listing" :time="item.added_at" />
+                <ListingCard v-if="item.listing" :item="item.listing" :time="item.added_at" :is-joined="item.is_joined" @join="joinChannel(item)" />
                 <!-- 发现页不做个性化推荐：不传推荐理由，也就没有「减少此类内容」 -->
                 <PostCard
                   v-else
