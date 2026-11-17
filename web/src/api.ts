@@ -267,6 +267,7 @@ export type FeedItem = {
   image_keys?: string[];
   /** 视频 key（post_type=video 时存在） */
   video_key?: string | null;
+  bg_style?: string;
   /** 外链视频（YouTube / 哔哩哔哩）；不是外链帖为 null */
   embed?: EmbedCard | null;
 };
@@ -417,6 +418,7 @@ export type RoomItem = {
   push_status?: string | null;
   push_channel_name?: string | null;
   video_key: string | null;
+  bg_style?: string;
   rights_confirmed: boolean;
   author_id: string | null;
   author_name: string;
@@ -478,6 +480,7 @@ export type DiscoverItem = {
   keywords: string[];
   image_keys?: string[];
   video_key?: string | null;
+  bg_style?: string;
   embed?: EmbedCard | null;
   /** 当前用户的互动状态（游客恒为 false） */
   liked?: boolean;
@@ -516,6 +519,7 @@ export type ContentDetail = {
   image_key: string | null;
   image_keys: string[];
   video_key: string | null;
+  bg_style?: string;
   published_at: string | null;
   type: string;
   embed_status?: string;
@@ -731,6 +735,7 @@ export type SearchContent = {
   keywords: string[];
   image_keys: string[];
   video_key: string | null;
+  bg_style?: string;
   embed?: EmbedCard | null;
   published_at: string | null;
   liked: boolean;
@@ -853,6 +858,7 @@ export type UserPost = {
   keywords: string[];
   image_keys: string[];
   video_key: string | null;
+  bg_style?: string;
   embed?: EmbedCard | null;
   liked: boolean;
   favorited: boolean;

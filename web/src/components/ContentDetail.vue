@@ -15,7 +15,9 @@ import { useToastStore } from "../stores/toast";
 import { useLoginPromptStore } from "../stores/loginPrompt";
 import { fmtRelativeTime } from "../utils/time";
 import { hasOwnTitle } from "../utils/post";
+import { bgFits, bgStyleOf } from "../utils/postBg";
 import BaseButton from "./base/BaseButton.vue";
+import BgPicker from "./common/BgPicker.vue";
 import TextArea from "./base/TextArea.vue";
 import TextField from "./base/TextField.vue";
 import SourceBlock from "./common/SourceBlock.vue";
@@ -297,7 +299,12 @@ async function postComment(): Promise<void> {
 const editing = ref(false);
 const editTitle = ref("");
 const editBody = ref("");
+const editBg = ref("");
 const saving = ref(false);
+// 只有不带图 / 视频的普通帖能用彩色背景（和发帖时同一条规则）
+const hasMedia = computed(() => !!detail.value && (detail.value.type !== "post" || images.value.length > 0 || !!detail.value.video_key));
+const bgCss = computed(() => (detail.value && !hasMedia.value ? bgStyleOf(detail.value.bg_style) : null));
+const editBgFits = computed(() => bgFits(editBody.value, hasMedia.value));
 const confirmingDelete = ref(false);
 const deleting = ref(false);
 
@@ -307,6 +314,7 @@ function startEdit(): void {
   // 标题是自动截的正文开头时留空：保存时按新正文重新截
   editTitle.value = hasOwnTitle(detail.value.title, text) ? detail.value.title : "";
   editBody.value = text;
+  editBg.value = detail.value.bg_style ?? "";
   editing.value = true;
 }
 
@@ -316,7 +324,11 @@ async function saveEdit(): Promise<void> {
   saving.value = true;
   try {
     const saved = await request<{ status: string }>(`/api/v1/contents/${props.contentId}`, {
-      ...jsonBody({ title: editTitle.value.trim() || text.slice(0, 40), body: text }),
+      ...jsonBody({
+        title: editTitle.value.trim() || text.slice(0, 40),
+        body: text,
+        bg_style: editBg.value && editBgFits.value ? editBg.value : null,
+      }),
       method: "PATCH",
     });
     editing.value = false;
@@ -461,6 +473,7 @@ watch(detail, async (value) => {
               <form v-if="editing" class="cd-edit" @submit.prevent="saveEdit">
                 <TextField id="cd-edit-title" v-model="editTitle" label="标题（可不填）" :maxlength="200" />
                 <TextArea id="cd-edit-body" v-model="editBody" label="正文" :rows="6" :maxlength="4000" required />
+                <BgPicker v-if="!hasMedia" v-model="editBg" :disabled="!editBgFits" />
                 <div class="cd-edit-actions">
                   <BaseButton type="button" variant="ghost" size="sm" :disabled="saving" @click="editing = false">取消</BaseButton>
                   <BaseButton type="submit" variant="primary" size="sm" :loading="saving" :disabled="!editBody.trim()">保存</BaseButton>
@@ -468,10 +481,13 @@ watch(detail, async (value) => {
               </form>
               <template v-else>
                 <p v-if="detail.status === 'pending'" class="notice" role="status">这条内容正在审核，通过前只有你自己看得到。</p>
+                <p v-if="bgCss" class="cd-bg" :style="bgCss" data-ugc>{{ detail.body || detail.summary || detail.title }}</p>
+                <template v-else>
                 <h2 data-ugc>{{ detail.title }}</h2>
                 <p v-if="(detail.body || detail.summary) && (detail.body || detail.summary) !== detail.title" class="cd-summary" data-ugc>
                   {{ detail.body || detail.summary }}
                 </p>
+                </template>
               </template>
 
               <div v-if="images.length" class="cd-media" :class="`cd-media--n${images.length}`">
@@ -746,6 +762,24 @@ watch(detail, async (value) => {
 .cd-tool--danger { color: var(--danger); }
 .cd-confirm { color: var(--muted); font-size: var(--fs-14); }
 .cd-edit { display: grid; gap: var(--sp-3); margin-top: var(--sp-3); }
+.cd-bg {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-6) var(--sp-5);
+  border-radius: var(--r-lg);
+  font-size: 26px;
+  font-weight: var(--fw-bold);
+  line-height: 1.4;
+  text-align: center;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+}
+@media (max-width: 480px) {
+  .cd-bg { min-height: 200px; font-size: 21px; }
+}
 .cd-edit-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }
 
 /* ---- 滚动区：弹窗里自己滚，独立页跟随页面滚 ---- */

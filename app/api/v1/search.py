@@ -147,6 +147,7 @@ def search(
                 "keywords": load_keywords(row.keywords_json),
                 "image_keys": image_keys_of(row),
                 "video_key": row.video_key,
+                "bg_style": row.bg_style or "",
                 "embed": embed_card(row),
                 "published_at": row.published_at.isoformat() if row.published_at else None,
                 "liked": liked,

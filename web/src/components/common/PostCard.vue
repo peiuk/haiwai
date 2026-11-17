@@ -11,6 +11,7 @@ import Lightbox from "./Lightbox.vue";
 import PostActions from "./PostActions.vue";
 import { fmtRelativeTime } from "../../utils/time";
 import { hasOwnTitle } from "../../utils/post";
+import { bgStyleOf } from "../../utils/postBg";
 import type { EmbedCard } from "../../api";
 import EmbedConsentCard from "../room/EmbedConsentCard.vue";
 import { PROVIDER_NAMES } from "../room/EntryMedia.vue";
@@ -43,6 +44,8 @@ const props = withDefaults(
     videoKey?: string | null;
     /** 外链视频：走第三方播放同意流程 */
     embed?: EmbedCard | null;
+    /** 彩色背景预设名（短文字帖） */
+    bgStyle?: string;
     liked?: boolean;
     favorited?: boolean;
     reposted?: boolean;
@@ -71,6 +74,7 @@ const props = withDefaults(
     imageKeys: () => [],
     videoKey: null,
     embed: null,
+    bgStyle: "",
     liked: false,
     favorited: false,
     reposted: false,
@@ -97,6 +101,8 @@ const emit = defineEmits<{
 const displayChannel = computed(
   () => props.channelName || (props.authorName ? `${props.authorName} 的动态` : "频道"),
 );
+// 彩色背景只给纯文字帖：万一带了图 / 视频（老数据），按普通帖显示
+const bgCss = computed(() => (props.imageKeys.length || props.videoKey || props.embed ? null : bgStyleOf(props.bgStyle)));
 // 带「加入」的卡（发现 / 推荐）：左边放发帖人，频道挪到加入按钮前面，一看就知道加入的是哪个频道
 const channelBesideJoin = computed(() => props.showJoin && !!props.authorId && !!props.channelId);
 const displayHandle = computed(
@@ -308,6 +314,19 @@ onBeforeUnmount(() => {
 
       <!-- card-copy -->
       <div class="post-copy">
+        <!-- 彩色背景帖：正文大字居中放在色块上（标题是自动截的正文开头，不重复显示） -->
+        <p
+          v-if="bgCss"
+          class="post-bg"
+          :style="bgCss"
+          data-ugc
+          role="link"
+          tabindex="0"
+          @click="emit('open')"
+          @keydown.enter="emit('open')"
+          @keydown.space.prevent="emit('open')"
+        >{{ summary || title }}</p>
+        <template v-else>
         <h3
           v-if="hasOwnTitle(title, summary)"
           class="post-title post-title--link"
@@ -319,6 +338,7 @@ onBeforeUnmount(() => {
           @keydown.space.prevent="emit('open')"
         >{{ title }}</h3>
         <p v-if="summary" class="post-summary" data-ugc>{{ summary }}</p>
+        </template>
         <div v-if="keywords.length" class="post-tags" data-ugc>
           <RouterLink v-for="kw in keywords" :key="kw" class="post-tag" :to="{ name: 'search', query: { q: `#${kw}` } }">#{{ kw }}</RouterLink>
         </div>
@@ -554,6 +574,33 @@ a.post-avatar:hover {
   gap: 3px;
   font-size: var(--fs-12);
   color: var(--muted);
+}
+
+.post-bg {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  margin: 0;
+  padding: var(--sp-6) var(--sp-5);
+  border-radius: var(--r-lg);
+  font-size: 22px;
+  font-weight: var(--fw-bold);
+  line-height: 1.4;
+  text-align: center;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+  cursor: pointer;
+}
+.post-bg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  .post-bg {
+    min-height: 180px;
+    font-size: 19px;
+  }
 }
 
 /* card-copy */

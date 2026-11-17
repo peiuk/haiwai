@@ -344,6 +344,7 @@ watch(userId, () => {
           :keywords="post.keywords"
           :image-keys="post.image_keys"
           :video-key="post.video_key"
+          :bg-style="post.bg_style"
           :embed="post.embed"
           :time="post.created_at"
           :liked="post.liked"

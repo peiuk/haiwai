@@ -7,6 +7,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { hashTags, hasOwnTitle } from "../utils/post";
+import { BG_MAX_LEN, bgStyleOf } from "../utils/postBg";
+import BgPicker from "../components/common/BgPicker.vue";
 import {
   ApiRequestError,
   request,
@@ -105,6 +107,14 @@ function onDestChange(): void {
 
 const count = computed(() => body.value.length);
 const countOver = computed(() => count.value > MAX_LEN);
+
+// 彩色背景：只给不带图的短文字帖；字写多了自动退回普通样式（选择保留，删短了又会变回来）
+const bg = ref("");
+const bgTooLong = computed(() => body.value.trim().length > BG_MAX_LEN);
+const bgCss = computed(() =>
+  currentType.value === "text" && !imageKeys.value.length && !bgTooLong.value ? bgStyleOf(bg.value) : null,
+);
+
 const canPublish = computed(() => {
   if (currentType.value === "info" || busy.value || countOver.value) return false;
   if (!body.value.trim() || body.value.trim().length < 2) return false;
@@ -225,6 +235,7 @@ async function submit(): Promise<void> {
     } else if (currentType.value === "video") {
       payload.video_key = videoKey.value;
     }
+    if (bgCss.value) payload.bg_style = bg.value;
 
     const result = await request<PublishResponse>("/api/v1/contents", jsonBody(payload));
     success.value = result.status === "pending" ? "已提交，审核通过后会公开" : "已发布";
@@ -241,6 +252,7 @@ async function submit(): Promise<void> {
     videoKey.value = "";
     videoUrl.value = "";
     imageKeys.value = [];
+    bg.value = "";
     // 发布成功后恢复默认城市话题（下次发帖仍默认带上）
     cityTopic.value = auth.profile?.city_label ?? "";
     cityInited.value = true;
@@ -307,6 +319,7 @@ function saveDraft(): void {
       videoKey: videoKey.value,
       videoSource: videoSource.value,
       videoUrl: videoUrl.value,
+      bg: bg.value,
     };
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     draftSaved.value = true;
@@ -319,7 +332,7 @@ function restoreDraft(): void {
     const draft = JSON.parse(raw) as {
       body: string; title: string; type: ContentType; channelId: string;
       cityTopic?: string; imageKeys?: string[]; videoKey?: string;
-      videoSource?: "upload" | "link"; videoUrl?: string;
+      videoSource?: "upload" | "link"; videoUrl?: string; bg?: string;
     };
     body.value = draft.body ?? "";
     title.value = draft.title ?? "";
@@ -331,6 +344,7 @@ function restoreDraft(): void {
     if (draft.videoKey) videoKey.value = draft.videoKey;
     if (draft.videoSource) videoSource.value = draft.videoSource;
     if (draft.videoUrl) videoUrl.value = draft.videoUrl;
+    if (draft.bg) bg.value = draft.bg;
     draftSaved.value = true;
   } catch {
     clearDraft();
@@ -362,7 +376,7 @@ watch(() => route.query.channel, (value) => {
 
 // 输入变化 → 防抖保存草稿
 watch(
-  [body, title, currentType, channelId, cityTopic, imageKeys, videoKey, videoSource, videoUrl],
+  [body, title, currentType, channelId, cityTopic, imageKeys, videoKey, videoSource, videoUrl, bg],
   () => {
     const hasContent =
       body.value.trim() || title.value.trim() || imageKeys.value.length || videoKey.value || videoUrl.value;
@@ -431,6 +445,8 @@ watch(
         <textarea
           v-model="body"
           class="body-input"
+          :class="{ 'is-bg': bgCss }"
+          :style="bgCss ?? undefined"
           rows="6"
           maxlength="2000"
           placeholder="有什么新鲜事想分享？写 #关键词 加话题"
@@ -438,6 +454,8 @@ watch(
           @keydown.ctrl.enter.exact.prevent="publishByKeyboard"
           @keydown.meta.enter.exact.prevent="publishByKeyboard"
         ></textarea>
+
+        <BgPicker v-if="currentType === 'text' && !imageKeys.length" v-model="bg" class="bg-row" :disabled="bgTooLong" />
 
         <!-- 视频提示 -->
         <NoticeBar v-if="currentType === 'video' && videoSource === 'upload'" variant="warn">
@@ -657,6 +675,18 @@ watch(
   padding: 12px 0 20px;
 }
 .body-input::placeholder { color: var(--muted); }
+/* 选了彩色背景：输入框就是发出去的样子（字大、居中、在色块上） */
+.body-input.is-bg {
+  min-height: 240px;
+  padding: 80px 20px;
+  border-radius: var(--r-lg);
+  font-size: 26px;
+  font-weight: var(--fw-bold);
+  line-height: 1.4;
+  text-align: center;
+}
+.body-input.is-bg::placeholder { color: inherit; opacity: 0.7; }
+.bg-row { margin-bottom: var(--sp-3); }
 
 .type-hint { margin: var(--sp-2) 0 0; font-size: var(--fs-13); color: var(--muted); }
 

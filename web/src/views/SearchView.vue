@@ -120,6 +120,7 @@ function setTab(id: TabId): void {
             :keywords="item.keywords"
             :image-keys="item.image_keys"
             :video-key="item.video_key"
+            :bg-style="item.bg_style"
             :embed="item.embed"
             :time="item.published_at ?? ''"
             :liked="item.liked"

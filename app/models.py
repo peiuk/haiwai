@@ -148,6 +148,8 @@ class Content(Base):
     # 分类信息多图（最多 6 张，JSON 数组）。image_key 保留为首图，供旧消费方兼容。
     image_keys_json: Mapped[str] = mapped_column(Text, default="[]")
     video_key: Mapped[str | None] = mapped_column(String(64))
+    # 短文字帖的彩色背景（预设名，见 contents.BG_STYLES）；为空就是普通帖
+    bg_style: Mapped[str | None] = mapped_column(String(16))
     rights_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     embed_provider_code: Mapped[str | None] = mapped_column(String(32))
     embed_media_id: Mapped[str | None] = mapped_column(String(32))

@@ -46,9 +46,36 @@ from app.models import (
 router = APIRouter()
 REVIEW_LIMIT = 3
 HOURLY_REPLY_LIMIT = 30  # 一个人一小时在全站帖子下最多回复这么多条
+# 彩色背景：只能选这几个预设（颜色本身在前端 utils/postBg.ts，两边名字要一致）
+BG_STYLES = {"red", "purple", "blue", "sunset", "pink", "green", "dark", "yellow"}
+BG_MAX_LEN = 130  # 背景上字大，长了读不下去；和 Facebook 一样只给短文字用
+
+
+def _known_bg(value: str | None) -> str | None:
+    if not value:
+        return None
+    if value not in BG_STYLES:
+        raise ValueError("背景颜色不正确")
+    return value
+
+
+def _require_bg_fits(bg_style: str | None, text: str, has_media: bool) -> None:
+    """页面上会自动去掉背景，这里再拦一次：直接调接口也不能给长文或带图视频的帖子加背景。"""
+    if bg_style and (has_media or len(text) > BG_MAX_LEN):
+        raise APIError(400, "VALIDATION_FAILED", f"彩色背景只能用在 {BG_MAX_LEN} 字以内、不带图片和视频的文字帖")
+
+
+class EditBody(TextBody):
+    bg_style: str | None = None  # 编辑时带上当前的背景；不传就是去掉背景
+
+    @field_validator("bg_style")
+    @classmethod
+    def known_bg(cls, value: str | None) -> str | None:
+        return _known_bg(value)
 
 
 class PostBody(TextBody):
+    bg_style: str | None = None
     channel_id: str | None = None
     # image_key 兼容旧客户端单图；新客户端用 image_keys（最多 6 张）。
     image_key: str | None = None
@@ -87,6 +114,11 @@ class PostBody(TextBody):
         if value == "":
             return ""
         return clean_city_topic(value)
+
+    @field_validator("bg_style")
+    @classmethod
+    def known_bg(cls, value: str | None) -> str | None:
+        return _known_bg(value)
 
     @field_validator("post_type")
     @classmethod
@@ -148,6 +180,7 @@ def create_post(
     if video_url and body.post_type == "video":
         raise APIError(400, "VALIDATION_FAILED", "上传视频和视频外链只能选一个")
     embed = embed_fields(video_url) if video_url else {}
+    _require_bg_fits(body.bg_style, body.body, bool(keys or video_url or body.video_key or body.post_type == "video"))
     check_hourly_limit(session, user.id)
     prior = _approved_posts(session, user.id)
     now = utcnow()
@@ -196,6 +229,7 @@ def create_post(
         image_key=keys[0] if keys else None,
         image_keys_json=json.dumps(keys),
         video_key=body.video_key if body.post_type == "video" else None,
+        bg_style=body.bg_style,
         rights_confirmed=body.post_type == "video",  # 不再单独勾选：上传即按用户协议视为本人原创
         published_at=now if status == "published" else None,
         **embed,
@@ -261,7 +295,7 @@ EDITABLE_TYPES = ("post", "video", "embed")  # 分类信息有自己的字段，
 @router.patch("/contents/{content_id}")
 def edit_content(
     content_id: str,
-    body: TextBody,
+    body: EditBody,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
@@ -276,9 +310,11 @@ def edit_content(
     room = _home_room(session, content)
     if room is not None:
         require_not_banned(session, [room.id], user.id)
+    _require_bg_fits(body.bg_style, body.body, content.type != "post" or bool(image_keys_of(content) or content.video_key))
     words, source = resolve_keywords([], body.title, body.body, None)
     content.title = body.title
     content.body = body.body
+    content.bg_style = body.bg_style
     content.summary = body.body[:500]
     content.title_hant = None  # 旧的繁体稿对不上新内容了，回落到简体
     content.summary_hant = None
@@ -356,6 +392,7 @@ def get_content(
         "image_key": content.image_key,
         "image_keys": image_keys_of(content),
         "video_key": content.video_key,
+        "bg_style": content.bg_style or "",
         "published_at": content.published_at.isoformat() if content.published_at else None,
         "rights_confirmed": content.rights_confirmed,
         "type": content.type,

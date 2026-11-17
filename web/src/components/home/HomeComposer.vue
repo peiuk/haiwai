@@ -5,6 +5,8 @@
 import { computed, ref, watch } from "vue";
 import { jsonBody, request, uploadFile, type PublishResponse } from "../../api";
 import { hashTags } from "../../utils/post";
+import { BG_MAX_LEN, bgStyleOf } from "../../utils/postBg";
+import BgPicker from "../common/BgPicker.vue";
 import { useAuthStore } from "../../stores/auth";
 import { useToastStore } from "../../stores/toast";
 import Avatar from "../base/Avatar.vue";
@@ -37,6 +39,13 @@ const error = ref("");
 const MAX_LEN = 2000;
 const count = computed(() => body.value.length);
 const countOver = computed(() => count.value > MAX_LEN);
+
+// 彩色背景：只给不带图的短文字帖；字写多了自动退回普通样式（选择保留，删短了又会变回来）
+const bg = ref("");
+const bgTooLong = computed(() => body.value.trim().length > BG_MAX_LEN);
+const bgCss = computed(() =>
+  currentType.value === "text" && !imageKeys.value.length && !bgTooLong.value ? bgStyleOf(bg.value) : null,
+);
 
 const canPublish = computed(() => {
   if (!body.value.trim() || body.value.trim().length < 2) return false;
@@ -133,12 +142,14 @@ async function submit(): Promise<void> {
     else if (cityInited.value) payload.city_topic = "";
     if (imageKeys.value.length) payload.image_keys = imageKeys.value;
     if (currentType.value === "video") payload.video_key = videoKey.value;
+    if (bgCss.value) payload.bg_style = bg.value;
     await request<PublishResponse>("/api/v1/contents", jsonBody(payload));
     toast.show("已发布，审核通过后会公开");
     body.value = "";
     title.value = "";
     imageKeys.value = [];
     videoKey.value = "";
+    bg.value = "";
     currentType.value = "text";
     open.value = false;
     // 发布成功后恢复默认城市话题（下次发帖仍默认带上）
@@ -165,6 +176,8 @@ async function submit(): Promise<void> {
 
       <textarea
         v-model="body"
+        :class="{ 'is-bg': bgCss }"
+        :style="bgCss ?? undefined"
         :rows="open ? 4 : 1"
         maxlength="2000"
         placeholder="分享你所在城市的发现… 写 #关键词 加话题"
@@ -188,6 +201,8 @@ async function submit(): Promise<void> {
             {{ t.label }}
           </button>
         </div>
+
+        <BgPicker v-if="currentType === 'text' && !imageKeys.length" v-model="bg" class="home-compose-bg" :disabled="bgTooLong" />
 
         <!-- 视频标题 -->
         <div v-if="currentType === 'video'" class="home-compose-extra">
@@ -312,6 +327,24 @@ async function submit(): Promise<void> {
 }
 .home-composer textarea::placeholder {
   color: var(--muted);
+}
+/* 选了彩色背景：输入框就是发出去的样子（字大、居中、在色块上） */
+.home-composer textarea.is-bg {
+  min-height: 180px;
+  padding: 56px 16px;
+  border-radius: var(--r-lg);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  resize: none;
+}
+.home-composer textarea.is-bg::placeholder {
+  color: inherit;
+  opacity: 0.7;
+}
+.home-compose-bg {
+  margin-top: 10px;
 }
 .home-composer-options {
   border-top: 1px solid var(--border);

@@ -152,6 +152,7 @@ def public_posts(
                 "keywords": load_keywords(row.keywords_json),
                 "image_keys": image_keys_of(row),
                 "video_key": row.video_key,
+                "bg_style": row.bg_style or "",
                 "embed": embed_card(row),
                 "liked": liked,
                 "favorited": favorited,
