@@ -286,7 +286,7 @@ def create_comment(
     )
     session.add(comment)
     session.flush()
-    if first_status(session, "comment", body.body) == "published":
+    if first_status(session, "comment", body.body, user=user) == "published":
         publish_comment(session, comment)
     write_audit(session, user.id, "comment.create", "comment", comment.id)
     session.commit()

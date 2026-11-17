@@ -550,7 +550,7 @@ def create_room(
         raise APIError(422, "VALIDATION_FAILED", "房间名包含不允许的词，换一个吧")
     parent = _official_parent(session, body.parent_channel_id)
     owned = session.scalar(select(func.count()).select_from(Channel).where(Channel.owner_id == user.id))
-    if (owned or 0) >= ROOM_LIMIT:
+    if not user.is_trusted and (owned or 0) >= ROOM_LIMIT:
         raise APIError(409, "CHANNEL_LIMIT", f"一个人最多创建 {ROOM_LIMIT} 个房间")
     channel_id = new_id()
     channel = Channel(

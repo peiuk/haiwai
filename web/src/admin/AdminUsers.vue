@@ -18,6 +18,7 @@ type Row = {
   suspended_until: string | null;
   is_admin: boolean;
   is_super: boolean;
+  is_trusted: boolean;
   two_factor: boolean;
   post_count: number;
   created_at: string;
@@ -98,6 +99,7 @@ function activate(item: Row): Promise<void> {
                 <RouterLink :to="`/admin/users/${item.user_id}`">{{ item.display_name }}</RouterLink>
                 <span v-if="item.is_admin" class="tag tag--link">{{ item.is_super ? "超级管理员" : "管理员" }}</span>
                 <span v-if="item.is_admin && !item.two_factor" class="tag tag--warn" title="这个管理员还没开两步验证，密码泄露就能进后台">未开两步验证</span>
+                <span v-if="item.is_trusted" class="tag tag--link" title="发布不等人工审核，建房不限数量">白名单</span>
                 <span v-if="item.handle" class="adm-sub">@{{ item.handle }}</span>
               </td>
               <td class="adm-nowrap">{{ item.email }}</td>

@@ -25,6 +25,7 @@ type Detail = {
   suspend_reason: string;
   is_admin: boolean;
   is_super: boolean;
+  is_trusted: boolean;
   two_factor: boolean;
   deleted: boolean;
   created_at: string;
@@ -115,6 +116,19 @@ function setRole(role: "none" | "moderator" | "super"): Promise<void> {
   );
 }
 
+function setTrusted(on: boolean): Promise<void> {
+  const name = detail.value?.display_name;
+  return ask(
+    on
+      ? { title: `把「${name}」加入白名单？`, message: "白名单用户发的帖子、评论、视频不再等人工审核，直接发布（敏感词照样拦）；创建房间不受数量上限。", confirmLabel: "加入白名单", reason: true }
+      : { title: `把「${name}」移出白名单？`, message: "之后对方发的内容按普通用户的规则审核。", confirmLabel: "移出白名单", reason: true },
+    id,
+    `/api/v1/admin/users/${id}/trusted`,
+    (reason) => ({ is_trusted: on, reason }),
+    on ? "已加入白名单" : "已移出白名单",
+  );
+}
+
 // ---- 用户数据请求：用户有权拿到、删除自己的数据 ----
 async function exportData(): Promise<void> {
   try {
@@ -176,6 +190,7 @@ function activate(): Promise<void> {
         <span class="tag" :class="statusTone(detail.status)">{{ STATUS_LABELS[detail.status] ?? detail.status }}</span>
         <span v-if="detail.is_admin" class="tag tag--link">{{ detail.is_super ? "超级管理员" : "管理员" }}</span>
         <span v-if="detail.is_admin && !detail.two_factor" class="tag tag--warn">未开两步验证</span>
+        <span v-if="detail.is_trusted" class="tag tag--link">白名单</span>
         <span v-if="detail.deleted" class="tag tag--danger">已注销</span>
         <template v-if="!detail.deleted">
           <a class="btn btn--ghost btn--sm" :href="`/user/${detail.user_id}`" target="_blank" rel="noopener">在前台查看</a>
@@ -199,6 +214,7 @@ function activate(): Promise<void> {
             <button v-if="!detail.is_super && detail.status === 'active'" type="button" class="btn btn--outline btn--sm" :disabled="!!busy" @click="setRole('super')">设为超级管理员</button>
             <button v-if="detail.is_admin" type="button" class="btn btn--outline btn--sm" :disabled="!!busy" @click="setRole('none')">撤销管理员</button>
           </template>
+          <button type="button" class="btn btn--outline btn--sm" :disabled="!!busy" @click="setTrusted(!detail.is_trusted)">{{ detail.is_trusted ? "移出白名单" : "加入白名单" }}</button>
           <button type="button" class="btn btn--ghost btn--sm" title="用户本人要求查看自己的数据时用" @click="exportData">导出此人的数据</button>
           <button v-if="!detail.is_admin" type="button" class="btn btn--ghost btn--sm" :disabled="!!busy" @click="erase">代为注销账号</button>
         </div>

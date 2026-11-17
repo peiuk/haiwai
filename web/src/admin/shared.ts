@@ -113,6 +113,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin.user.grant": "设为管理员",
   "admin.user.revoke": "撤销管理员",
   "admin.user.grant_super": "设为超级管理员",
+  "admin.user.trust": "加入白名单",
+  "admin.user.untrust": "移出白名单",
   "admin.user.export": "导出用户数据",
   "admin.user.erase": "代用户注销账号",
   "admin.totp.enable": "开启两步验证",

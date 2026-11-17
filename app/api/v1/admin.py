@@ -401,6 +401,7 @@ def list_users(q: str = "", status: str = "", page: int = 1, session: Session = 
                 "suspended_until": row.suspended_until,
                 "is_admin": row.is_admin,
                 "is_super": row.is_super,
+                "is_trusted": row.is_trusted,
                 "two_factor": bool(row.totp_secret),
                 "post_count": counts.get(row.id, 0),
                 "created_at": row.created_at,
@@ -446,6 +447,7 @@ def user_detail(user_id: str, session: Session = Depends(get_db)) -> dict[str, o
         "suspend_reason": target.suspend_reason or "",
         "is_admin": target.is_admin,
         "is_super": target.is_super,
+        "is_trusted": target.is_trusted,
         "two_factor": bool(target.totp_secret),
         "deleted": target.deleted_at is not None,
         "created_at": target.created_at,
@@ -535,6 +537,29 @@ def set_user_admin(
     write_audit(session, admin.id, action, "user", target.id, body.note)
     session.commit()
     return {"user_id": target.id, "is_admin": target.is_admin, "is_super": target.is_super}
+
+
+class TrustedBody(Reasoned):
+    is_trusted: bool
+
+
+@guarded.post("/users/{user_id}/trusted")
+def set_user_trusted(
+    user_id: str,
+    body: TrustedBody,
+    admin: User = Depends(require_super),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    """白名单：发帖 / 评论 / 视频不进人工审核（敏感词照拦），建房不受数量上限。"""
+    target = session.get(User, user_id)
+    if target is None or target.deleted_at is not None:
+        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    if target.is_trusted == body.is_trusted:
+        raise APIError(409, "NO_CHANGE", "已经是这个状态")
+    target.is_trusted = body.is_trusted
+    write_audit(session, admin.id, "admin.user.trust" if body.is_trusted else "admin.user.untrust", "user", target.id, body.note)
+    session.commit()
+    return {"user_id": target.id, "is_trusted": target.is_trusted}
 
 
 def take_down_everything(session: Session, admin_id: str, user_id: str, note: str) -> tuple[int, int]:

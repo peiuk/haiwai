@@ -42,6 +42,8 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     # 超级管理员：在管理员之上，还能彻底删除、管理频道和国家、任免管理员、导出数据。
     is_super: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 白名单：发的帖子 / 评论 / 视频不等人工审核（敏感词照拦），建房不受数量上限。超级管理员在后台设置。
+    is_trusted: Mapped[bool] = mapped_column(Boolean, default=False)
     # 后台两步验证的密钥（base32）；为空表示没开。
     totp_secret: Mapped[str | None] = mapped_column(String(64))
     # 限时封禁的到期时间；为空且 status=suspended 表示永久。到期后下次登录自动解封。

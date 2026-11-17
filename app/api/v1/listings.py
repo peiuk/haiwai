@@ -195,7 +195,7 @@ def create_listing(
         owned_upload(session, user, key)
     now = utcnow()
     words, source = resolve_keywords(body.keywords, body.title, body.body, body.keyword_source, body.category)
-    status = first_status(session, "listing", body.title, body.body)
+    status = first_status(session, "listing", body.title, body.body, user=user)
     content = Content(
         type="listing",
         status=status,

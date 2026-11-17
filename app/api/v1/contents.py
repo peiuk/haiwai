@@ -176,7 +176,7 @@ def create_post(
     # 后台关了帖子审核时，新用户的前几条也直接发布；敏感词照样拦。
     # 已上线房间里的帖子由房主管（能删），不进后台审核；还没上线的房间仍要等第一条通过才上线。
     in_live_room = channel is not None and channel.kind == "room" and channel.is_active
-    status = "pending" if not in_live_room and review_on(session, "post") and (prior or 0) < REVIEW_LIMIT else "published"
+    status = "pending" if not in_live_room and review_on(session, "post", user) and (prior or 0) < REVIEW_LIMIT else "published"
     if status == "published" and blocked_term_in(session, body.title, body.body):
         status = "pending"  # 命中敏感词 / 链接黑名单：不直接发布，先给管理员看
     if body.post_type == "video":
@@ -590,7 +590,7 @@ def create_reply(
     )
     session.add(comment)
     session.flush()
-    if first_status(session, "comment", body.body) == "published":
+    if first_status(session, "comment", body.body, user=user) == "published":
         publish_comment(session, comment)
     if content.author_id and content.author_id != user.id:
         session.add(
@@ -669,7 +669,7 @@ def repost_content(
     note = body.body or original.summary or ""
     # 和发帖同一套规则：新用户前几条要审，附言命中敏感词也先待审（原来转发一律直接公开）
     prior = _approved_posts(session, user.id)
-    status = "pending" if review_on(session, "post") and (prior or 0) < REVIEW_LIMIT else "published"
+    status = "pending" if review_on(session, "post", user) and (prior or 0) < REVIEW_LIMIT else "published"
     if blocked_term_in(session, body.body):
         status = "pending"
     content = Content(

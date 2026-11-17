@@ -39,15 +39,17 @@ def blocked_term_in(session: Session, *texts: str | None) -> str | None:
 REVIEW_KINDS = ("post", "listing", "comment")
 
 
-def review_on(session: Session, kind: str) -> bool:
-    """这类内容发布前要不要人工审核。后台可以关；没设置过就是要审。"""
+def review_on(session: Session, kind: str, user: User | None = None) -> bool:
+    """这类内容发布前要不要人工审核。后台可以关；没设置过就是要审。白名单用户（传了 user 时）一律不审。"""
+    if user is not None and user.is_trusted:
+        return False
     row = session.get(SiteSetting, f"review.{kind}")
     return row is None or row.value != "off"
 
 
-def first_status(session: Session, kind: str, *texts: str | None) -> str:
+def first_status(session: Session, kind: str, *texts: str | None, user: User | None = None) -> str:
     """留言 / 分类信息刚发出来的状态：开着审核，或命中敏感词，就先待审；否则直接发布。"""
-    return "pending" if review_on(session, kind) or blocked_term_in(session, *texts) else "published"
+    return "pending" if review_on(session, kind, user) or blocked_term_in(session, *texts) else "published"
 
 
 def hide_if_widely_reported(session: Session, content: Content) -> bool:
