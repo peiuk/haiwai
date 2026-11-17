@@ -92,10 +92,10 @@ load();
       <button type="button" class="retry" @click="retry">重试</button>
     </p>
 
-    <p v-if="!auth.isLoggedIn" class="empty">注册或登录后，加入频道即可在这里看到内容。</p>
-    <p v-else-if="!loading && feed.length === 0" class="empty">加入频道后，这里按时间显示内容。</p>
+    <p v-if="!auth.isLoggedIn" class="empty">注册或登录后，加入频道、关注用户即可在这里看到内容。</p>
+    <p v-else-if="!loading && feed.length === 0" class="empty">加入频道或关注用户后，这里按时间显示内容。</p>
 
-    <p class="feed-note">严格按时间排序 · 仅显示已加入的频道</p>
+    <p class="feed-note">严格按时间排序 · 显示已加入的频道和关注的人的动态</p>
 
     <PostCard
       v-for="item in feed"

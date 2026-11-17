@@ -724,6 +724,8 @@ export type SearchContent = {
   author_name: string;
   author_avatar?: string;
   author_handle: string;
+  /** 当前用户是否已关注发帖人（动态卡片的「关注」按钮用） */
+  author_following?: boolean;
   channel_id: string | null;
   channel_name: string;
   keywords: string[];

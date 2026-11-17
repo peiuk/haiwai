@@ -3,8 +3,10 @@
 // 搜索词由顶栏搜索框写进 URL，这里只读 URL，所以结果可以分享、刷新、后退。
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { request, type SearchResponse } from "../api";
+import { request, toMessage, type SearchContent, type SearchResponse } from "../api";
 import { useAuthStore } from "../stores/auth";
+import { useLoginPromptStore } from "../stores/loginPrompt";
+import { useToastStore } from "../stores/toast";
 import { usePostReactions } from "../composables/usePostReactions";
 import PostCard from "../components/common/PostCard.vue";
 import ContentDetail from "../components/ContentDetail.vue";
@@ -52,6 +54,27 @@ async function load(): Promise<void> {
 
 // 搜索词变了重新搜；登录状态变了也重搜一次，拿到自己的点赞 / 收藏状态
 watch([q, () => auth.isLoggedIn], () => void load(), { immediate: true });
+
+/** 动态（不在频道里）的卡片放「关注」：自己发的不放 */
+function canFollow(item: SearchContent): boolean {
+  return !item.channel_id && !!item.author_id && item.author_id !== auth.profile?.user_id;
+}
+
+async function follow(item: SearchContent): Promise<void> {
+  if (!auth.isLoggedIn) {
+    useLoginPromptStore().require("登录后就能关注，登录成功会自动帮你关注。", () => follow(item));
+    return;
+  }
+  try {
+    await request(`/api/v1/me/follows/${item.author_id}`, { method: "PUT" });
+    for (const row of results.value.contents) {
+      if (row.author_id === item.author_id) row.author_following = true;
+    }
+    useToastStore().show("已关注，TA 的动态会出现在「正在关注」里");
+  } catch (err) {
+    useToastStore().show(toMessage(err));
+  }
+}
 
 function setTab(id: TabId): void {
   router.replace({ query: { ...route.query, f: id === "top" ? undefined : id } });
@@ -102,6 +125,9 @@ function setTab(id: TabId): void {
             :liked="item.liked"
             :favorited="item.favorited"
             :reposted="item.reposted"
+            :show-follow="canFollow(item)"
+            :is-following="item.author_following"
+            @follow="follow(item)"
             @open="activeContentId = item.content_id"
             @like="toggleLike(item)"
             @favorite="toggleFavorite(item)"

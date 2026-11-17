@@ -51,6 +51,9 @@ const props = withDefaults(
     /** 是否显示加入频道按钮（推荐流） */
     showJoin?: boolean;
     isJoined?: boolean;
+    /** 动态（不在频道里的帖子）：放「关注」发帖人，代替加入频道 */
+    showFollow?: boolean;
+    isFollowing?: boolean;
     /** 「为什么推荐」文案（推荐流） */
     whyText?: string;
   }>(),
@@ -74,6 +77,8 @@ const props = withDefaults(
     unread: false,
     showJoin: false,
     isJoined: false,
+    showFollow: false,
+    isFollowing: false,
     whyText: "",
   },
 );
@@ -84,6 +89,7 @@ const emit = defineEmits<{
   (e: "repost"): void;
   (e: "open"): void;
   (e: "join"): void;
+  (e: "follow"): void;
   (e: "less-like"): void;
   (e: "reported", caseId: string): void;
 }>();
@@ -266,6 +272,18 @@ onBeforeUnmount(() => {
           </button>
           <span v-else-if="showJoin && isJoined" class="post-joined">
             <BaseIcon name="i-check" :size="13" /> 已加入
+          </span>
+          <button
+            v-else-if="showFollow && !isFollowing"
+            type="button"
+            class="post-join"
+            :aria-label="`关注 ${authorName || displayHandle}`"
+            @click="emit('follow')"
+          >
+            <BaseIcon name="i-plus" :size="13" /> 关注
+          </button>
+          <span v-else-if="showFollow && isFollowing" class="post-joined">
+            <BaseIcon name="i-check" :size="13" /> 已关注
           </span>
           <div ref="menuRef" class="post-more" @keydown.esc="menuOpen = false">
             <button

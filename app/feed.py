@@ -1,12 +1,24 @@
 import json
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.pagination import decode_cursor, encode_cursor
 from app.keywords import load_keywords
-from app.models import Channel, ChannelItem, ChannelSubscription, Content, ContentReaction, ListingExt, User, as_utc, utcnow
+from app.models import (
+    Channel,
+    ChannelItem,
+    ChannelSubscription,
+    Content,
+    ContentReaction,
+    ListingExt,
+    User,
+    UserBlock,
+    UserFollow,
+    as_utc,
+    utcnow,
+)
 from app.privacy import viewable
 
 MAX_LISTING_IMAGES = 6
@@ -254,6 +266,76 @@ def build_following_feed(session: Session, user_id: str) -> list[dict[str, objec
                 break
         entry["is_unread"] = is_unread
         items.append(entry)
+    posts = _followed_posts(session, user_id)
+    if posts:
+        items.extend(posts)
+        # 和上面的查询同一个顺序：置顶在前，其余新的在前
+        items.sort(key=lambda entry: (bool(entry.get("pinned")), as_utc(datetime.fromisoformat(str(entry["added_at"])))), reverse=True)
+    return items
+
+
+def _followed_posts(session: Session, user_id: str) -> list[dict[str, object]]:
+    """关注的人发到「我的动态」的帖子（不在任何频道里）。频道里的帖子已经按加入的频道进关注流了，这里不重复。"""
+    in_channel = exists().where(ChannelItem.content_id == Content.id)
+    blocked = exists().where(UserBlock.user_id == user_id, UserBlock.target_id == Content.author_id)
+    rows = session.scalars(
+        select(Content)
+        .join(UserFollow, (UserFollow.target_id == Content.author_id) & (UserFollow.user_id == user_id))
+        .where(
+            Content.status == "published",
+            Content.deleted_at.is_(None),
+            Content.published_at.is_not(None),
+            ~in_channel,
+            ~blocked,
+            viewable(user_id),
+        )
+        .order_by(Content.published_at.desc())
+        .limit(FEED_WINDOW)
+    ).all()
+    if not rows:
+        return []
+    authors = author_names(session, [row.author_id for row in rows])
+    flags = reaction_flags(session, user_id, [row.id for row in rows])
+    repost_titles, reposted_ids = repost_context(session, user_id, list(rows))
+    items: list[dict[str, object]] = []
+    for row in rows:
+        title_hans, title_hant, summary_hans, summary_hant = content_titles(row)
+        liked, favorited = flags.get(row.id, (False, False))
+        items.append(
+            {
+                "content_id": row.id,
+                "event_cluster_id": row.event_cluster_id,
+                "title": title_hans,
+                "title_hant": title_hant,
+                "summary": summary_hans,
+                "summary_hant": summary_hant,
+                "channels": [],
+                "channel_id": "",
+                "channel_name": "",
+                "channel_certified": False,
+                "is_joined": False,
+                "source_name": row.source_name or "",
+                "licence_ref": row.licence_ref or "",
+                "canonical_url": row.canonical_url,
+                "added_at": as_utc(row.published_at).isoformat(),
+                "pinned": False,
+                "sources": [],
+                "source_count": 1,
+                "source_label": None,
+                "origin_room_name": None,
+                "embed_status": row.embed_status,
+                "embed_provider_code": row.embed_provider_code,
+                **card_extras(row, None, authors.get(row.author_id or "", ("", ""))),
+                "reposted": row.id in reposted_ids,
+                "repost_of": (
+                    {"content_id": row.repost_of_id, "title": repost_titles.get(row.repost_of_id, "")} if row.repost_of_id else None
+                ),
+                "liked": liked,
+                "favorited": favorited,
+                # shortcut: 动态没有频道的已读时间，不标未读；要标的话按 user.feed_seen_at 比
+                "is_unread": False,
+            }
+        )
     return items
 
 

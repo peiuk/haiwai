@@ -11,7 +11,7 @@ from app.core.regions import open_regions
 from app.feed import author_names, embed_card, home_channels, image_keys_of, reaction_flags
 from app.keywords import load_keywords
 from app.privacy import viewable
-from app.models import Channel, ChannelItem, Content, User, utcnow
+from app.models import Channel, ChannelItem, Content, User, UserFollow, utcnow
 
 router = APIRouter()
 
@@ -113,6 +113,17 @@ def search(
     # 频道和作者整批查：原来每条结果各查三次库
     placed_in = home_channels(session, [row.id for row in contents])
     authors = author_names(session, [row.author_id for row in contents])
+    # 动态卡片上的「关注」按钮要知道已经关注了谁
+    following: set[str] = set()
+    if viewer is not None:
+        following = set(
+            session.scalars(
+                select(UserFollow.target_id).where(
+                    UserFollow.user_id == viewer.id,
+                    UserFollow.target_id.in_({row.author_id for row in contents if row.author_id}),
+                )
+            ).all()
+        )
     for row in contents:
         liked, favorited = flags.get(row.id, (False, False))
         channel = placed_in.get(row.id)
@@ -130,6 +141,7 @@ def search(
                 "author_name": author_name,
                 "author_handle": author_handle,
                 "author_avatar": author_avatar,
+                "author_following": row.author_id in following,
                 "channel_id": channel.id if channel else None,
                 "channel_name": channel.name_hans if channel else "",
                 "keywords": load_keywords(row.keywords_json),
