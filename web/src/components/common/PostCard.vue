@@ -291,7 +291,7 @@ onBeforeUnmount(() => {
         >{{ title }}</h3>
         <p v-if="summary" class="post-summary" data-ugc>{{ summary }}</p>
         <div v-if="keywords.length" class="post-tags" data-ugc>
-          <span v-for="kw in keywords" :key="kw" class="post-tag">#{{ kw }}</span>
+          <RouterLink v-for="kw in keywords" :key="kw" class="post-tag" :to="{ name: 'search', query: { q: `#${kw}` } }">#{{ kw }}</RouterLink>
         </div>
       </div>
 
@@ -546,9 +546,10 @@ a.post-avatar:hover {
 .post-tag {
   font-size: var(--fs-12);
   color: var(--accent-ink);
-  cursor: pointer;
+  text-decoration: none;
 }
-.post-tag:hover {
+.post-tag:hover,
+.post-tag:focus-visible {
   text-decoration: underline;
 }
 .post-more {

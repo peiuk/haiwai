@@ -411,8 +411,8 @@ watch(detail, async (value) => {
               ></video>
 
               <div v-if="detail.keywords.length || detail.city_topic" class="cd-keywords" data-ugc>
-                <span v-if="detail.city_topic"><BaseIcon name="i-pin" :size="13" />{{ detail.city_topic }}</span>
-                <span v-for="keyword in detail.keywords" :key="keyword">#{{ keyword }}</span>
+                <RouterLink v-if="detail.city_topic" :to="{ name: 'search', query: { q: `#${detail.city_topic}` } }" @click="leaveOverlay"><BaseIcon name="i-pin" :size="13" />{{ detail.city_topic }}</RouterLink>
+                <RouterLink v-for="keyword in detail.keywords" :key="keyword" :to="{ name: 'search', query: { q: `#${keyword}` } }" @click="leaveOverlay">#{{ keyword }}</RouterLink>
               </div>
 
               <SourceBlock
@@ -732,13 +732,16 @@ watch(detail, async (value) => {
   gap: 4px 10px;
   margin-top: var(--sp-3);
 }
-.cd-keywords span {
+.cd-keywords a {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   color: var(--accent-ink);
   font-size: var(--fs-14);
+  text-decoration: none;
 }
+.cd-keywords a:hover,
+.cd-keywords a:focus-visible { text-decoration: underline; }
 .cd-original :deep(.source-block) { margin-top: var(--sp-3); }
 .cd-time-line {
   margin: var(--sp-3) 0 0;
