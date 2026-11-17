@@ -220,3 +220,29 @@ def test_home_rail_ranks_by_heat_in_visible_regions(client):
     assert [card["content_id"] for card in rail["today"]] == [favourite, viewed, liked]
     uk_rail = client.get("/api/v1/discover/home-rail", headers={"X-Region": "UK"}).json()
     assert uk_rail["week"][0]["title"] == "英国本地"
+
+
+def test_new_account_without_saved_country_uses_browser_region(client):
+    """注册时不存国家：新用户在首页自动定位之前，也要按浏览器的国家看内容；存过国家后以账号为准。"""
+    session = client.session_factory()
+    uk = Channel(code="uk-new", name_hans="英国新", name_hant="英國新", kind="official_curated", category="生活", region_code="UK", is_active=True)
+    session.add(uk)
+    session.flush()
+    content = Content(type="news", status="published", title="英国给新用户", summary="摘要", source_name="测试",
+                      licence_ref="OGL v3.0", canonical_url="https://example.com/uk-new", published_at=datetime.now(timezone.utc))
+    session.add(content)
+    session.flush()
+    session.add(ChannelItem(channel_id=uk.id, content_id=content.id, added_at=datetime.now(timezone.utc)))
+    session.commit()
+    content_id = content.id
+    session.close()
+    token = client.post("/api/v1/auth/register", json={"email": "fresh@example.com", "password": "password-1", "display_name": "新人", "consents": CONSENTS}).json()["access_token"]
+
+    def sees(extra: dict[str, str]) -> bool:
+        items = client.get("/api/v1/discover/items", headers={**headers(token), **extra}).json()["items"]
+        return content_id in {(item.get("post") or item.get("listing") or item)["content_id"] for item in items}
+
+    assert sees({"X-Region": "UK"})  # 原来新用户一律按「国际」，看不到英国内容
+    saved = client.post("/api/v1/me/regions", headers=headers(token), json={"region_code": "GLOBAL", "source": "manual"})
+    assert saved.status_code == 200, saved.text
+    assert not sees({"X-Region": "UK"})  # 账号里选了国际：以账号为准

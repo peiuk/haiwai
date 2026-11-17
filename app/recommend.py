@@ -20,13 +20,13 @@ _REASONS = {
 
 
 def effective_region(session: Session, user: User | None) -> str:
-    if user is None:
-        # 游客：用首页国家栏选的国家；没选或不是已开通国家就看国际
+    pref = session.get(UserRegionPref, user.id) if user is not None else None
+    if pref is None:
+        # 游客，或还没存过国家的新用户（注册时不存，要等首页国家栏自动定位）：
+        # 用浏览器带来的国家（X-Region）；没带或不是已开通国家就看国际。
+        # 不然新用户注册完直接点进分享来的英国房源，会被当成「不在当前国家」。
         code = guest_region.get()
         return code if is_open_region(session, code) else "GLOBAL"
-    pref = session.get(UserRegionPref, user.id)
-    if pref is None:
-        return "GLOBAL"
     if pref.browse_region_code:
         return pref.browse_region_code
     code = pref.region_code or "GLOBAL"

@@ -109,13 +109,11 @@ export function clearToken(): void {
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
   const token = getToken();
   const headers: Record<string, string> = { ...(extra ?? {}) };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  } else {
-    // 游客选的国家要带给后端，否则推荐 / 发现永远只按「国际」给内容
-    const region = guestRegion();
-    if (region) headers["X-Region"] = region;
-  }
+  if (token) headers.Authorization = `Bearer ${token}`;
+  // 浏览器这边的国家（选过的或自动判断的）：游客、以及还没在账号里存过国家的新用户，后端按它给内容；
+  // 账号里存了国家的，后端以账号为准，不看这个头
+  const region = guestRegion();
+  if (region) headers["X-Region"] = region;
   return headers;
 }
 
