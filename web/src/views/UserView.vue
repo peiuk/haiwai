@@ -238,6 +238,7 @@ watch(userId, () => {
             <h1 class="profile-name" data-ugc>{{ displayName }}</h1>
             <p v-if="profile.handle" class="profile-handle">@{{ profile.handle }}</p>
           </div>
+          <p v-if="profile.bio" class="profile-bio" data-ugc>{{ profile.bio }}</p>
           <p v-if="profile.city_label || joinedText" class="profile-sub">
             <span v-if="profile.city_label"><BaseIcon name="i-pin" :size="15" /> {{ profile.city_label }}</span>
             <span v-if="joinedText">{{ joinedText }}</span>
@@ -522,6 +523,11 @@ watch(userId, () => {
   font-size: var(--fs-19);
   font-weight: var(--fw-bold);
   line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.profile-bio {
+  margin: 0;
+  white-space: pre-line;
   overflow-wrap: anywhere;
 }
 .profile-handle {

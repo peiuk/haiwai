@@ -14,6 +14,7 @@ from app.core.errors import APIError
 from app.core.pagination import decode_cursor, encode_cursor
 from app.core.regions import open_regions
 from app.feed import build_following_feed, paginate_feed
+from app.guard import blocked_term_in
 from app.keywords import clean_city_topic
 from app.privacy import can_view_content
 from app.recommend import country_blocked, for_you, is_roaming
@@ -60,6 +61,7 @@ def my_profile(user: User = Depends(current_user), session: Session = Depends(ge
         "avatar_tone": user.avatar_tone,
         "avatar_key": user.avatar_key or "",
         "city_label": user.city_label or "",
+        "bio": user.bio or "",
         "script_pref": user.script_pref,
         "phone": user.phone or "",
         "is_admin": user.is_admin,  # 前端据此决定是否显示管理后台入口；权限仍由后端校验
@@ -73,6 +75,17 @@ class ProfilePatch(BaseModel):
     avatar_tone: str | None = None
     avatar_key: str | None = None  # 已上传图片的 key；空字符串表示去掉头像
     city_label: str | None = None
+    bio: str | None = None  # 个人介绍；空字符串表示清空
+
+    @field_validator("bio")
+    @classmethod
+    def bio_length(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        bio = value.strip()
+        if len(bio) > 250:  # 和抖音简介一样
+            raise ValueError("个人介绍最多 250 个字")
+        return bio
 
     @field_validator("display_name")
     @classmethod
@@ -149,6 +162,10 @@ def update_profile(
         user.avatar_key = body.avatar_key or None
     if body.city_label is not None:
         user.city_label = body.city_label or None
+    if body.bio is not None:
+        if blocked_term_in(session, body.bio):
+            raise APIError(422, "VALIDATION_FAILED", "个人介绍包含不允许的词，改一下吧")
+        user.bio = body.bio or None
     session.commit()
     return my_profile(user, session)
 
@@ -809,6 +826,7 @@ def export_account(user: User, session: Session) -> dict[str, object]:
             "display_name": user.display_name,
             "handle": user.handle or "",
             "avatar_tone": user.avatar_tone,
+            "bio": user.bio or "",
             "phone": user.phone,
         },
         "subscriptions": [row.channel_id for row in subscriptions],
@@ -827,6 +845,7 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
     user.phone = None
     user.display_name = "已注销"
     user.handle = None
+    user.bio = None
     user.avatar_key = None  # 图片文件在下面和其他上传一起删
     # 后台权限也收回：注销后的账号在后台改不了权限（按「用户不存在」处理），留着就永远撤不掉
     user.is_admin = False

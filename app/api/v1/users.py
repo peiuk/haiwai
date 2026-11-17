@@ -42,6 +42,7 @@ def public_profile(
         "avatar_tone": profile.avatar_tone,
         "avatar_key": profile.avatar_key or "",
         "city_label": profile.city_label or "",
+        "bio": profile.bio or "",
         "joined_at": profile.created_at.isoformat(),
         "post_count": _count(session, select(func.count()).select_from(Content).where(*_published(profile.id))),
         "follower_count": _count(session, select(func.count()).select_from(UserFollow).where(UserFollow.target_id == profile.id)),

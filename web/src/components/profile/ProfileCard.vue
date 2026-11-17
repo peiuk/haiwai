@@ -6,6 +6,7 @@ import { useToastStore } from "../../stores/toast";
 import { useThemeStore } from "../../stores/theme";
 import Avatar from "../base/Avatar.vue";
 import BaseButton from "../base/BaseButton.vue";
+import TextArea from "../base/TextArea.vue";
 import TextField from "../base/TextField.vue";
 
 type Profile = {
@@ -15,6 +16,7 @@ type Profile = {
   avatar_tone: string;
   avatar_key: string;
   city_label: string;
+  bio: string;
 };
 
 const auth = useAuthStore();
@@ -28,6 +30,7 @@ const error = ref("");
 const name = ref("");
 const handle = ref("");
 const city = ref("");
+const bio = ref("");
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -46,6 +49,7 @@ function resetFields(): void {
   name.value = profile.value?.display_name ?? "";
   handle.value = profile.value?.handle ?? "";
   city.value = profile.value?.city_label ?? "";
+  bio.value = profile.value?.bio ?? "";
 }
 
 function cancel(): void {
@@ -75,9 +79,13 @@ async function save(): Promise<void> {
     error.value = "城市需要 1 到 12 个字，不能有空格";
     return;
   }
+  if (bio.value.trim().length > 250) {
+    error.value = "个人介绍最多 250 个字";
+    return;
+  }
   saving.value = true;
   try {
-    const payload: Record<string, string> = { display_name: displayName, city_label: city.value.trim() };
+    const payload: Record<string, string> = { display_name: displayName, city_label: city.value.trim(), bio: bio.value.trim() };
     if (accountName) payload.handle = accountName;
     profile.value = await request<Profile>("/api/v1/me", { ...jsonBody(payload), method: "PATCH" });
     editing.value = false;
@@ -158,6 +166,7 @@ onMounted(load);
         <TextField id="profile-name" v-model="name" label="显示名" required />
         <TextField id="profile-handle" v-model="handle" label="账号名" placeholder="例如 overseas_uk" hint="字母、数字、点和下划线；设置后可用于 @ 提及" />
         <TextField id="profile-city" v-model="city" label="所在城市" placeholder="例如 London" />
+        <TextArea id="profile-bio" v-model="bio" label="个人介绍" :rows="3" :maxlength="250" placeholder="介绍一下自己，显示在你的主页上（最多 250 字）" />
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <div class="profile-card__actions">
           <BaseButton type="submit" size="sm" :loading="saving">保存资料</BaseButton>

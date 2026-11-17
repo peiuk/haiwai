@@ -371,6 +371,8 @@ export type RoomDetail = {
   room_type_label?: string;
   /** 房间封面图的上传 key（剧集房间页顶部） */
   cover_key?: string | null;
+  /** 房主写的房间介绍 */
+  intro?: string;
   review_status?: string;
   is_private?: boolean;
   join_request_pending?: boolean;
@@ -810,6 +812,7 @@ export type UserProfile = {
   avatar_tone: string;
   avatar_key: string;
   city_label: string;
+  bio: string;
   joined_at: string;
   post_count: number;
   follower_count: number;
@@ -857,6 +860,7 @@ export type MeProfile = {
   avatar_tone: string;
   avatar_key: string;
   city_label: string;
+  bio: string;
   script_pref: string;
   phone: string;
   email: string;

@@ -439,6 +439,7 @@ def user_detail(user_id: str, session: Session = Depends(get_db)) -> dict[str, o
         "email": target.email,
         "avatar_key": target.avatar_key or "",
         "city_label": target.city_label or "",
+        "bio": target.bio or "",
         "phone_verified": target.phone_verified,
         "status": target.status,
         "suspended_until": target.suspended_until,

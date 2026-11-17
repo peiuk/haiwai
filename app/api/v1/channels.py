@@ -280,6 +280,7 @@ def channel_detail(
         "room_type": channel.room_type,
         "room_type_label": ROOM_TYPE_LABELS.get(channel.room_type, channel.room_type),
         "cover_key": channel.cover_key,
+        "intro": channel.intro or "",
         "review_status": channel.review_status,
         "is_private": channel.is_private,
         "is_owner": user is not None and channel.owner_id == user.id,
@@ -580,6 +581,17 @@ class RoomEditBody(BaseModel):
     name: str | None = None
     cover_key: str | None = None  # 房间封面图；传空字符串表示去掉封面
     is_private: bool | None = None  # 私密 / 公开可以随时互相切换
+    intro: str | None = None  # 房间介绍；空字符串表示清空
+
+    @field_validator("intro")
+    @classmethod
+    def intro_length(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        intro = value.strip()
+        if len(intro) > 250:  # 和个人介绍一样
+            raise ValueError("房间介绍最多 250 个字")
+        return intro
 
     @field_validator("room_type")
     @classmethod
@@ -617,6 +629,10 @@ def update_room(
         if body.cover_key:
             _owned_media(session, user, body.cover_key, "image/", "图片")
         channel.cover_key = body.cover_key or None
+    if body.intro is not None:
+        if blocked_term_in(session, body.intro):
+            raise APIError(422, "VALIDATION_FAILED", "房间介绍包含不允许的词，改一下吧")
+        channel.intro = body.intro or None
     if body.is_private is not None and body.is_private != channel.is_private:
         channel.is_private = body.is_private
         if body.is_private:

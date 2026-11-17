@@ -16,6 +16,7 @@ import { useAuthStore } from "../stores/auth";
 import { useToastStore } from "../stores/toast";
 import BaseButton from "../components/base/BaseButton.vue";
 import TextField from "../components/base/TextField.vue";
+import TextArea from "../components/base/TextArea.vue";
 import SelectField from "../components/base/SelectField.vue";
 import Checkbox from "../components/base/Checkbox.vue";
 import BaseTag from "../components/base/BaseTag.vue";
@@ -151,6 +152,7 @@ const editing = ref(false);
 const editName = ref("");
 const editType = ref("general");
 const editCover = ref("");
+const editIntro = ref("");
 const editPrivate = ref(false);
 const saving = ref(false);
 
@@ -159,6 +161,7 @@ function startEdit(): void {
   editName.value = detail.value.name_hans;
   editType.value = detail.value.room_type;
   editCover.value = detail.value.cover_key ?? "";
+  editIntro.value = detail.value.intro ?? "";
   editPrivate.value = Boolean(detail.value.is_private);
   editing.value = true;
 }
@@ -173,7 +176,7 @@ async function saveEdit(): Promise<void> {
   try {
     // 只有剧集房间提交封面；空字符串表示去掉封面
     const cover = editType.value === "series" ? { cover_key: editCover.value } : {};
-    await request(`/api/v1/channels/${roomId}`, { ...jsonBody({ name, room_type: editType.value, is_private: editPrivate.value, ...cover }), method: "PATCH" });
+    await request(`/api/v1/channels/${roomId}`, { ...jsonBody({ name, room_type: editType.value, is_private: editPrivate.value, intro: editIntro.value.trim(), ...cover }), method: "PATCH" });
     editing.value = false;
     toast.show("房间已更新");
     onChanged();
@@ -246,6 +249,7 @@ onMounted(load);
           <BaseTag v-if="detail.is_private" variant="warn">私密房间</BaseTag>
           <ReportButton kind="channel" :id="roomId" compact />
         </div>
+        <p v-if="detail.intro" class="room-intro" data-ugc>{{ detail.intro }}</p>
         <p v-if="detail.parent_name_hans" class="room-meta">挂在 <span data-ugc>{{ detail.parent_name_hans }}</span></p>
         <p v-if="detail.subscriber_count !== undefined" class="room-meta">
           <template v-if="countryName">{{ countryName }} · </template>{{ detail.subscriber_count }} 人订阅<template v-if="detail.sort_basis"> · 排序：{{ detail.sort_basis }}</template>
@@ -261,6 +265,7 @@ onMounted(load);
         </div>
         <form v-if="editing" class="room-edit" @submit.prevent="saveEdit">
           <TextField id="room-edit-name" v-model="editName" label="房间名" required />
+          <TextArea id="room-edit-intro" v-model="editIntro" label="房间介绍（可选）" :rows="3" :maxlength="250" placeholder="这个房间聊什么、有什么规矩（最多 250 字）" />
           <SelectField id="room-edit-type" v-model="editType" label="类型" :options="[...ROOM_TYPES]" />
           <Checkbox id="room-edit-private" v-model="editPrivate" label="私密房间（只有成员能看到房间内容，加入要经你同意）" />
           <p v-if="detail.is_private && !editPrivate" class="room-meta" role="note">
@@ -396,6 +401,11 @@ onMounted(load);
   display: flex;
   gap: var(--sp-2);
   flex-wrap: wrap;
+}
+.room-intro {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 .room-meta {
   margin: 0;

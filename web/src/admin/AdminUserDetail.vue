@@ -18,6 +18,7 @@ type Detail = {
   email: string;
   avatar_key: string;
   city_label: string;
+  bio: string;
   phone_verified: boolean;
   status: string;
   suspended_until: string | null;
@@ -228,6 +229,7 @@ function activate(): Promise<void> {
           <div><dt>邮箱</dt><dd>{{ detail.email }}</dd></div>
           <div><dt>账号名</dt><dd>{{ detail.handle ? `@${detail.handle}` : "—" }}</dd></div>
           <div><dt>城市</dt><dd>{{ detail.city_label || "—" }}</dd></div>
+          <div><dt>个人介绍</dt><dd data-ugc>{{ detail.bio || "—" }}</dd></div>
           <div><dt>手机验证</dt><dd>{{ detail.phone_verified ? "已验证" : "未验证" }}</dd></div>
           <div><dt>注册时间</dt><dd :title="when(detail.created_at)">{{ exact(detail.created_at) }}</dd></div>
           <div><dt>发帖 / 留言</dt><dd>{{ detail.post_count }} / {{ detail.comment_count }}</dd></div>
