@@ -3,12 +3,14 @@
 import { computed, ref, watch } from "vue";
 import { request, type Channel, type Subscription } from "../../api";
 import { useAuthStore } from "../../stores/auth";
+import { useLoginPromptStore } from "../../stores/loginPrompt";
 import { useToastStore } from "../../stores/toast";
 import Avatar from "../base/Avatar.vue";
 import BaseTag from "../base/BaseTag.vue";
 
 const auth = useAuthStore();
 const toast = useToastStore();
+const loginPrompt = useLoginPromptStore();
 const props = defineProps<{ regionCode: string }>();
 
 const channels = ref<Channel[]>([]);
@@ -70,6 +72,31 @@ async function toggle(id: string): Promise<void> {
   }
 }
 
+const unjoined = computed(() => visibleChannels.value.filter((channel) => !subscribedIds.value.has(channel.id)));
+const joiningAll = ref(false);
+
+/** 一键加入当前列表里还没加入的频道。加入接口本身幂等，已加入的再加一次也没事。 */
+async function joinAll(): Promise<void> {
+  if (!auth.isLoggedIn) {
+    loginPrompt.require("登录后就能一键加入频道，登录成功会自动帮你加入。", joinAll);
+    return;
+  }
+  joiningAll.value = true;
+  await load(); // 刚登录时订阅列表可能还没刷新，先拿最新的再算哪些没加入
+  let failed = 0;
+  const targets = unjoined.value;
+  for (const channel of targets) {
+    try {
+      await request(`/api/v1/me/subscriptions/${channel.id}`, { method: "PUT" });
+    } catch {
+      failed += 1;
+    }
+  }
+  toast.show(failed ? `加入了 ${targets.length - failed} 个，${failed} 个没成功` : `已加入 ${targets.length} 个频道`);
+  joiningAll.value = false;
+  await load();
+}
+
 watch(() => auth.isLoggedIn, () => void load());
 void load();
 </script>
@@ -79,6 +106,15 @@ void load();
     <p v-if="error" class="notice notice--danger" role="alert">{{ error }}</p>
     <div class="ch-tools">
       <span>{{ visibleChannels.length }} 个频道</span>
+      <button
+        v-if="unjoined.length"
+        class="btn btn--sm btn--primary ch-join-all"
+        type="button"
+        :disabled="joiningAll"
+        @click="joinAll"
+      >
+        {{ joiningAll ? "正在加入…" : `一键加入（${unjoined.length}）` }}
+      </button>
     </div>
     <p v-if="loading && !channels.length" class="ch-state">正在加载频道…</p>
     <p v-else-if="!error && !visibleChannels.length" class="ch-state">当前国家还没有公开频道</p>
@@ -124,6 +160,7 @@ void load();
 }
 .ch-tools span, .ch-state { color: var(--muted); font-size: var(--fs-12); }
 .ch-tools span { white-space: nowrap; }
+.ch-join-all { margin-left: auto; }
 .ch-state { margin: 0; padding: var(--sp-3); }
 .ch-group h2 {
   display: flex;
