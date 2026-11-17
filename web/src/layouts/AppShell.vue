@@ -181,7 +181,7 @@ watch(
     <div class="shell-body" :class="{ 'shell-body--publish': route.name === 'publish' }">
       <!-- 左导航（桌面端） -->
       <aside class="left-col">
-        <strong class="brand"><img class="brand-mark" src="/logo-mark.png" alt="" width="62" height="44" /><span class="brand-word">海外圈</span></strong>
+        <strong class="brand"><img class="brand-mark" src="/logo-mark.png" alt="" width="62" height="44" /><span class="brand-text"><span class="brand-word">海外圈</span><small class="brand-slogan">全球分享社区</small></span></strong>
         <nav aria-label="主导航">
           <RouterLink
             v-for="item in navItems"
@@ -356,6 +356,17 @@ watch(
 :global([data-theme="dark"]) .brand-word {
   --brand-from: #5aa2ff;
   --brand-to: #3cc7b4;
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.brand-slogan {
+  font-size: var(--fs-12);
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0.08em;
 }
 .brand-mark {
   width: 62px;
