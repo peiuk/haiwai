@@ -140,7 +140,20 @@ const videoEl = ref<HTMLVideoElement | null>(null);
 const videoPaused = ref(false);
 // 用户手动暂停标记：暂停后滚动离开再回来不自动重播，尊重用户意图。
 const userPaused = ref(false);
+// 默认静音起播（浏览器只放行静音自动播放）；用户点了「开声音」之后这条视频就带声音播
+const videoMuted = ref(true);
 let observer: IntersectionObserver | null = null;
+
+function toggleMute(): void {
+  const v = videoEl.value;
+  if (!v) return;
+  videoMuted.value = !videoMuted.value;
+  v.muted = videoMuted.value;
+  if (!videoMuted.value && v.paused) {
+    userPaused.value = false;
+    togglePlay(true);
+  }
+}
 
 function togglePlay(shouldPlay: boolean): void {
   const v = videoEl.value;
@@ -148,7 +161,7 @@ function togglePlay(shouldPlay: boolean): void {
   if (shouldPlay) {
     // 用户已手动暂停时，进入视口也不自动播放，直到用户再次点击播放。
     if (userPaused.value) return;
-    v.muted = true; // 自动播放需静音（浏览器策略 + X 式默认静音）
+    v.muted = videoMuted.value;
     const p = v.play();
     if (p) {
       p.then(() => {
@@ -182,12 +195,12 @@ onMounted(() => {
     observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          // 进入可视区自动播放，离开暂停（对齐 X 信息流）
-          togglePlay(entry.isIntersecting);
+          // 露出一半以上才播，少于一半就暂停（对齐 X 信息流）。不能只看 isIntersecting：
+          // 只剩一条边、或滑到吸顶栏下面看不见时它仍是 true，视频会一直播。视频最高 480px，一半总能达到。
+          togglePlay(entry.intersectionRatio >= 0.5);
         }
       },
-      // 10% 可见即触发：长视频/竖屏下也能可靠进入自动播放，避免 0.5 阈值永远达不到。
-      { threshold: 0.1 },
+      { threshold: [0, 0.5] },
     );
     if (videoEl.value) observer.observe(videoEl.value);
   }
@@ -384,6 +397,12 @@ onBeforeUnmount(() => {
         >
           <BaseIcon name="i-play" :size="24" />
         </button>
+        <button
+          type="button"
+          class="video-sound"
+          :aria-pressed="!videoMuted"
+          @click.stop="toggleMute"
+        >{{ videoMuted ? "开声音" : "静音" }}</button>
       </div>
 
       <EmbedConsentCard
@@ -784,6 +803,19 @@ a.post-avatar:hover {
 }
 .video-play-hint:hover {
   background: rgba(0, 0, 0, 0.5);
+}
+.video-sound {
+  position: absolute;
+  right: var(--sp-2);
+  bottom: var(--sp-2);
+  min-height: var(--tap);
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: var(--fs-13);
+  cursor: pointer;
 }
 
 /* 来源行 */
