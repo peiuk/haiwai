@@ -104,7 +104,8 @@ const displayChannel = computed(
 // 彩色背景只给纯文字帖：万一带了图 / 视频（老数据），按普通帖显示
 const bgCss = computed(() => (props.imageKeys.length || props.videoKey || props.embed ? null : bgStyleOf(props.bgStyle)));
 // 带「加入」的卡（发现 / 推荐）：左边放发帖人，频道挪到加入按钮前面，一看就知道加入的是哪个频道
-const channelBesideJoin = computed(() => props.showJoin && !!props.authorId && !!props.channelId);
+// 没有发帖人的（官方 / 抓取内容）左边放来源名，频道同样挪到加入前面
+const channelBesideJoin = computed(() => props.showJoin && !!props.channelId);
 const displayHandle = computed(
   // @ 后面优先显示用户名（handle），没有时才退回昵称；都没有就不显示（不拿频道 ID 充数）。
   () => props.authorHandle || props.authorName || "",
@@ -223,7 +224,8 @@ onBeforeUnmount(() => {
       <!-- card-head -->
       <div class="post-head">
         <div class="post-meta">
-          <template v-if="channelBesideJoin">
+          <span v-if="channelBesideJoin && !authorId" class="post-name" data-ugc>{{ sourceName || "官方" }}</span>
+          <template v-else-if="channelBesideJoin">
             <RouterLink class="post-name post-name--link" :to="{ name: 'user', params: { id: authorId! } }" data-ugc>{{ authorName || authorHandle }}</RouterLink>
             <RouterLink v-if="authorHandle && authorName" class="post-handle post-handle--link" :to="{ name: 'user', params: { id: authorId! } }" data-ugc>@{{ authorHandle }}</RouterLink>
           </template>
