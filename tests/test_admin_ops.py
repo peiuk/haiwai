@@ -85,7 +85,9 @@ def test_admin_session_survives_refresh_and_front_tokens_are_refused(client):
 
 def test_two_factor_setup_login_and_disable(client):
     boss = register(client, "boss@example.com", admin=True)
-    secret = client.post("/api/v1/admin/totp/setup", headers=headers(boss)).json()["secret"]
+    setup = client.post("/api/v1/admin/totp/setup", headers=headers(boss)).json()
+    secret = setup["secret"]
+    assert setup["qr_svg"].startswith("<svg")  # 手机扫码添加
     now = int(time.time()) // 30
     wrong = "000000" if totp_code(secret, now) != "000000" else "111111"
     assert client.post("/api/v1/admin/totp/enable", headers=headers(boss), json={"secret": secret, "code": wrong}).status_code == 400

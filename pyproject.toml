@@ -16,6 +16,8 @@ dependencies = [
   "boto3>=1.35",
   # 每日 AI 资讯（app/news.py）调用 Claude。
   "anthropic>=2.8",
+  # 后台两步验证的二维码（纯 Python，无其他依赖）。
+  "segno>=1.6",
 ]
 
 [project.optional-dependencies]

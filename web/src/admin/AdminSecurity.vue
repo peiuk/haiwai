@@ -6,7 +6,8 @@ import { useToastStore } from "../stores/toast";
 import { adminMe, adminRequest, loadAdminMe } from "./adminApi";
 
 const toast = useToastStore();
-const setup = ref<{ secret: string; uri: string } | null>(null);
+type Setup = { secret: string; uri: string; qr_svg: string };
+const setup = ref<Setup | null>(null);
 const code = ref("");
 const busy = ref(false);
 const error = ref("");
@@ -26,7 +27,7 @@ async function run(task: () => Promise<void>): Promise<void> {
 
 function start(): Promise<void> {
   return run(async () => {
-    setup.value = await adminRequest<{ secret: string; uri: string }>("/api/v1/admin/totp/setup", { method: "POST" });
+    setup.value = await adminRequest<Setup>("/api/v1/admin/totp/setup", { method: "POST" });
     code.value = "";
   });
 }
@@ -88,7 +89,12 @@ function spaced(secret: string): string {
 
       <form v-else class="adm-form" @submit.prevent="enable">
         <div class="field">
-          <label for="adm-totp-secret">第 1 步：在验证器 App 里选「手动输入密钥」，账户名随意，密钥填下面这串（基于时间）</label>
+          <p class="adm-sub">第 1 步：用验证器 App 扫描下面的二维码</p>
+          <!-- 二维码 SVG 由后端生成，内容只有我们自己的 otpauth 链接，不含用户输入 -->
+          <div class="adm-qr" role="img" aria-label="两步验证二维码" v-html="setup.qr_svg"></div>
+        </div>
+        <div class="field">
+          <label for="adm-totp-secret">扫不了的话，在 App 里选「手动输入密钥」，账户名随意，密钥填下面这串（基于时间）</label>
           <input id="adm-totp-secret" class="input adm-mono" :value="spaced(setup.secret)" readonly @focus="($event.target as HTMLInputElement).select()" />
           <a class="adm-sub" :href="setup.uri">在这台设备上装了验证器 App 的话，点这里直接添加</a>
         </div>
@@ -104,3 +110,10 @@ function spaced(secret: string): string {
     </section>
   </div>
 </template>
+
+<style scoped>
+.adm-qr {
+  justify-self: start;
+  line-height: 0;
+}
+</style>

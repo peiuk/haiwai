@@ -12,6 +12,8 @@ from datetime import timedelta
 from typing import Literal
 from urllib.parse import quote
 
+import segno
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -54,7 +56,10 @@ def totp_setup(admin: User = Depends(require_admin)) -> dict[str, str]:
     """生成一个新密钥给验证器 App 扫 / 手输。这一步还没生效，要用 App 上的验证码调 enable 确认。"""
     secret = new_totp_secret()
     label = quote(f"海外圈后台:{admin.email}")
-    return {"secret": secret, "uri": f"otpauth://totp/{label}?secret={secret}&issuer={quote('海外圈后台')}"}
+    uri = f"otpauth://totp/{label}?secret={secret}&issuer={quote('海外圈后台')}"
+    # 二维码在服务器上画好再给前台：密钥不能交给第三方二维码服务。白底，深色主题下手机也扫得出
+    qr_svg = segno.make(uri, error="m").svg_inline(scale=5, light="#fff")
+    return {"secret": secret, "uri": uri, "qr_svg": qr_svg}
 
 
 class TotpEnableBody(BaseModel):
