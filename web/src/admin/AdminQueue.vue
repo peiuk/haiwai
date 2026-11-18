@@ -9,6 +9,7 @@ import { confirmAction } from "./confirm";
 import { TARGET_LABELS, exact, overdue, when } from "./shared";
 import { useAdminAction } from "./useAdminList";
 import ReviewSwitch from "./ReviewSwitch.vue";
+import AdminPushes from "./AdminPushes.vue";
 
 const props = defineProps<{ mode: "reports" | "review" }>();
 
@@ -310,6 +311,8 @@ function targetLink(item: Queue["cases"][number]): string {
           </table>
         </div>
       </section>
+
+      <AdminPushes />
     </template>
   </div>
 </template>

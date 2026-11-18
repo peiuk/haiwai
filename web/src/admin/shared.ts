@@ -8,6 +8,7 @@ export type AdminStats = {
   pending_contents: number;
   pending_comments: number;
   pending_channels: number;
+  pending_pushes: number;
   open_cases: number;
   total_users: number;
   total_contents: number;

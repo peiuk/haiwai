@@ -624,6 +624,7 @@ def test_parent_channel_lists_rooms_and_pushed_posts_name_the_room(client):
     pending = client.get("/api/v1/admin/pushes", headers=headers(boss)).json()
     assert [row["content_id"] for row in pending["items"]] == [content_id]
     assert (pending["items"][0]["room_name"], pending["items"][0]["channel_name"]) == ("空房间", "英国租房")
+    assert client.get("/api/v1/admin/stats", headers=headers(boss)).json()["pending_pushes"] == 1  # 菜单「待审核」的数字要算上推送
     approve_push(client, boss, content_id)
     assert client.get("/api/v1/admin/pushes", headers=headers(boss)).json()["items"] == []
     again = client.post(f"/api/v1/admin/pushes/{content_id}/decision", headers=headers(boss), json={"decision": "reject"})

@@ -39,6 +39,7 @@ function reject(item: Row): Promise<void> {
 
 <template>
   <section class="adm-panel">
+    <h2>推送到频道（{{ total }}）</h2>
     <p v-if="error" class="notice notice--danger" role="alert">
       {{ error }}
       <button type="button" class="btn btn--outline btn--sm" @click="load">重试</button>

@@ -37,7 +37,7 @@ async function loadCounts(): Promise<void> {
     const stats = await adminRequest<AdminStats>("/api/v1/admin/stats");
     counts.value = {
       cases: stats.open_cases,
-      review: stats.pending_contents + stats.pending_comments + stats.pending_channels,
+      review: stats.pending_contents + stats.pending_comments + stats.pending_channels + stats.pending_pushes,
     };
   } catch {
     // 数字只是提示；登录失效会由 ADMIN_SIGNED_OUT 处理

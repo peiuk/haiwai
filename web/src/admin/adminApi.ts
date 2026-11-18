@@ -110,8 +110,8 @@ async function send(path: string, init?: RequestInit, allowRefresh = true): Prom
   }
   if (response.ok) return response;
   const error = await toError(response);
-  // 「需要超级管理员」只是这一项做不了，不用退出；其余的 401 / 403 说明登录失效或不再是管理员
-  if (response.status === 401 || (response.status === 403 && error.code !== "SUPER_ONLY")) {
+  // 只有登录失效（401）或账号已不是管理员（FORBIDDEN）才退出；SUPER_ONLY、TOTP_SETUP_REQUIRED 等只是这一项做不了
+  if (response.status === 401 || (response.status === 403 && error.code === "FORBIDDEN")) {
     store(null);
     window.dispatchEvent(new Event(ADMIN_SIGNED_OUT));
   }

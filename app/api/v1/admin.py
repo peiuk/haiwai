@@ -281,6 +281,7 @@ def stats(session: Session = Depends(get_db)) -> dict[str, object]:
         "pending_contents": _count(session, Content, *_PENDING_CONTENT),
         "pending_comments": _count(session, RoomComment, *_PENDING_COMMENT),
         "pending_channels": _count(session, Channel, *_PENDING_CHANNEL),
+        "pending_pushes": _count(session, RoomPostPush, RoomPostPush.status == "pending"),
         "open_cases": _count(session, ModerationCase, ModerationCase.status == "open"),
         "overdue_cases": _count(session, ModerationCase, ModerationCase.status == "open", ModerationCase.created_at < overdue),
         "overdue_contents": _count(session, Content, *_PENDING_CONTENT, Content.created_at < overdue),
