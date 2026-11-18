@@ -11,7 +11,7 @@ POLICY_VERSION = "2026-11-13"
 PROVIDERS = {
     "youtube": {
         "display_name": "YouTube",
-        "hosts": {"www.youtube.com", "youtube.com", "m.youtube.com"},
+        "hosts": {"www.youtube.com", "youtube.com", "m.youtube.com", "youtu.be"},
         "template": "https://www.youtube-nocookie.com/embed/{id}",
         "allows_framing": True,
         "uk_rights_verified": True,
@@ -35,7 +35,8 @@ PROVIDERS = {
     },
 }
 
-_SHORT_HOSTS = {"youtu.be", "b23.tv", "bit.ly", "t.co", "tinyurl.com"}
+# youtu.be 不算：它是 YouTube 自己的分享地址，视频编号就在路径里，不用跟跳转
+_SHORT_HOSTS = {"b23.tv", "bit.ly", "t.co", "tinyurl.com"}
 
 
 def _provider_for(host: str) -> tuple[str, dict[str, object]] | None:
@@ -54,7 +55,9 @@ def framing_blocked(headers: dict[str, str]) -> bool:
     return "frame-ancestors" in policy and ("'none'" in policy or "'self'" in policy)
 
 
-def inspect_source(url: str) -> dict[str, object]:
+def inspect_source(url: str, frame_url: str | None = None) -> dict[str, object]:
+    """url 是原站页面（看删没删、取标题）；frame_url 是真正放进 iframe 的播放器地址。
+    能不能嵌入要看播放器的响应头——YouTube 观看页本身带 X-Frame-Options: SAMEORIGIN，但 /embed/ 播放器允许嵌入。"""
     if get_settings().testing:
         return {"framing_blocked": False, "source_title": None, "status_code": None}
     title = None
@@ -64,7 +67,8 @@ def inspect_source(url: str) -> dict[str, object]:
         with httpx.Client(timeout=2.0, follow_redirects=False) as client:
             response = client.head(url)
             status_code = response.status_code
-            blocked = framing_blocked(dict(response.headers))
+            framed = client.head(frame_url) if frame_url else response
+            blocked = framing_blocked(dict(framed.headers))
             if "youtube.com/watch" in url:
                 meta = client.get("https://www.youtube.com/oembed", params={"url": url, "format": "json"})
                 if meta.status_code == 404:
@@ -90,11 +94,14 @@ def resolve_embed_url(raw_url: str) -> dict[str, object]:
     code, provider = found
     media_id = ""
     if code == "youtube":
-        if parsed.path == "/watch":
+        if host == "youtu.be":
+            media_id = parsed.path.strip("/").split("/")[0]
+        elif parsed.path == "/watch":
             media_id = parse_qs(parsed.query).get("v", [""])[0]
         elif parsed.path.startswith("/embed/") or parsed.path.startswith("/shorts/"):
             media_id = parsed.path.split("/")[2] if len(parsed.path.split("/")) > 2 else ""
-        if not media_id or len(media_id) > 16:
+        # 编号会拼进播放器地址，只放行 YouTube 的 11 位编号格式
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", media_id):
             raise APIError(400, "VALIDATION_FAILED", "无法识别 YouTube 视频编号")
         source = f"https://www.youtube.com/watch?v={media_id}"
     elif code == "bilibili":
@@ -107,7 +114,7 @@ def resolve_embed_url(raw_url: str) -> dict[str, object]:
         source = f"https://{host}{parsed.path}"
         media_id = parsed.path.strip("/")[:32] or "page"
     allows = bool(provider["allows_framing"]) and bool(provider["uk_rights_verified"])
-    inspected = inspect_source(source)
+    inspected = inspect_source(source, embed_url_for(code, media_id))
     if inspected.get("status_code") == 404:
         status = "removed"
     elif allows and not inspected["framing_blocked"]:

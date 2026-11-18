@@ -485,7 +485,7 @@ watch(
             label="视频链接"
             type="url"
             placeholder="https://www.youtube.com/watch?v=… 或 https://www.bilibili.com/video/BV…"
-            hint="支持 YouTube、哔哩哔哩；贴原站完整地址，不要短链。大家点开后在站内播放"
+            hint="支持 YouTube、哔哩哔哩；YouTube 分享链接（youtu.be）可以直接贴，哔哩哔哩请贴完整地址。大家点开后在站内播放"
           />
           <template v-else>
           <UploadField

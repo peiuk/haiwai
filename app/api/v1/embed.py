@@ -162,7 +162,8 @@ def recheck_embeds(_user: User = Depends(current_user), session: Session = Depen
     ).all()
     changed = 0
     for content in rows:
-        nxt = rechecked_status(content.embed_status, inspect_source(content.embed_source_url or ""))
+        frame_url = embed_url_for(content.embed_provider_code or "", content.embed_media_id or "")
+        nxt = rechecked_status(content.embed_status, inspect_source(content.embed_source_url or "", frame_url))
         if nxt != content.embed_status:
             content.embed_status = nxt
             changed += 1

@@ -1101,14 +1101,19 @@ def test_source_framing_headers_downgrade_embed(monkeypatch):
     assert framing_blocked({"X-Frame-Options": "DENY"}) is True
     assert framing_blocked({"Content-Security-Policy": "frame-ancestors 'none'"}) is True
     assert framing_blocked({"X-Frame-Options": "ALLOWALL"}) is False
-    monkeypatch.setattr(
-        "app.embed.inspect_source",
-        lambda _url: {"framing_blocked": True, "source_title": "源站标题"},
-    )
+    seen: list[tuple[str, str | None]] = []
+
+    def blocked(url, frame_url=None):
+        seen.append((url, frame_url))
+        return {"framing_blocked": True, "source_title": "源站标题"}
+
+    monkeypatch.setattr("app.embed.inspect_source", blocked)
     resolved = resolve_embed_url("https://www.youtube.com/watch?v=abcdefghijk")
     assert resolved["embed_status"] == "fallback"
     assert resolved["source_title"] == "源站标题"
     assert resolved["consent_required"] is False
+    # 能否嵌入看的是放进 iframe 的播放器地址，不是观看页（观看页本身就带 SAMEORIGIN）
+    assert seen == [("https://www.youtube.com/watch?v=abcdefghijk", "https://www.youtube-nocookie.com/embed/abcdefghijk")]
 
 
 def test_embed_recheck_removes_deleted_source(client, monkeypatch):
@@ -1125,7 +1130,7 @@ def test_embed_recheck_removes_deleted_source(client, monkeypatch):
     approve(client, owner, content_id)
     monkeypatch.setattr(
         "app.api.v1.embed.inspect_source",
-        lambda _url: {"framing_blocked": False, "source_title": None, "status_code": 404},
+        lambda _url, _frame=None: {"framing_blocked": False, "source_title": None, "status_code": 404},
     )
     checked = client.post("/api/v1/embed/recheck", headers=headers(owner))
     assert checked.status_code == 200
@@ -1140,13 +1145,24 @@ def test_embed_resolve_consent_and_not_recommended(client):
     channel_id = housing_channel(client)
     client.post("/api/v1/me/regions", headers=headers(owner), json={"region_code": "UK", "source": "manual"})
 
+    shared = client.post(
+        "/api/v1/embed/resolve",
+        headers=headers(owner),
+        json={"url": "https://youtu.be/abcdefghijk?si=qQ8nTgXxMf0xSkm5"},
+    )
+    assert shared.status_code == 200, shared.text  # YouTube 自己的分享链接直接认
+    assert (shared.json()["media_id"], shared.json()["embed_status"]) == ("abcdefghijk", "embeddable")
+    assert shared.json()["source_url"] == "https://www.youtube.com/watch?v=abcdefghijk"
+
     short = client.post(
         "/api/v1/embed/resolve",
         headers=headers(owner),
-        json={"url": "https://youtu.be/abcdefghijk"},
+        json={"url": "https://b23.tv/abc123"},
     )
     assert short.status_code == 400
     assert short.json()["code"] == "EMBED_SHORTLINK_REJECTED"
+    bad_id = client.post("/api/v1/embed/resolve", headers=headers(owner), json={"url": "https://youtu.be/abc%22x"})
+    assert bad_id.status_code == 400  # 编号要拼进播放器地址，格式不对就拒绝
 
     youtube = client.post(
         "/api/v1/embed/resolve",
