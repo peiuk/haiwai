@@ -343,6 +343,18 @@ def test_video_post_needs_rights_and_topic_needs_a_tag(client):
     assert detail["type"] == "video"
     assert detail["video_key"] == key
     assert detail["rights_confirmed"] is True
+    # 转发带上原视频：转发详情里也能播
+    approve(client, owner, posted.json()["content_id"])
+    fan = register(client, "video-fan@example.com", "观众")
+    verify(client, fan, "+447700900842")
+    copy = client.post(
+        f"/api/v1/contents/{posted.json()['content_id']}/repost",
+        headers=headers(fan),
+        json={"channel_id": channel_id, "body": ""},
+    )
+    assert copy.status_code == 200, copy.text
+    approve(client, owner, copy.json()["content_id"])
+    assert client.get(f"/api/v1/contents/{copy.json()['content_id']}").json()["video_key"] == key
     bare = client.post(
         "/api/v1/contents",
         headers=headers(owner),

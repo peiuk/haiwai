@@ -724,6 +724,10 @@ def repost_content(
         source_name=original.source_name,
         licence_ref=original.licence_ref,
         canonical_url=original.canonical_url,
+        # 带上原帖的图片视频：转发卡和详情页才看得到；文件被多条内容引用时 _release_uploads 不会误删
+        image_key=original.image_key,
+        image_keys_json=original.image_keys_json,
+        video_key=original.video_key,
         published_at=now if status == "published" else None,
     )
     session.add(content)
