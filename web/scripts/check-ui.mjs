@@ -115,12 +115,14 @@ const listingForm = src("components/publish/ListingForm.vue");
 const imageStrip = src("components/common/ImageStrip.vue");
 const listingsPy = read("app/api/v1/listings.py");
 const feedPy = read("app/feed.py");
+// 张数以后端 MAX_LISTING_IMAGES 为准，前端上传框和图片条须用同一个数。
+const maxImages = feedPy.match(/MAX_LISTING_IMAGES\s*=\s*(\d+)/)?.[1];
 note(
-  "⑤ 分类信息：多图 ≤4 前后端一致、联系方式需登录主动点按、日限额 5",
-  /:max="4"/.test(listingForm) &&
+  `⑤ 分类信息：多图 ≤${maxImages ?? "?"} 前后端一致、联系方式需登录主动点按、日限额 5`,
+  maxImages !== undefined &&
+    listingForm.includes(`:max="${maxImages}"`) &&
     /image_keys/.test(listingForm) &&
-    /slice\(0, 4\)/.test(imageStrip) &&
-    /MAX_LISTING_IMAGES\s*=\s*4/.test(feedPy) &&
+    imageStrip.includes(`slice(0, ${maxImages})`) &&
     /CONTACT_DAILY_LIMIT\s*=\s*5/.test(listingsPy) &&
     /auth\.isLoggedIn/.test(listingCard) &&
     /\/contact/.test(listingCard) &&
