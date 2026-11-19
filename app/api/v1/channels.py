@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.uploads import owned_upload
 from app.core.pagination import decode_cursor, encode_cursor, paginate_rows
-from app.feed import MAX_LISTING_IMAGES, image_keys_of, author_names, card_extras, content_titles, listing_map, reaction_flags, repost_context
+from app.feed import MAX_LISTING_IMAGES, image_keys_of, author_names, card_extras, content_titles, like_counts, listing_map, reaction_flags, repost_context
 from app.recommend import country_blocked, effective_region
 from app.reports import ReportBody, limit_reports, report_receipt
 from app.core.audit import write_audit
@@ -380,6 +380,7 @@ def channel_items(
     listings = listing_map(session, [row.content_id for row in page_rows if row.content.type == "listing"])
     authors = author_names(session, [row.content.author_id for row in page_rows])
     flags = reaction_flags(session, user.id if user else None, [row.content_id for row in page_rows])
+    likes = like_counts(session, [row.content_id for row in page_rows])
     comment_counts = {
         content_id: count
         for content_id, count in session.execute(
@@ -440,6 +441,7 @@ def channel_items(
                 "push_channel_name": pushes.get(row.content_id, (None, None))[1],
                 **card_extras(row.content, listings.get(row.content_id), authors.get(row.content.author_id or "", ("", ""))),
                 "liked": flags.get(row.content_id, (False, False))[0],
+                "like_count": likes.get(row.content_id, 0),
                 "favorited": flags.get(row.content_id, (False, False))[1],
                 "reposted": row.content_id in reposted_ids,
                 "repost_of": (

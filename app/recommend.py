@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.feed import author_names, card_extras, content_titles, reaction_flags, repost_context
+from app.feed import author_names, card_extras, content_titles, like_counts, reaction_flags, repost_context
 from app.core.regions import guest_region, is_open_region
 from app.privacy import viewable
 from app.models import Channel, ChannelItem, ChannelSubscription, Content, User, UserRegionPref
@@ -121,6 +121,7 @@ def for_you(session: Session, user: User | None, limit: int | None = 12, order: 
             recent[item.channel_id] = recent.get(item.channel_id, 0) + 1
     authors = author_names(session, [item.content.author_id for item in rows])
     flags = reaction_flags(session, user_id, [item.content_id for item in rows])
+    likes = like_counts(session, [item.content_id for item in rows])
     repost_titles, reposted_ids = repost_context(session, user_id, [item.content for item in rows])
     best: dict[str, tuple[float, dict[str, object]]] = {}
     for item in rows:
@@ -170,6 +171,7 @@ def for_you(session: Session, user: User | None, limit: int | None = 12, order: 
             "added_at": item.added_at.isoformat(),
             **card_extras(item.content, None, authors.get(item.content.author_id or "", ("", ""))),
             "liked": flags.get(item.content_id, (False, False))[0],
+            "like_count": likes.get(item.content_id, 0),
             "favorited": flags.get(item.content_id, (False, False))[1],
             "reposted": item.content_id in reposted_ids,
             "repost_of": (

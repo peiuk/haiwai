@@ -9,6 +9,7 @@ const props = defineProps<{
   contentId: string;
   title: string;
   liked?: boolean;
+  likeCount?: number;
   favorited?: boolean;
   reposted?: boolean;
   /** 不显示转发（房间里转发会在同一个房间多出一条重复内容） */
@@ -96,10 +97,11 @@ function shareContent(): void {
       class="act act--like"
       :class="{ 'act--on': liked, 'act--pop': likePop, 'act--pulse': likedPulse }"
       :aria-pressed="liked"
-      aria-label="喜欢"
+      :aria-label="likeCount ? `喜欢，${likeCount} 个赞` : '喜欢'"
       @click="onLike"
     >
       <BaseIcon :name="liked ? 'i-heart-fill' : 'i-heart'" :size="17" />
+      <span v-if="likeCount" class="act-count">{{ likeCount }}</span>
     </button>
     <button
       type="button"
@@ -150,6 +152,17 @@ function shareContent(): void {
 }
 .act--on {
   color: var(--accent-ink);
+}
+/* 有数字时按钮随内容变宽，不挤压图标 */
+.act--like {
+  width: auto;
+  min-width: 44px;
+  gap: 4px;
+  padding: 0 8px;
+}
+.act-count {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 /* 点赞爱心：激活与悬停均为爱心红 */
 .act--like.act--on {

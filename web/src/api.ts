@@ -253,6 +253,7 @@ export type FeedItem = {
   sources: FeedSource[];
   pinned: boolean;
   liked: boolean;
+  like_count?: number;
   favorited: boolean;
   reposted: boolean;
   repost_of: { content_id: string; title: string } | null;
@@ -427,6 +428,7 @@ export type RoomItem = {
   author_handle: string;
   city_topic: string;
   liked: boolean;
+  like_count?: number;
   favorited: boolean;
   reposted: boolean;
   repost_of: { content_id: string; title: string } | null;
@@ -485,6 +487,7 @@ export type DiscoverItem = {
   embed?: EmbedCard | null;
   /** 当前用户的互动状态（游客恒为 false） */
   liked?: boolean;
+  like_count?: number;
   favorited?: boolean;
   reposted?: boolean;
 };
@@ -536,6 +539,7 @@ export type ContentDetail = {
   repost_of: { content_id: string; title: string } | null;
   status: string;
   liked: boolean;
+  like_count?: number;
   favorited: boolean;
   can_edit?: boolean; // 作者本人
   can_delete?: boolean; // 作者本人，或帖子所在房间的房主
@@ -740,6 +744,7 @@ export type SearchContent = {
   embed?: EmbedCard | null;
   published_at: string | null;
   liked: boolean;
+  like_count?: number;
   favorited: boolean;
   reposted?: boolean;
 };
@@ -862,6 +867,7 @@ export type UserPost = {
   bg_style?: string;
   embed?: EmbedCard | null;
   liked: boolean;
+  like_count?: number;
   favorited: boolean;
   reposted?: boolean;
 };

@@ -124,6 +124,7 @@ function setTab(id: TabId): void {
             :embed="item.embed"
             :time="item.published_at ?? ''"
             :liked="item.liked"
+            :like-count="item.like_count"
             :favorited="item.favorited"
             :reposted="item.reposted"
             :show-follow="canFollow(item)"

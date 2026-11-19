@@ -6,7 +6,7 @@ from app.api.v1.auth import optional_user
 from app.core.audit import write_audit
 from app.core.db import get_db
 from app.core.errors import APIError
-from app.feed import embed_card, home_channels, image_keys_of, reaction_flags
+from app.feed import embed_card, home_channels, image_keys_of, like_counts, reaction_flags
 from app.keywords import load_keywords
 from app.models import Channel, Content, ModerationCase, User, UserBlock, UserFollow
 from app.privacy import viewable
@@ -131,6 +131,7 @@ def public_posts(
         .limit(50)  # shortcut: 主页只显示最近 50 条；要看更早的再加游标分页
     ).all()
     flags = reaction_flags(session, viewer.id if viewer else None, [row.id for row in rows])
+    likes = like_counts(session, [row.id for row in rows])
     # 帖子发在哪个频道（卡片上的频道名和转发用），整批查：原来每条帖子查两次库
     channels = home_channels(session, [row.id for row in rows])
     items: list[dict[str, object]] = []
@@ -155,6 +156,7 @@ def public_posts(
                 "bg_style": row.bg_style or "",
                 "embed": embed_card(row),
                 "liked": liked,
+                "like_count": likes.get(row.id, 0),
                 "favorited": favorited,
             }
         )

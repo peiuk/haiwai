@@ -206,7 +206,7 @@ watch(channelId, () => void load(), { immediate: true });
               :video-key="item.video_key"
               :bg-style="item.bg_style"
               :embed="item.embed"
-              :liked="item.liked" :favorited="item.favorited" :reposted="item.reposted"
+              :liked="item.liked" :like-count="item.like_count" :favorited="item.favorited" :reposted="item.reposted"
               @open="activeContentId = item.content_id"
               @like="toggleReaction(item, 'like')" @favorite="toggleReaction(item, 'favorite')" @repost="repost(item)"
             >

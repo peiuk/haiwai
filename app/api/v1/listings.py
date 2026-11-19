@@ -15,7 +15,7 @@ from app.core.errors import APIError
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.core.regions import region_name
 from app.guard import first_status
-from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, image_keys_of, reaction_flags, repost_context
+from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, image_keys_of, like_counts, reaction_flags, repost_context
 from app.keywords import clean_city_topic, dump_keywords, resolve_keywords
 from app.models import Channel, ChannelItem, ChannelSubscription, ContactView, Content, ContentReaction, ListingExt, User, new_id, utcnow
 from app.recommend import country_blocked, effective_region, is_roaming
@@ -514,6 +514,7 @@ def discover_items(
     # 登录用户带上自己的点赞 / 收藏 / 转发状态（与推荐流一致），游客全为 False。
     user_id = user.id if user else None
     flags = reaction_flags(session, user_id, [item.content_id for item in page])
+    likes = like_counts(session, [item.content_id for item in page])
     _, reposted_ids = repost_context(session, user_id, [item.content for item in page])
     listing_ids = [item.content_id for item in page if item.content.type == "listing"]
     exts = {
@@ -543,6 +544,7 @@ def discover_items(
                 "added_at": item.added_at.isoformat(),
                 **card_extras(content, None, authors.get(content.author_id or "", ("", ""))),
                 "liked": flags.get(item.content_id, (False, False))[0],
+                "like_count": likes.get(item.content_id, 0),
                 "favorited": flags.get(item.content_id, (False, False))[1],
                 "reposted": item.content_id in reposted_ids,
             }

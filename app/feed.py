@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.pagination import decode_cursor, encode_cursor
@@ -106,6 +106,18 @@ def reaction_flags(session: Session, user_id: str | None, content_ids: list[str]
         )
     ).all()
     return {row.content_id: (row.liked, row.favorited) for row in rows}
+
+
+def like_counts(session: Session, content_ids: list[str]) -> dict[str, int]:
+    """每条内容的点赞数，一次 GROUP BY 查完；没人赞的不在结果里。"""
+    if not content_ids:
+        return {}
+    rows = session.execute(
+        select(ContentReaction.content_id, func.count())
+        .where(ContentReaction.content_id.in_(content_ids), ContentReaction.liked.is_(True))
+        .group_by(ContentReaction.content_id)
+    ).all()
+    return {content_id: int(count) for content_id, count in rows}
 
 
 def _expired(expires_at: datetime | None) -> bool:
@@ -253,11 +265,13 @@ def build_following_feed(session: Session, user_id: str) -> list[dict[str, objec
 
     last_read = {channel_id: sub.last_read_at for channel_id, sub in subscriptions.items()}
     flags = reaction_flags(session, user_id, [str(entry["content_id"]) for entry in grouped.values()])
+    likes = like_counts(session, [str(entry["content_id"]) for entry in grouped.values()])
     items: list[dict[str, object]] = []
     for key in ordered:
         entry = dict(grouped[key])
         liked, favorited = flags.get(str(entry["content_id"]), (False, False))
         entry["liked"] = liked
+        entry["like_count"] = likes.get(str(entry["content_id"]), 0)
         entry["favorited"] = favorited
         is_unread = False
         for added_at, channel_id in unread_context.get(key, []):
@@ -297,6 +311,7 @@ def _followed_posts(session: Session, user_id: str) -> list[dict[str, object]]:
         return []
     authors = author_names(session, [row.author_id for row in rows])
     flags = reaction_flags(session, user_id, [row.id for row in rows])
+    likes = like_counts(session, [row.id for row in rows])
     repost_titles, reposted_ids = repost_context(session, user_id, list(rows))
     items: list[dict[str, object]] = []
     for row in rows:
@@ -332,6 +347,7 @@ def _followed_posts(session: Session, user_id: str) -> list[dict[str, object]]:
                     {"content_id": row.repost_of_id, "title": repost_titles.get(row.repost_of_id, "")} if row.repost_of_id else None
                 ),
                 "liked": liked,
+                "like_count": likes.get(row.id, 0),
                 "favorited": favorited,
                 # shortcut: 动态没有频道的已读时间，不标未读；要标的话按 user.feed_seen_at 比
                 "is_unread": False,

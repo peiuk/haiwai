@@ -245,7 +245,8 @@ def test_publish_keywords_are_capped_and_searchable(client):
     assert detail.json()["image_keys"] == []
     assert "published_at" in detail.json()
     approve(client, owner, content_id)
-    assert client.post(f"/api/v1/contents/{content_id}/like", headers=headers(owner)).json()["liked"] is True
+    assert client.post(f"/api/v1/contents/{content_id}/like", headers=headers(owner)).json() == {"liked": True, "like_count": 1}
+    assert client.get(f"/api/v1/contents/{content_id}").json()["like_count"] == 1
     assert client.post(f"/api/v1/contents/{content_id}/favorite", headers=headers(owner)).json()["favorited"] is True
     mine = next(item for item in client.get(f"/api/v1/channels/{channel_id}/items", headers=headers(owner)).json()["items"] if item["content_id"] == content_id)
     guest = next(item for item in client.get(f"/api/v1/channels/{channel_id}/items").json()["items"] if item["content_id"] == content_id)
@@ -253,8 +254,10 @@ def test_publish_keywords_are_capped_and_searchable(client):
     assert mine["author_handle"] == "tags"
     assert mine["favorited"] is True
     assert guest["liked"] is False
+    assert mine["like_count"] == guest["like_count"] == 1  # 点赞数人人可见，liked 只看自己
     found = client.get("/api/v1/search?q=租房")
     hit = next(item for item in found.json()["contents"] if item["content_id"] == content_id)
+    assert hit["like_count"] == 1
     assert hit["source_name"] == "作者"
     assert hit["author_handle"] == "tags"
     assert hit["channel_id"] == channel_id

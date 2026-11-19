@@ -212,7 +212,7 @@ defineExpose({ reload: () => load(true) });
           v-if="item.status !== 'pending'"
           class="entry-acts"
           no-repost
-          :content-id="item.content_id" :title="item.title" :liked="item.liked" :favorited="item.favorited"
+          :content-id="item.content_id" :title="item.title" :liked="item.liked" :like-count="item.like_count" :favorited="item.favorited"
           @open="router.push({ name: 'content', params: { id: item.content_id } })"
           @like="reactions.toggleLike(item)" @favorite="reactions.toggleFavorite(item)"
         />

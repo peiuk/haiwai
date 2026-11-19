@@ -207,8 +207,11 @@ async function toggleLike(): Promise<void> {
   if (!props.contentId || needLogin("点赞", () => void toggleLike())) return;
   togglingLike.value = true;
   try {
-    const body = await request<{ liked: boolean }>(`/api/v1/contents/${props.contentId}/like`, { method: "POST" });
-    if (detail.value) detail.value.liked = body.liked;
+    const body = await request<{ liked: boolean; like_count: number }>(`/api/v1/contents/${props.contentId}/like`, { method: "POST" });
+    if (detail.value) {
+      detail.value.liked = body.liked;
+      detail.value.like_count = body.like_count;
+    }
   } catch (err) {
     toast.show(err instanceof Error ? err.message : "点赞没有成功");
   } finally {
@@ -553,11 +556,12 @@ watch(detail, async (value) => {
                   class="cd-act cd-act--like"
                   :class="{ 'cd-act--on': detail.liked }"
                   :aria-pressed="detail.liked"
-                  aria-label="喜欢"
+                  :aria-label="detail.like_count ? `喜欢，${detail.like_count} 个赞` : '喜欢'"
                   :disabled="togglingLike"
                   @click="toggleLike"
                 >
                   <BaseIcon :name="detail.liked ? 'i-heart-fill' : 'i-heart'" :size="19" />
+                  <span v-if="detail.like_count" class="cd-act-count">{{ detail.like_count }}</span>
                 </button>
                 <button
                   type="button"
@@ -926,6 +930,9 @@ watch(detail, async (value) => {
 .cd-act--like:hover,
 .cd-act--like.cd-act--on { color: var(--danger); }
 .cd-act--like:hover { background: var(--danger-soft); }
+/* 有点赞数时爱心按钮变成胶囊，数字跟在图标后面 */
+.cd-act--like { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: auto; min-width: var(--tap); padding: 0 10px; border-radius: var(--r-pill); }
+.cd-act-count { font-size: var(--fs-14); font-variant-numeric: tabular-nums; }
 .cd-act--fav.cd-act--on { color: var(--accent-ink); }
 
 /* ---- 回复列表 ---- */

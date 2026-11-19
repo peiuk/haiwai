@@ -176,6 +176,7 @@ void load();
       :show-join="true"
       :is-joined="item.is_joined"
       :liked="item.liked"
+      :like-count="item.like_count"
       :favorited="item.favorited"
       :reposted="item.reposted"
       :why-text="`为什么推荐：${item.reason || `来自「${item.channel_name}」`}`"

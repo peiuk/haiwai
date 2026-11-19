@@ -8,6 +8,7 @@ import { useLoginPromptStore } from "../stores/loginPrompt";
 export interface ReactableItem {
   content_id: string;
   liked?: boolean;
+  like_count?: number;
   favorited?: boolean;
   reposted?: boolean;
 }
@@ -37,17 +38,21 @@ export function usePostReactions() {
     if (pending.has(lock)) return;
     pending.add(lock);
     const before = Boolean(item[field]);
+    const countBefore = item.like_count ?? 0;
     item[field] = !before;
+    if (kind === "like") item.like_count = Math.max(0, countBefore + (before ? -1 : 1));
     try {
-      const body = await request<{ liked?: boolean; favorited?: boolean }>(
+      const body = await request<{ liked?: boolean; favorited?: boolean; like_count?: number }>(
         `/api/v1/contents/${item.content_id}/${kind}`,
         { method: "POST" },
       );
       // 以服务器结果为准（正常情况下与界面已显示的一致）。
       const confirmed = body[field];
       if (typeof confirmed === "boolean") item[field] = confirmed;
+      if (typeof body.like_count === "number") item.like_count = body.like_count;
     } catch (err) {
       item[field] = before;
+      if (kind === "like") item.like_count = countBefore;
       toast.show(toMessage(err));
     } finally {
       pending.delete(lock);

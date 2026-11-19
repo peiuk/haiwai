@@ -121,6 +121,7 @@ load();
       :show-join="!!item.channel_id"
       :is-joined="item.is_joined"
       :liked="item.liked"
+      :like-count="item.like_count"
       :favorited="item.favorited"
       :reposted="item.reposted"
       :unread="item.is_unread"

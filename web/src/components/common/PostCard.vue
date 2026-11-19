@@ -53,6 +53,7 @@ const props = withDefaults(
     /** 彩色背景预设名（短文字帖） */
     bgStyle?: string;
     liked?: boolean;
+    likeCount?: number;
     favorited?: boolean;
     reposted?: boolean;
     /** 未读标记（关注流） */
@@ -410,7 +411,7 @@ onBeforeUnmount(() => {
       </div>
 
       <PostActions
-        :content-id="contentId" :title="title" :liked="liked" :favorited="favorited" :reposted="reposted"
+        :content-id="contentId" :title="title" :liked="liked" :like-count="likeCount" :favorited="favorited" :reposted="reposted"
         @open="emit('open')" @like="emit('like')" @favorite="emit('favorite')" @repost="emit('repost')"
       >
         <slot name="extra" />

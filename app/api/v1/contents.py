@@ -29,7 +29,7 @@ from app.privacy import can_view_content, is_private_room_content, is_room_edito
 from app.reports import ReportBody, limit_reports, report_receipt
 from app.recommend import country_blocked, is_roaming
 from app.rooms import drop_pushes, notify_room_update, require_not_banned
-from app.feed import author_names, MAX_LISTING_IMAGES, image_keys_of
+from app.feed import author_names, MAX_LISTING_IMAGES, image_keys_of, like_counts
 from app.models import (
     Channel,
     ChannelCollaborator,
@@ -409,6 +409,7 @@ def get_content(
         "repost_of": repost_of,
         "status": content.status,
         "liked": liked,
+        "like_count": like_counts(session, [content.id]).get(content.id, 0),
         "favorited": favorited,
         "can_edit": user is not None and content.author_id == user.id and content.type in EDITABLE_TYPES,
         "can_delete": user is not None
@@ -742,8 +743,10 @@ def toggle_like(
     content_id: str,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
-) -> dict[str, bool]:
-    return _toggle(session, user, content_id, "liked")
+) -> dict[str, object]:
+    result: dict[str, object] = {**_toggle(session, user, content_id, "liked")}
+    result["like_count"] = like_counts(session, [content_id]).get(content_id, 0)
+    return result
 
 
 @router.post("/contents/{content_id}/favorite")

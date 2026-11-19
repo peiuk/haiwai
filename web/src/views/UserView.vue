@@ -349,6 +349,7 @@ watch(userId, () => {
           :embed="post.embed"
           :time="post.created_at"
           :liked="post.liked"
+          :like-count="post.like_count"
           :favorited="post.favorited"
           :reposted="post.reposted"
           @open="activeContentId = post.content_id"

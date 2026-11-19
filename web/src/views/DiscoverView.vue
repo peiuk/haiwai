@@ -325,6 +325,7 @@ watch(
                   :show-join="true"
                   :is-joined="item.is_joined"
                   :liked="item.liked"
+                  :like-count="item.like_count"
                   :favorited="item.favorited"
                   :reposted="item.reposted"
                   @join="joinChannel(item)"
