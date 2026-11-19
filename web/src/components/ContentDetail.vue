@@ -26,6 +26,7 @@ import Lightbox from "./common/Lightbox.vue";
 import EmbedConsentCard from "./room/EmbedConsentCard.vue";
 import { PROVIDER_NAMES } from "./room/EntryMedia.vue";
 import Avatar from "./base/Avatar.vue";
+import HashText from "./common/HashText.vue";
 import BaseIcon from "./base/BaseIcon.vue";
 
 const props = withDefaults(
@@ -485,7 +486,7 @@ watch(detail, async (value) => {
                 <template v-else>
                 <h2 data-ugc>{{ detail.title }}</h2>
                 <p v-if="(detail.body || detail.summary) && (detail.body || detail.summary) !== detail.title" class="cd-summary" data-ugc>
-                  {{ detail.body || detail.summary }}
+                  <HashText :text="detail.body || detail.summary || ''" @pick="leaveOverlay" />
                 </p>
                 </template>
               </template>

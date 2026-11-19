@@ -41,10 +41,20 @@ const isGlobal = computed(() => (pref.value?.region_code ?? "GLOBAL") === "GLOBA
 const isRoaming = computed(() => pref.value?.roaming === true);
 
 
-// 定位结果映射到已开通国家；未命中回落 GLOBAL。
+// 定位结果映射到已开通国家；没开通（或判断不出来）默认英国，英国也没开才看国际。和后端 effective_region 同一规则。
 function resolveRegion(detected: string | null): string {
   if (detected && openRegions.value.some((r) => r.code === detected)) return detected;
-  return "GLOBAL";
+  return openRegions.value.some((r) => r.code === "UK") ? "UK" : "GLOBAL";
+}
+
+// 第一次自动定位时告诉用户定位到哪了（之后记住了，不再提示）
+function announce(detected: string | null, code: string): void {
+  const name = openRegions.value.find((r) => r.code === code)?.name ?? code;
+  toast.show(
+    detected && detected !== code
+      ? `你所在的国家还没开通，先为你显示${name}。可点右边「切换」修改`
+      : `已根据你的位置定位到${name}。不对的话可点右边「切换」修改`,
+  );
 }
 
 async function load(): Promise<void> {
@@ -58,23 +68,27 @@ async function load(): Promise<void> {
       emit("changed", saved);
       return;
     }
-    const code = resolveRegion(detectCountryCode());
+    const detected = detectCountryCode();
+    const code = resolveRegion(detected);
     pref.value = { region_code: code, source: "auto", locked: false, roaming: false };
     try { localStorage.setItem(LOCAL_KEY, code); } catch { /* 存储不可用 */ }
     emit("changed", code);
+    announce(detected, code);
     return;
   }
   try {
     pref.value = await request<RegionPref>("/api/v1/me/regions");
     // 登录用户若尚未设置（region_code 默认 GLOBAL 且 source=default），做一次自动定位兜底
     if (pref.value.region_code === "GLOBAL" && pref.value.source === "default") {
-      const code = resolveRegion(detectCountryCode());
+      const detected = detectCountryCode();
+      const code = resolveRegion(detected);
       if (code !== "GLOBAL") {
-        // 静默写入自动定位结果，避免每次重新定位
+        // 写进账号，下次不再定位
         pref.value = await request<RegionPref>(
           "/api/v1/me/regions",
           jsonBody({ region_code: code, source: "auto" }),
         );
+        announce(detected, code);
       }
     }
     emit("changed", pref.value.region_code);

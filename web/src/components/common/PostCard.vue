@@ -14,6 +14,7 @@ import { hasOwnTitle } from "../../utils/post";
 import { bgStyleOf } from "../../utils/postBg";
 import type { EmbedCard } from "../../api";
 import EmbedConsentCard from "../room/EmbedConsentCard.vue";
+import HashText from "./HashText.vue";
 import { PROVIDER_NAMES } from "../room/EntryMedia.vue";
 
 const props = withDefaults(
@@ -351,7 +352,7 @@ onBeforeUnmount(() => {
           @keydown.enter="emit('open')"
           @keydown.space.prevent="emit('open')"
         >{{ title }}</h3>
-        <p v-if="summary" class="post-summary" data-ugc>{{ summary }}</p>
+        <p v-if="summary" class="post-summary" data-ugc><HashText :text="summary" /></p>
         </template>
         <div v-if="keywords.length" class="post-tags" data-ugc>
           <RouterLink v-for="kw in keywords" :key="kw" class="post-tag" :to="{ name: 'search', query: { q: `#${kw}` } }">#{{ kw }}</RouterLink>

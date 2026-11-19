@@ -172,10 +172,12 @@ def test_guest_region_header_scopes_guest_content(client):
     def foryou_ids(extra: dict[str, str]) -> set[str]:
         return {item["content_id"] for item in client.get("/api/v1/me/feed?tab=foryou", headers=extra).json()["items"]}
 
-    assert content_id not in discover_ids({})  # 没选国家：只看国际
+    assert content_id not in discover_ids({"X-Region": "GLOBAL"})  # 选了国际：看不到英国频道
     assert content_id in discover_ids({"X-Region": "UK"})
     assert content_id in foryou_ids({"X-Region": "uk"})
-    assert content_id not in discover_ids({"X-Region": "ZZ"})  # 没开通的国家不算
+    # 没选国家、或定位到没开通的国家：默认英国
+    assert content_id in discover_ids({})
+    assert content_id in discover_ids({"X-Region": "ZZ"})
 
 
 def test_home_rail_ranks_by_heat_in_visible_regions(client):
@@ -204,7 +206,7 @@ def test_home_rail_ranks_by_heat_in_visible_regions(client):
     viewed = post("浏览多", 0.1, 6, life)            # 6 分
     favourite = post("收藏多", 0.2, 0, life, life2)  # 两个收藏 = 10 分，挂了两个频道
     liked = post("点赞多", 0.3, 0, life)             # 一个赞 = 3 分
-    post("英国本地", 0.1, 50, uk.id)                 # 游客没选国家看不到
+    post("英国本地", 0.1, 50, uk.id)                 # 选了国际的游客看不到
     post("上个月的", 30, 99, life)                   # 超过一周
     session.add_all([
         ContentReaction(user_id=fans[0].id, content_id=favourite, favorited=True),
@@ -214,12 +216,13 @@ def test_home_rail_ranks_by_heat_in_visible_regions(client):
     session.commit()
     session.close()
 
-    rail = client.get("/api/v1/discover/home-rail").json()
+    rail = client.get("/api/v1/discover/home-rail", headers={"X-Region": "GLOBAL"}).json()
     week_ids = [card["content_id"] for card in rail["week"]]
     assert week_ids == [favourite, viewed, liked]
     assert [card["content_id"] for card in rail["today"]] == [favourite, viewed, liked]
     uk_rail = client.get("/api/v1/discover/home-rail", headers={"X-Region": "UK"}).json()
     assert uk_rail["week"][0]["title"] == "英国本地"
+    assert client.get("/api/v1/discover/home-rail").json()["week"][0]["title"] == "英国本地"  # 没选国家默认英国
 
 
 def test_new_account_without_saved_country_uses_browser_region(client):

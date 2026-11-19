@@ -594,7 +594,8 @@ def test_listing_contact_keywords_like_and_recommendation(client):
     assert listing_card["listing"]["expires_at"]
     assert listing_card["listing"]["currency"] == "GBP"
 
-    hidden = client.get(f"/api/v1/listings/{listing_id}", headers=headers(guest))
+    # 浏览器定位在国际（没存过国家的账号看 X-Region）：英国的分类信息只给占位
+    hidden = client.get(f"/api/v1/listings/{listing_id}", headers={**headers(guest), "X-Region": "GLOBAL"})
     assert hidden.json()["placeholder"] is True
 
     client.post("/api/v1/me/regions", headers=headers(guest), json={"region_code": "GLOBAL", "source": "manual", "browse_region_code": "UK"})
@@ -1064,7 +1065,7 @@ def test_image_detail_discover_and_contract(client, monkeypatch, tmp_path):
     assert uk_only and "发现页要闻" in [i["title"] for i in uk_only]
     global_only = client.get("/api/v1/discover/items?region=GLOBAL", headers=headers(owner)).json()["items"]
     assert "发现页要闻" not in [i["title"] for i in global_only]
-    guest_uk = client.get("/api/v1/discover/items?region=UK").json()
+    guest_uk = client.get("/api/v1/discover/items?region=UK", headers={"X-Region": "GLOBAL"}).json()
     assert guest_uk["region"]["code"] == "GLOBAL" and guest_uk["items"] == []
     session = client.session_factory()
     for index in range(4):
@@ -1084,8 +1085,10 @@ def test_image_detail_discover_and_contract(client, monkeypatch, tmp_path):
     recommended = client.get("/api/v1/channels/recommended", headers=headers(owner)).json()["items"]
     assert len(recommended) == 3
     assert all(item["region_code"] in {"UK", "GLOBAL"} for item in recommended)
-    guest_recommended = client.get("/api/v1/channels/recommended").json()["items"]
+    guest_recommended = client.get("/api/v1/channels/recommended", headers={"X-Region": "GLOBAL"}).json()["items"]
     assert all(item["region_code"] == "GLOBAL" for item in guest_recommended)
+    default_recommended = client.get("/api/v1/channels/recommended").json()["items"]  # 没选国家默认英国
+    assert all(item["region_code"] in {"UK", "GLOBAL"} for item in default_recommended)
 
     badges = client.get("/api/v1/me/badges", headers=headers(owner))
     assert badges.status_code == 200

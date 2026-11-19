@@ -299,3 +299,18 @@ describe("fmtRelativeTime", () => {
     assert.equal(f("不是时间"), "");
   });
 });
+
+describe("splitHashTags", () => {
+  it("#话题 单独成段（显示成蓝色链接），链接里的 # 不算", async () => {
+    const { splitHashTags } = await vite.ssrLoadModule("/src/utils/post.ts");
+    assert.deepEqual(splitHashTags("周末去 #伦敦 看展＃博物馆！"), [
+      { text: "周末去 " },
+      { text: "#伦敦", tag: "伦敦" },
+      { text: " 看展" },
+      { text: "＃博物馆", tag: "博物馆" },
+      { text: "！" },
+    ]);
+    assert.deepEqual(splitHashTags("见 https://a.com/p#top 文档"), [{ text: "见 https://a.com/p#top 文档" }]);
+    assert.deepEqual(splitHashTags("没有话题"), [{ text: "没有话题" }]);
+  });
+});

@@ -26,12 +26,16 @@ def effective_region(session: Session, user: User | None) -> str:
         # 用浏览器带来的国家（X-Region）；没带或不是已开通国家就看国际。
         # 不然新用户注册完直接点进分享来的英国房源，会被当成「不在当前国家」。
         code = guest_region.get()
-        return code if is_open_region(session, code) else "GLOBAL"
+        return code if is_open_region(session, code) else _fallback_region(session)
     if pref.browse_region_code:
         return pref.browse_region_code
     code = pref.region_code or "GLOBAL"
-    # 归属国家未开通 -> 回落到国际频道（GLOBAL），避免空白页。
-    return code if is_open_region(session, code) else "GLOBAL"
+    return code if is_open_region(session, code) else _fallback_region(session)
+
+
+def _fallback_region(session: Session) -> str:
+    """定位到没开通的国家（或判断不出来）：默认英国；英国也被后台关了才看国际，避免空白页。"""
+    return "UK" if is_open_region(session, "UK") else "GLOBAL"
 
 
 def is_roaming(session: Session, user: User | None) -> bool:
