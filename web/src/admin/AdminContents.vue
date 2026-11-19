@@ -22,6 +22,8 @@ type Row = {
   channel_name: string;
   view_count: number;
   featured: boolean;
+  /** 不为空 = AI 设的精选，到这个时间自动取消 */
+  ai_featured_until: string | null;
   created_at: string;
 };
 
@@ -213,7 +215,11 @@ async function publish(): Promise<void> {
               <td><input v-if="item.status !== 'deleted'" v-model="selected" type="checkbox" :value="item.content_id" :aria-label="`选择「${item.title}」`" /></td>
               <td class="adm-wide">
                 <RouterLink :to="`/admin/contents/${item.content_id}`">{{ item.title }}</RouterLink>
-                <span v-if="item.featured" class="tag tag--link">精选</span>
+                <span
+                  v-if="item.featured"
+                  class="tag tag--link"
+                  :title="item.ai_featured_until ? `AI 自动设的，${new Date(item.ai_featured_until).toLocaleDateString()} 自动取消` : undefined"
+                >{{ item.ai_featured_until ? "AI 精选" : "精选" }}</span>
               </td>
               <td v-if="showType" class="adm-nowrap">{{ TYPE_LABELS[item.type] ?? item.type }}</td>
               <td class="adm-nowrap">{{ item.author_name || "—" }}</td>

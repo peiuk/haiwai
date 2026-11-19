@@ -331,6 +331,14 @@ def run_once() -> int:
         except Exception as err:
             db.rollback()
             print(f"{utcnow().isoformat()} 每日清理出错：{err!r}", flush=True)
+        # AI 精选（取消到期的、挑新的）；出错不影响资讯
+        try:
+            from app.ai_featured import run_ai_featured
+
+            print(f"{utcnow().isoformat()} AI 精选：{run_ai_featured(db)}", flush=True)
+        except Exception as err:
+            db.rollback()
+            print(f"{utcnow().isoformat()} AI 精选出错：{err!r}", flush=True)
         print(f"{utcnow().isoformat()} 每日资讯：{run_daily_news(db)}", flush=True)
         return 0
     except NewsUnavailable as err:

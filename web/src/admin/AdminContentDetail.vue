@@ -28,6 +28,8 @@ type Detail = {
   view_count: number;
   comment_count: number;
   featured: boolean;
+  /** 不为空 = AI 设的精选，到这个时间自动取消 */
+  ai_featured_until: string | null;
   created_at: string;
   cases: CaseRow[];
   history: HistoryRow[];
@@ -105,7 +107,9 @@ function feature(): Promise<void> {
       <header class="adm-detail-head">
         <h1>{{ detail.title }}</h1>
         <span class="tag" :class="statusTone(detail.status)">{{ STATUS_LABELS[detail.status] ?? detail.status }}</span>
-        <span v-if="detail.featured" class="tag tag--link">精选</span>
+        <span v-if="detail.featured" class="tag tag--link">{{
+          detail.ai_featured_until ? `AI 精选 · ${new Date(detail.ai_featured_until).toLocaleDateString()} 自动取消` : "精选"
+        }}</span>
         <template v-if="detail.status === 'pending'">
           <button type="button" class="btn btn--primary btn--sm" :disabled="!!busy" @click="approve">通过</button>
           <button type="button" class="btn btn--outline btn--sm" :disabled="!!busy" @click="reject">拒绝</button>

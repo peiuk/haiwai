@@ -734,6 +734,7 @@ def list_contents(
                 "channel_name": channels.get(row.id, ""),
                 "view_count": row.view_count or 0,
                 "featured": row.featured_at is not None,
+                "ai_featured_until": row.ai_featured_until,  # 不为空 = AI 设的精选，到这个时间自动取消
                 "created_at": row.created_at,
             }
             for row in rows
@@ -767,6 +768,7 @@ def content_detail(content_id: str, session: Session = Depends(get_db)) -> dict[
         "canonical_url": content.canonical_url or "",
         "view_count": content.view_count or 0,
         "featured": content.featured_at is not None,
+        "ai_featured_until": content.ai_featured_until,
         "created_at": content.created_at,
         "comment_count": _count(session, RoomComment, RoomComment.content_id == content.id, RoomComment.removed_at.is_(None)),
         "cases": _cases(session, ModerationCase.content_id == content.id),
@@ -799,6 +801,7 @@ def set_content_featured(
     if (content.featured_at is not None) == body.featured:
         raise APIError(409, "NO_CHANGE", "已经是这个状态")
     content.featured_at = utcnow() if body.featured else None
+    content.ai_featured_until = None  # 人工设的精选不过期；人工取消的 AI 精选也不再被 AI 选上（看操作日志）
     write_audit(session, admin.id, "admin.content.feature" if body.featured else "admin.content.unfeature", "content", content.id)
     session.commit()
     return {"content_id": content.id, "featured": body.featured}

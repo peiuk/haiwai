@@ -163,6 +163,8 @@ class Content(Base):
     view_count: Mapped[int] = mapped_column(Integer, default=0)
     # 后台设为精选的时间；为空表示不是精选。精选内容在「为你推荐」里加权。
     featured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # AI 自动设的精选到这个时间取消（见 app/ai_featured.py）；人工设的精选为空，不过期。
+    ai_featured_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
