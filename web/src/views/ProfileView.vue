@@ -342,7 +342,6 @@ watch(
               <BaseIcon name="i-reply" :size="20" />
               <span class="mr-main">
                 <span class="mr-t">{{ post.title }}</span>
-                <span v-if="post.summary && hasOwnTitle(post.title, post.summary)" class="mr-s">{{ post.summary }}</span>
               </span>
               <span class="status-pill" :class="post.status">{{ statusLabel(post.status) }}</span>
             </component>
