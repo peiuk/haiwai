@@ -151,6 +151,8 @@ onBeforeUnmount(() => {
   position: relative;
   height: 100%;
   display: grid;
+  /* 行列钉死成一屏大小，否则 auto 行会被高图撑开，图片 max-height:100% 不生效、被裁掉 */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
   scroll-snap-align: start;
   scroll-snap-stop: always;
