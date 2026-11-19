@@ -27,6 +27,8 @@ const props = withDefaults(
     channelId?: string;
     /** 头部不显示频道名、改显示发帖人（频道页：本来就在这个频道里） */
     hideChannel?: boolean;
+    /** 频道放右边「⋯」前面显示「发布在 xx 频道」，左边放发帖人（个人主页） */
+    channelOnRight?: boolean;
     /** 发帖人 ID：有值时头像和 @handle 可点进其主页 */
     authorId?: string | null;
     authorName?: string;
@@ -67,6 +69,7 @@ const props = withDefaults(
   {
     channelId: "",
     hideChannel: false,
+    channelOnRight: false,
     authorId: null,
     authorName: "",
     authorHandle: "",
@@ -110,9 +113,9 @@ const displayChannel = computed(
 const bgCss = computed(() => (props.imageKeys.length || props.videoKey || props.embed ? null : bgStyleOf(props.bgStyle)));
 // 带「加入」的卡（发现 / 推荐）：左边放发帖人，频道挪到加入按钮前面，一看就知道加入的是哪个频道
 // 没有发帖人的（官方 / 抓取内容）左边放来源名，频道同样挪到加入前面
-const channelBesideJoin = computed(() => props.showJoin && !!props.channelId);
-// 头部左边放发帖人而不是频道名：带加入按钮的卡，或频道页自己（hideChannel）
-const authorFirst = computed(() => channelBesideJoin.value || props.hideChannel);
+const channelBesideJoin = computed(() => (props.showJoin || props.channelOnRight) && !!props.channelId);
+// 头部左边放发帖人而不是频道名：带加入按钮的卡、频道页自己（hideChannel）、个人主页（channelOnRight）
+const authorFirst = computed(() => channelBesideJoin.value || props.hideChannel || props.channelOnRight);
 // 来源名就是发帖人时才链到他的主页（转发帖的来源是原帖作者，不能链到转发的人）
 const sourceIsAuthor = computed(() => !!props.authorId && props.sourceName === props.authorName);
 const displayHandle = computed(
@@ -256,7 +259,12 @@ onBeforeUnmount(() => {
         </div>
         <div class="post-head-actions">
           <slot name="head-extra" />
-          <span v-if="channelBesideJoin" class="post-from">
+          <span v-if="channelBesideJoin && channelOnRight" class="post-from">
+            发布在
+            <RouterLink class="post-from-link" :to="{ name: 'channel', params: { id: channelId } }" data-ugc>{{ channelName }}</RouterLink>
+            频道
+          </span>
+          <span v-else-if="channelBesideJoin" class="post-from">
             来自
             <RouterLink class="post-from-link" :to="{ name: 'channel', params: { id: channelId } }" data-ugc>{{ channelName }}</RouterLink>
           </span>

@@ -334,6 +334,7 @@ watch(userId, () => {
           :summary="post.summary"
           :channel-name="post.channel_name"
           :channel-id="post.channel_id || ''"
+          channel-on-right
           :author-id="profile.user_id"
           :author-name="profile.display_name"
           :author-handle="profile.handle" :author-avatar="profile.avatar_key"
