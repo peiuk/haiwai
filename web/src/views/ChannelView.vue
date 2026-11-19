@@ -187,16 +187,7 @@ watch(channelId, () => void load(), { immediate: true });
           <p v-if="itemsError" class="channel-error" role="alert">{{ itemsError }} <button type="button" @click="loadItems(true)">重试</button></p>
           <p v-else-if="!items.length" class="channel-note">这个频道还没有动态。</p>
           <div v-for="item in items" :key="item.content_id" class="channel-item">
-            <p v-if="item.origin_room_name || item.listing || item.status === 'pending'" class="item-context">
-              <button
-                v-if="item.origin_room_name && item.origin_room_id"
-                type="button"
-                class="room-origin"
-                @click="router.push({ name: 'room', params: { id: item.origin_room_id } })"
-              >
-                来自房间 · <span data-ugc>{{ item.origin_room_name }}</span>
-              </button>
-              <span v-if="item.origin_room_name" class="room-push-note">房主推到频道</span>
+            <p v-if="item.listing || item.status === 'pending'" class="item-context">
               <span v-if="item.listing">{{ listingLabel(item) }} · {{ price(item) }}</span>
               <span v-if="item.status === 'pending'">审核中，仅自己可见</span>
             </p>
@@ -207,7 +198,7 @@ watch(channelId, () => void load(), { immediate: true });
             <PostCard
               v-else
               :content-id="item.content_id" :title="item.title" :summary="item.summary"
-              :channel-name="detail.name_hans" :channel-id="detail.code"
+              :channel-name="detail.name_hans" :channel-id="detail.id"
               :author-id="item.author_id" :author-name="item.author_name" :author-handle="item.author_handle" :author-avatar="item.author_avatar"
               :certified="Boolean(detail.certified)" :pinned="item.pinned" :time="item.added_at"
               :source-name="item.source_name" :licence-ref="item.licence_ref" :canonical-url="item.canonical_url"
@@ -218,7 +209,18 @@ watch(channelId, () => void load(), { immediate: true });
               :liked="item.liked" :favorited="item.favorited" :reposted="item.reposted"
               @open="activeContentId = item.content_id"
               @like="toggleReaction(item, 'like')" @favorite="toggleReaction(item, 'favorite')" @repost="repost(item)"
-            />
+            >
+              <!-- 房主从房间推来的帖子：右上角、更多菜单左边标出来源房间 -->
+              <template v-if="item.origin_room_name" #head-extra>
+                <RouterLink
+                  v-if="item.origin_room_id"
+                  class="room-origin"
+                  :to="{ name: 'room', params: { id: item.origin_room_id } }"
+                  :title="`房主从「${item.origin_room_name}」推到频道`"
+                >来自房间 · <span data-ugc>{{ item.origin_room_name }}</span></RouterLink>
+                <span class="room-push-note">房主推到频道</span>
+              </template>
+            </PostCard>
           </div>
           <BaseButton v-if="cursor" variant="outline" size="sm" :loading="loadingMore" @click="loadItems(false)">加载更多动态</BaseButton>
         </section>
@@ -259,19 +261,26 @@ watch(channelId, () => void load(), { immediate: true });
 .channel-item { border-top: 1px solid var(--border); }
 .item-context { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-2) var(--sp-3) 0; color: var(--muted); font-size: var(--fs-12); }
 .room-origin {
-  padding: 0;
-  border: 0;
-  background: none;
+  max-width: 10em; /* 窄屏时房间名先截断，更多菜单始终可点 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--accent-ink);
   font-size: var(--fs-12);
-  text-decoration: underline;
-  cursor: pointer;
 }
 .room-origin:hover {
-  opacity: 0.85;
+  text-decoration: underline;
 }
 .room-push-note {
+  margin: 0 var(--sp-1);
   color: var(--muted);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+/* 手机上右上角太挤会把发帖人名字挤没：只留「来自房间」链接，「房主推到频道」放进它的提示里 */
+@media (max-width: 480px) {
+  .room-origin { max-width: 6em; margin-right: var(--sp-1); }
+  .room-push-note { display: none; }
 }
 .pending-card { display: grid; gap: var(--sp-1); padding: var(--sp-3); }
 .pending-card p { margin: 0; color: var(--muted); font-size: var(--fs-13); }

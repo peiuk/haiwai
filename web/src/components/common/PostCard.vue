@@ -278,6 +278,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <div class="post-head-actions">
+          <slot name="head-extra" />
           <span v-if="channelBesideJoin" class="post-from">
             来自
             <RouterLink class="post-from-link" :to="{ name: 'channel', params: { id: channelId } }" data-ugc>{{ channelName }}</RouterLink>
