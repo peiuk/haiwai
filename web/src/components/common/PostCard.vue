@@ -25,6 +25,8 @@ const props = withDefaults(
     summary: string | null;
     channelName: string;
     channelId?: string;
+    /** 头部不显示频道名、改显示发帖人（频道页：本来就在这个频道里） */
+    hideChannel?: boolean;
     /** 发帖人 ID：有值时头像和 @handle 可点进其主页 */
     authorId?: string | null;
     authorName?: string;
@@ -64,6 +66,7 @@ const props = withDefaults(
   }>(),
   {
     channelId: "",
+    hideChannel: false,
     authorId: null,
     authorName: "",
     authorHandle: "",
@@ -108,6 +111,10 @@ const bgCss = computed(() => (props.imageKeys.length || props.videoKey || props.
 // 带「加入」的卡（发现 / 推荐）：左边放发帖人，频道挪到加入按钮前面，一看就知道加入的是哪个频道
 // 没有发帖人的（官方 / 抓取内容）左边放来源名，频道同样挪到加入前面
 const channelBesideJoin = computed(() => props.showJoin && !!props.channelId);
+// 头部左边放发帖人而不是频道名：带加入按钮的卡，或频道页自己（hideChannel）
+const authorFirst = computed(() => channelBesideJoin.value || props.hideChannel);
+// 来源名就是发帖人时才链到他的主页（转发帖的来源是原帖作者，不能链到转发的人）
+const sourceIsAuthor = computed(() => !!props.authorId && props.sourceName === props.authorName);
 const displayHandle = computed(
   // @ 后面优先显示用户名（handle），没有时才退回昵称；都没有就不显示（不拿频道 ID 充数）。
   () => props.authorHandle || props.authorName || "",
@@ -208,8 +215,8 @@ onBeforeUnmount(() => {
       <!-- card-head -->
       <div class="post-head">
         <div class="post-meta">
-          <span v-if="channelBesideJoin && !authorId" class="post-name" data-ugc>{{ sourceName || "官方" }}</span>
-          <template v-else-if="channelBesideJoin">
+          <span v-if="authorFirst && !authorId" class="post-name" data-ugc>{{ sourceName || "官方" }}</span>
+          <template v-else-if="authorFirst">
             <RouterLink class="post-name post-name--link" :to="{ name: 'user', params: { id: authorId! } }" data-ugc>{{ authorName || authorHandle }}</RouterLink>
             <RouterLink v-if="authorHandle && authorName" class="post-handle post-handle--link" :to="{ name: 'user', params: { id: authorId! } }" data-ugc>@{{ authorHandle }}</RouterLink>
           </template>
@@ -222,19 +229,19 @@ onBeforeUnmount(() => {
           >{{ displayChannel }}</RouterLink>
           <span v-else class="post-name" data-ugc>{{ displayChannel }}</span>
           <BaseIcon
-            v-if="certified && !channelBesideJoin"
+            v-if="certified && !authorFirst"
             name="i-check"
             :size="16"
             class="post-verified"
             label="官方认证"
           />
           <RouterLink
-            v-if="!channelBesideJoin && displayHandle && authorId"
+            v-if="!authorFirst && displayHandle && authorId"
             class="post-handle post-handle--link"
             :to="{ name: 'user', params: { id: authorId } }"
             data-ugc
           >@{{ displayHandle }}</RouterLink>
-          <span v-else-if="!channelBesideJoin && displayHandle" class="post-handle">@{{ displayHandle }}</span>
+          <span v-else-if="!authorFirst && displayHandle" class="post-handle">@{{ displayHandle }}</span>
           <span v-if="time" class="post-time">· {{ fmtRelativeTime(time) }}</span>
           <BaseIcon v-if="pinned" name="i-pin" :size="16" class="post-pin" />
           <span
@@ -383,7 +390,7 @@ onBeforeUnmount(() => {
 
       <!-- 来源行 -->
       <div v-if="sourceName" class="post-source">
-        <span class="post-src-name">来源 <b>{{ sourceName }}</b></span>
+        <span class="post-src-name">来源 <RouterLink v-if="sourceIsAuthor" class="post-src-author" :to="{ name: 'user', params: { id: authorId! } }"><b data-ugc>{{ sourceName }}</b></RouterLink><b v-else data-ugc>{{ sourceName }}</b></span>
         <BaseTag v-if="licenceRef" variant="default">{{ licenceRef }}</BaseTag>
         <a
           v-if="canonicalUrl"
@@ -787,6 +794,9 @@ a.post-avatar:hover {
 .post-src-name b {
   color: var(--text);
   font-weight: var(--fw-semibold);
+}
+.post-src-author:hover b {
+  text-decoration: underline;
 }
 .post-src-link {
   display: inline-flex;

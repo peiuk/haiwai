@@ -198,7 +198,7 @@ watch(channelId, () => void load(), { immediate: true });
             <PostCard
               v-else
               :content-id="item.content_id" :title="item.title" :summary="item.summary"
-              :channel-name="detail.name_hans" :channel-id="detail.id"
+              :channel-name="detail.name_hans" :channel-id="detail.id" hide-channel
               :author-id="item.author_id" :author-name="item.author_name" :author-handle="item.author_handle" :author-avatar="item.author_avatar"
               :certified="Boolean(detail.certified)" :pinned="item.pinned" :time="item.added_at"
               :source-name="item.source_name" :licence-ref="item.licence_ref" :canonical-url="item.canonical_url"
