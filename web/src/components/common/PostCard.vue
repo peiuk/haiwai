@@ -730,8 +730,13 @@ a.post-avatar:hover {
   aspect-ratio: 16 / 10;
   background: var(--surface2);
 }
-.media--n1 .media-frame {
-  aspect-ratio: 16 / 9;
+/* 1～2 张按原比例显示不裁（竖图不被切成横条），太高就限高、两边留底色 */
+.media--n1 .media-frame,
+.media--n2 .media-frame {
+  aspect-ratio: auto;
+  height: auto;
+  max-height: 480px;
+  object-fit: contain;
 }
 .media-frame--clickable {
   cursor: zoom-in;
@@ -752,8 +757,7 @@ a.post-avatar:hover {
   display: block;
   width: 100%;
   max-height: 480px;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
+  object-fit: contain;
   cursor: pointer;
   background: #000;
 }

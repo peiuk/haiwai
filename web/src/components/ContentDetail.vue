@@ -855,7 +855,7 @@ watch(detail, async (value) => {
   object-fit: cover;
   cursor: zoom-in;
 }
-.cd-media--n1 img { max-height: 560px; }
+.cd-media--n1 img { max-height: 560px; object-fit: contain; background: var(--surface2); }
 /* 整块 16:10，行列都用 minmax(0, 1fr)：不然行高会被图片原尺寸撑开，第二行被裁掉。
    3 张：左大图占两行；4 张：2×2；5 张：左大图占两行 + 右 2×2；6 张：3×2（和信息流卡片一致） */
 .cd-media--n2,
