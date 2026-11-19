@@ -82,7 +82,8 @@ def search(
             Channel.visibility == "public",
             Channel.is_private.is_(False),
             Channel.region_code.in_(list(open_regions(session))),  # 后台关闭的国家，频道搜不到
-            or_(Channel.kind != "room", has_published),
+            # 空房间平时不进搜索结果；但输入房间 ID（8 位或 room-xxxxxxxx）要能找到，房主刚建好就能分享
+            or_(Channel.kind != "room", has_published, Channel.code.in_([f"room-{needle.lower()}", needle.lower()])),
             or_(Channel.name_hans.ilike(pattern, escape="\\"), Channel.name_hant.ilike(pattern, escape="\\"), Channel.code.ilike(pattern, escape="\\")),
         )
         .order_by(Channel.code)

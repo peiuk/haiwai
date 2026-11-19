@@ -20,6 +20,7 @@ import TextArea from "../components/base/TextArea.vue";
 import SelectField from "../components/base/SelectField.vue";
 import Checkbox from "../components/base/Checkbox.vue";
 import BaseTag from "../components/base/BaseTag.vue";
+import BaseIcon from "../components/base/BaseIcon.vue";
 import ErrorState from "../components/base/ErrorState.vue";
 import ReportButton from "../components/common/ReportButton.vue";
 import UploadField from "../components/common/UploadField.vue";
@@ -51,6 +52,26 @@ const roomManagerRef = ref<InstanceType<typeof RoomManager> | null>(null);
 // §26.9 CountryGuard：房间所属频道属于其他国家时占位拦截。
 const REGION_NAMES: Record<string, string> = { UK: "英国", GLOBAL: "国际" };
 const countryName = computed(() => REGION_NAMES[detail.value?.region_code ?? ""] ?? detail.value?.region_code ?? "");
+// 房间 ID：频道 code 去掉 room- 前缀（8 位），在搜索框输入就能找到这个房间
+const roomCode = computed(() => (detail.value?.code ?? "").replace(/^room-/, ""));
+
+// 分享：手机走系统分享面板，电脑复制链接（链接里带 ID，方便对方搜索）
+function shareRoom(): void {
+  const url = `${window.location.origin}/room/${roomId}`;
+  const title = `${detail.value?.name_hans ?? "房间"}（房间 ID：${roomCode.value}）`;
+  if (typeof navigator.share === "function") {
+    navigator.share({ title, url }).catch(() => undefined);
+    return;
+  }
+  if (!navigator.clipboard?.writeText) {
+    toast.show("复制失败，请长按地址栏复制链接");
+    return;
+  }
+  navigator.clipboard
+    .writeText(`${title} ${url}`)
+    .then(() => toast.show("房间链接已复制，可以粘贴发给朋友"))
+    .catch(() => toast.show("复制失败，请长按地址栏复制链接"));
+}
 const guardText = computed(() => {
   const country = countryName.value;
   const parent = detail.value?.parent_name_hans;
@@ -254,6 +275,12 @@ onMounted(load);
         <p v-if="detail.subscriber_count !== undefined" class="room-meta">
           <template v-if="countryName">{{ countryName }} · </template>{{ detail.subscriber_count }} 人订阅<template v-if="detail.sort_basis"> · 排序：{{ detail.sort_basis }}</template>
         </p>
+        <div v-if="detail.kind === 'room' && roomCode" class="room-share">
+          <span class="room-meta">房间 ID：<code class="room-code">{{ roomCode }}</code></span>
+          <BaseButton size="sm" variant="outline" @click="shareRoom">
+            <BaseIcon name="i-share" :size="15" /> 分享房间
+          </BaseButton>
+        </div>
         <div v-if="canModerate && !editing" class="room-head__actions">
           <!-- 综合讨论房间：房主 / 协作者发帖走「发布内容」页（图片、视频、话题都有），预选这个房间 -->
           <RouterLink
@@ -412,6 +439,17 @@ onMounted(load);
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-12);
+}
+.room-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.room-code {
+  color: var(--text);
+  font-weight: 700;
+  user-select: all; /* 点一下整段选中，方便手动复制 */
 }
 .room-head__actions {
   display: flex;

@@ -181,6 +181,11 @@ def test_room_needs_official_parent_then_announce_and_accept(client):
     assert room_id not in {item["id"] for item in empty}
     hidden = client.get("/api/v1/search", params={"q": "伦敦看房笔记"}).json()["channels"]
     assert room_id not in {item["id"] for item in hidden}
+    # 房间 ID（code 去掉 room-）能搜到，空房间也行：房主刚建好就能把 ID 发给别人
+    room_code = changed_detail["code"].removeprefix("room-")
+    for q in (room_code, room_code.upper(), f"room-{room_code}"):
+        by_id = client.get("/api/v1/search", params={"q": q}).json()["channels"]
+        assert room_id in {item["id"] for item in by_id}, q
 
     announced = client.post(
         f"/api/v1/channels/{room_id}/announcements",
