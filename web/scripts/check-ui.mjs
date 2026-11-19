@@ -101,7 +101,7 @@ note(
 const embed = src("components/room/EmbedConsentCard.vue");
 const iframe = embed.match(/<iframe[\s\S]*?<\/iframe>/)?.[0] ?? "";
 note(
-  "④ 媒体：iframe 默认不加载、v-if 销毁、src 只取服务端 embed_url",
+  "④ 媒体：iframe 默认加载（可撤回）、v-if 销毁、src 只取服务端 embed_url",
   /v-if="embedUrl"/.test(iframe) &&
     /:src="embedUrl"/.test(iframe) &&
     !/:src="[^"]*canonical/.test(iframe) &&

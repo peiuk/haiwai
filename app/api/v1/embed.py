@@ -3,7 +3,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import current_user, require_verified_phone
+from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.me import active_channel
 from app.core.audit import write_audit
 from app.core.db import get_db
@@ -44,11 +44,11 @@ class ConsentBody(BaseModel):
         return value
 
 
-def _visible_embed(session: Session, content_id: str, user: User) -> Content:
+def _visible_embed(session: Session, content_id: str, user: User | None) -> Content:
     content = session.get(Content, content_id)
     if content is None or content.deleted_at is not None or content.type != "embed" or content.embed_status == "none":
         raise APIError(404, "CONTENT_NOT_FOUND", "外链不存在")
-    if content.status != "published" and content.author_id != user.id:
+    if content.status != "published" and (user is None or content.author_id != user.id):
         raise APIError(404, "CONTENT_NOT_FOUND", "外链不存在")
     return content
 
@@ -105,13 +105,14 @@ def create_embed(
 @router.get("/embed/{content_id}/consent")
 def get_embed_consent(
     content_id: str,
-    user: User = Depends(current_user),
+    user: User | None = Depends(optional_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
     content = _visible_embed(session, content_id, user)
     provider = PROVIDERS.get(content.embed_provider_code or "")
-    scope = _latest_scope(session, user.id, content.embed_provider_code or "")
-    may_load = content.embed_status == "embeddable" and content.status == "published" and scope == "always"
+    scope = _latest_scope(session, user.id, content.embed_provider_code or "") if user else None
+    # 默认允许直接加载播放器（游客也一样）；只有用户主动撤回过这个平台才不加载
+    may_load = content.embed_status == "embeddable" and content.status == "published" and scope != "withdrawn"
     payload: dict[str, object] = {
         "provider_code": content.embed_provider_code,
         "display_name": provider["display_name"] if provider else "",

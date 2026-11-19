@@ -53,16 +53,17 @@ const statusBadge = computed(() => {
 });
 
 async function loadConsent(): Promise<void> {
-  if (!auth.isLoggedIn || !canPlay.value) return;
+  if (!canPlay.value) return;
   loading.value = true;
   error.value = "";
   try {
     const body = await request<EmbedConsent>(`/api/v1/embed/${props.contentId}/consent`);
     consent.value = body;
     consentScope.value = body.scope;
-    // 已有「总是允许」偏好：服务端直接允许加载，但仍由用户点占位卡才创建 iframe
+    // 默认允许（游客也是）：服务端下发 embed_url 就直接显示播放器；撤回过的才停在占位卡
     if (body.may_load && body.embed_url) {
       embedUrl.value = body.embed_url;
+      stage.value = "player";
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : "同意状态读取失败";
@@ -187,13 +188,13 @@ onMounted(loadConsent);
         <div class="player-actions">
           <BaseButton type="button" variant="outline" size="sm" @click="collapse">收起并停止播放</BaseButton>
           <button
-            v-if="consentScope === 'always'"
+            v-if="auth.isLoggedIn"
             type="button"
             class="text-btn"
             :disabled="busy"
             @click="withdraw"
           >
-            撤回「总是允许」
+            不再自动加载此平台
           </button>
         </div>
       </div>

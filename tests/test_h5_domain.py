@@ -1222,6 +1222,10 @@ def test_embed_resolve_consent_and_not_recommended(client):
     assert card["embed_status"] == "embeddable"
     assert card["embed_provider_code"] == "youtube"
     assert "embed_url" not in card
+    # 默认允许：游客打开也直接拿到播放器地址
+    guest = client.get(f"/api/v1/embed/{content_id}/consent").json()
+    assert guest["may_load"] is True
+    assert guest["embed_url"] == "https://www.youtube-nocookie.com/embed/abcdefghijk"
     loaded = client.post(
         f"/api/v1/embed/{content_id}/consent",
         headers=headers(owner),
@@ -1229,6 +1233,9 @@ def test_embed_resolve_consent_and_not_recommended(client):
     )
     assert loaded.status_code == 200
     assert loaded.json()["embed_url"] == "https://www.youtube-nocookie.com/embed/abcdefghijk"
+    client.post(f"/api/v1/embed/{content_id}/consent", headers=headers(owner), json={"scope": "withdrawn"})
+    withdrawn = client.get(f"/api/v1/embed/{content_id}/consent", headers=headers(owner)).json()
+    assert withdrawn["may_load"] is False and "embed_url" not in withdrawn
 
     foryou = client.get("/api/v1/me/feed?tab=foryou", headers=headers(owner))
     assert all(item["content_id"] != content_id for item in foryou.json()["items"])
