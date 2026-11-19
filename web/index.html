@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>海外圈</title>
+    <!-- 线上由 nginx SSI 换成当前页面的标题、描述和分享卡片（web/nginx.conf、app/api/v1/seo.py）；后端取不到时用这个默认标题。本地开发时这几行只是注释。 -->
+    <!--# block name="seo_default" --><title>海外圈</title><!--# endblock -->
+    <!--# include virtual="/__seo$request_uri" stub="seo_default" -->
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/logo-mark.png" />
   </head>

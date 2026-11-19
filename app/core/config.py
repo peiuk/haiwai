@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"  # MinIO 不关心区域，保持默认即可
     # 用户浏览器取图片 / 视频的地址前缀（桶要允许匿名读）。留空时用 {s3_endpoint}/{s3_bucket}。
     media_public_url: str = ""
+    # 网站对外的地址（例：https://haiwaiquan.com），用于 sitemap、canonical 和分享卡片里的绝对链接。
+    # 留空时用请求的 Host；前面有 HTTPS / CDN 时必须填，不然链接会变成 http://。
+    public_base_url: str = ""
     # 跑单元测试时为 True（tests/conftest.py 设置）：跳过外网检查和开发库自动初始化。
     testing: bool = False
 

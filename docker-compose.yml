@@ -19,6 +19,8 @@ services:
       DATABASE_URL: postgresql+psycopg://ukcn:${POSTGRES_PASSWORD:-ukcn}@db:5432/ukcn
       # 请求都经过下面的 web（nginx）：不设的话所有用户算同一个来源，全站每小时只能注册 5 个号
       TRUST_PROXY: "true"
+      # sitemap、canonical、分享卡片里的绝对链接（app/api/v1/seo.py）。换域名时在 .env 里设 PUBLIC_BASE_URL
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://haiwai.co.uk}
     depends_on:
       db:
         condition: service_healthy

@@ -22,6 +22,7 @@ from app.api.v1.messages import router as messages_router
 from app.api.v1.moderation import router as moderation_router
 from app.api.v1.room_social import router as room_social_router
 from app.api.v1.search import router as search_router
+from app.api.v1.seo import router as seo_router
 from app.api.v1.uploads import router as uploads_router
 from app.api.v1.users import router as users_router
 from app.core.audit import client_ip, note_server_error, request_meta
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(uploads_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
     app.include_router(embed_router, prefix="/api/v1")
+    app.include_router(seo_router, prefix="/api/v1")
     return app
 
 
