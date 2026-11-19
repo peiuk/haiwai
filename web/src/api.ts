@@ -245,6 +245,7 @@ export type FeedItem = {
   channel_name?: string;
   /** 频道是否官方认证（对应后端的 channel_certified） */
   channel_certified?: boolean;
+  is_joined?: boolean;
   source_name: string | null;
   licence_ref: string | null;
   canonical_url: string | null;

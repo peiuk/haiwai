@@ -118,6 +118,8 @@ load();
       :embed="item.embed"
       :time="item.added_at"
       :pinned="item.pinned"
+      :show-join="!!item.channel_id"
+      :is-joined="item.is_joined"
       :liked="item.liked"
       :favorited="item.favorited"
       :reposted="item.reposted"
