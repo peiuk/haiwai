@@ -145,12 +145,7 @@ onMounted(loadConsent);
 
     <!-- 可嵌入：占位 → 同意 → 播放 -->
     <template v-else-if="canPlay">
-      <!-- 占位卡：明确告知第三方加载会传输 IP / 设备信息 -->
       <div v-if="stage === 'placeholder'" class="embed-placeholder">
-        <p class="embed-notice">
-          将加载第三方播放器（{{ displayName || consent?.display_name || "外部平台" }}），并向其传输你的 IP、设备与浏览信息。平台不代理、不缓存影片。
-        </p>
-        <p v-if="consent?.notice" class="embed-notice-sub">{{ consent.notice }}</p>
         <BaseButton type="button" variant="outline" :disabled="loading" @click="openConsent">
           {{ loading ? "检查同意状态…" : "查看播放选项" }}
         </BaseButton>
@@ -267,7 +262,6 @@ onMounted(loadConsent);
   font-size: var(--fs-13);
   line-height: 1.6;
 }
-.embed-notice-sub,
 .embed-policy,
 .embed-scope-note {
   margin: 0;
