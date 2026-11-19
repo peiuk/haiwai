@@ -170,6 +170,28 @@ function removeAvatar(): Promise<void> {
     "头像已移除",
   );
 }
+// ---- AI 判断是否广告号：只是参考，封不封由管理员决定 ----
+const VERDICT_LABELS: Record<string, { text: string; tone: string }> = {
+  normal: { text: "像正常用户", tone: "tag--good" },
+  ad: { text: "疑似广告号", tone: "tag--danger" },
+  agency_batch: { text: "疑似中介批量号", tone: "tag--danger" },
+  unsure: { text: "拿不准", tone: "tag--warn" },
+};
+const aiChecking = ref(false);
+const aiResult = ref<{ verdict: string; reasons: string[]; post_count: number } | null>(null);
+
+async function aiCheck(): Promise<void> {
+  if (aiChecking.value) return;
+  aiChecking.value = true;
+  try {
+    aiResult.value = await adminRequest(`/api/v1/admin/users/${id}/ai-check`, { method: "POST" });
+  } catch (err) {
+    toast.show(toMessage(err));
+  } finally {
+    aiChecking.value = false;
+  }
+}
+
 function activate(): Promise<void> {
   return act(id, `/api/v1/admin/users/${id}/status`, { status: "active" }, "已解封");
 }
@@ -250,6 +272,25 @@ function activate(): Promise<void> {
           <div><dt>注册时间</dt><dd :title="when(detail.created_at)">{{ exact(detail.created_at) }}</dd></div>
           <div><dt>发帖 / 留言</dt><dd>{{ detail.post_count }} / {{ detail.comment_count }}</dd></div>
         </dl>
+      </section>
+
+      <section v-if="detail.post_count" class="adm-panel" aria-live="polite">
+        <h2>AI 判断是否广告号</h2>
+        <div class="adm-batch">
+          <button type="button" class="btn btn--outline btn--sm" :disabled="aiChecking" @click="aiCheck">
+            {{ aiChecking ? "AI 正在看（要等十几秒）…" : aiResult ? "重新判断" : "让 AI 看看最近 30 条" }}
+          </button>
+          <span class="adm-sub">把这个人最近的帖子发给 AI 判断，结果只是参考，不会自动封号。</span>
+        </div>
+        <template v-if="aiResult">
+          <p>
+            <span class="tag" :class="VERDICT_LABELS[aiResult.verdict]?.tone ?? 'tag--warn'">{{ VERDICT_LABELS[aiResult.verdict]?.text ?? aiResult.verdict }}</span>
+            （看了 {{ aiResult.post_count }} 条）
+          </p>
+          <ul>
+            <li v-for="reason in aiResult.reasons" :key="reason">{{ reason }}</li>
+          </ul>
+        </template>
       </section>
 
       <section class="adm-panel">

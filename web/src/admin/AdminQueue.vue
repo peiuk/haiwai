@@ -56,7 +56,7 @@ async function load(): Promise<void> {
 const { busy, act, ask } = useAdminAction(load);
 void load();
 
-// 抓取 GOV.UK 最新资讯，AI 写成中文稿后放进下面的待审列表（要等几十秒）
+// 抓取 GOV.UK 和 BBC 最新资讯，AI 写成中文稿后放进下面的待审列表（要等几十秒）
 const fetching = ref(false);
 const fetchNote = ref("");
 async function fetchNews(): Promise<void> {
@@ -71,7 +71,7 @@ async function fetchNews(): Promise<void> {
     const digest = result.digest ? "已把之前通过的资讯汇成「今日英国要闻」发布。" : "";
     fetchNote.value = result.fetched
       ? `新抓到 ${result.fetched} 条，生成 ${result.drafted} 条中文稿（${result.skipped} 条和华人生活关系不大，已跳过）${result.to_check ? `，其中 ${result.to_check} 条数字需要对照原文` : ""}。${digest}`
-      : `GOV.UK 暂时没有新资讯。${digest}`;
+      : `GOV.UK 和 BBC 暂时没有新资讯。${digest}`;
     await load();
   } catch (err) {
     fetchNote.value = toMessage(err);
@@ -209,7 +209,7 @@ function targetLink(item: Queue["cases"][number]): string {
           <button type="button" class="btn btn--outline btn--sm" :disabled="fetching" @click="fetchNews">
             {{ fetching ? "正在抓取并生成…" : "抓取今日资讯" }}
           </button>
-          <span class="adm-sub" role="status">{{ fetchNote || "从 GOV.UK 抓最新新闻，AI 写成中文稿后出现在下面，通过才会发布。" }}</span>
+          <span class="adm-sub" role="status">{{ fetchNote || "从 GOV.UK 和 BBC 抓最新新闻，AI 写成中文稿后出现在下面（英国的进英国资讯，国际的进国际新闻），通过才会发布。" }}</span>
         </div>
       </section>
 

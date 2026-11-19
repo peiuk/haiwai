@@ -364,7 +364,7 @@ def queue(admin: User = Depends(require_admin), session: Session = Depends(get_d
                 "summary": row.summary or (row.body or "")[:200],
                 "author_name": names.get(row.author_id or "", ""),
                 # AI 资讯稿：没有作者；数字和原文对不上时标「待核对」，审核时点原文对一下
-                "ai_draft": row.author_id is None and row.source_name == "GOV.UK",
+                "ai_draft": row.author_id is None and row.source_name in ("GOV.UK", "BBC"),
                 "ai_check": row.ai_status == "check",
                 "source_url": row.canonical_url,
                 "claimed_by": claimed_by("content", row.id),
@@ -485,6 +485,59 @@ def user_detail(user_id: str, session: Session = Depends(get_db)) -> dict[str, o
         "cases": _cases(session, ModerationCase.reported_user_id == target.id),
         "history": _history(session, "user", target.id),
     }
+
+
+AI_CHECK_POSTS = 30
+AI_CHECK_SYSTEM = """你是华人社区 App「海外圈」的运营助手。下面是一个账号的资料和最近发的帖子 / 分类信息。
+判断这个账号是不是：
+- ad：广告号（反复推销同一商品服务、留联系方式引流、内容和社区无关）；
+- agency_batch：中介批量号（房产 / 签证 / 招聘等中介用多个号或模板批量刷帖，标题模板化、内容高度重复）；
+- normal：正常用户；
+- unsure：信息太少或拿不准。
+reasons 写 1～4 条简体中文理由，每条一句话，引用具体的帖子特征；只依据给出的信息，不要猜测。
+你的判断只是给管理员的参考，不会自动处理账号。"""
+AI_CHECK_SHAPE = '\n只输出一个 JSON 对象，不要任何其他文字，格式：{"verdict":"normal","reasons":["…"]}；verdict 只能是 normal、ad、agency_batch、unsure。'
+
+
+class AccountVerdict(BaseModel):
+    verdict: Literal["normal", "ad", "agency_batch", "unsure"]
+    reasons: list[str]
+
+
+@guarded.post("/users/{user_id}/ai-check")
+def ai_check_user(user_id: str, admin: User = Depends(require_admin), session: Session = Depends(get_db)) -> dict[str, object]:
+    """把这个人最近的帖子交给 AI，判断是不是广告号 / 中介批量号。只给建议，封不封由管理员决定。"""
+    from app.llm import LLMUnavailable, ask_json  # 只有这里用到，免得后台模块启动就加载 AI 客户端
+
+    target = session.get(User, user_id)
+    if target is None:
+        raise APIError(404, "USER_NOT_FOUND", "用户不存在")
+    throttle(session, f"admin-ai-check:{admin.id}", limit=30, window_seconds=3600)  # 每次都花钱
+    posts = session.scalars(
+        select(Content).where(Content.author_id == target.id).order_by(Content.created_at.desc()).limit(AI_CHECK_POSTS)
+    ).all()
+    if not posts:
+        raise APIError(409, "NO_POSTS", "这个用户还没有发过内容，没法判断")
+    channel_of = dict(
+        session.execute(
+            select(ChannelItem.content_id, Channel.name_hans)
+            .join(Channel, Channel.id == ChannelItem.channel_id)
+            .where(ChannelItem.content_id.in_([row.id for row in posts]))
+        ).all()
+    )
+    lines = [
+        f"[{n}] {row.created_at:%Y-%m-%d %H:%M} · {channel_of.get(row.id, '个人动态')} · {row.type} · {row.status}\n"
+        f"{row.title}\n{row.summary or (row.body or '')[:200]}"
+        for n, row in enumerate(posts, start=1)
+    ]
+    profile = f"注册时间：{target.created_at:%Y-%m-%d}；名字：{target.display_name}；账号名：{target.handle or '无'}；个人介绍：{target.bio or '无'}"
+    try:
+        result = ask_json(AI_CHECK_SYSTEM, profile + "\n\n" + "\n\n".join(lines), AccountVerdict, AI_CHECK_SHAPE)
+    except LLMUnavailable as err:
+        raise APIError(503, "AI_UNAVAILABLE", str(err)) from err
+    write_audit(session, admin.id, "admin.user.ai_check", "user", target.id, f"AI 判断：{result.verdict}")
+    session.commit()
+    return {"verdict": result.verdict, "reasons": result.reasons[:4], "post_count": len(posts)}
 
 
 @guarded.post("/users/{user_id}/avatar/remove")

@@ -14,7 +14,7 @@ router = APIRouter(prefix="/admin/ingest", tags=["ingest"])
 
 @router.post("/news")
 def fetch_news(admin: User = Depends(require_admin), session: Session = Depends(get_db)) -> dict[str, int]:
-    """抓取 GOV.UK 最新资讯并让 AI 写成中文稿，全部进「待审核」，由管理员发布。"""
+    """抓取 GOV.UK 和 BBC 最新资讯并让 AI 写成中文稿，全部进「待审核」，由管理员发布。"""
     try:
         result = run_daily_news(session)
     except NewsUnavailable as err:
