@@ -856,15 +856,21 @@ watch(detail, async (value) => {
   cursor: zoom-in;
 }
 .cd-media--n1 img { max-height: 560px; }
+/* 整块 16:10，行列都用 minmax(0, 1fr)：不然行高会被图片原尺寸撑开，第二行被裁掉。
+   3 张：左大图占两行；4 张：2×2；5 张：左大图占两行 + 右 2×2；6 张：3×2（和信息流卡片一致） */
 .cd-media--n2,
 .cd-media--n3,
-.cd-media--n4 {
-  grid-template-columns: 1fr 1fr;
+.cd-media--n4,
+.cd-media--n5,
+.cd-media--n6 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
   aspect-ratio: 16 / 10;
 }
-.cd-media--n3,
-.cd-media--n4 { grid-template-rows: 1fr 1fr; }
-.cd-media--n3 img:first-child { grid-row: span 2; }
+.cd-media--n5,
+.cd-media--n6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cd-media--n3 img:first-child,
+.cd-media--n5 img:first-child { grid-row: span 2; }
 .cd-media img:focus-visible { outline-offset: -3px; }
 .cd-video {
   display: block;
