@@ -16,6 +16,7 @@ import type { EmbedCard } from "../../api";
 import EmbedConsentCard from "../room/EmbedConsentCard.vue";
 import HashText from "./HashText.vue";
 import { PROVIDER_NAMES } from "../room/EntryMedia.vue";
+import { playWithSound } from "../../utils/video";
 
 const props = withDefaults(
   defineProps<{
@@ -136,59 +137,28 @@ function closeLightbox(): void {
   lightboxIndex.value = -1;
 }
 
-// ---- 视频内联播放：滚动到可视区自动播放 + 循环 + 静音（离开暂停） ----
+// ---- 视频内联播放：滚动到可视区自动带声音播放 + 循环（离开暂停，声音跟着停） ----
 const videoEl = ref<HTMLVideoElement | null>(null);
-const videoPaused = ref(false);
+const videoPaused = ref(false); // 跟着视频的 play / pause 事件走
 // 用户手动暂停标记：暂停后滚动离开再回来不自动重播，尊重用户意图。
 const userPaused = ref(false);
-// 默认静音起播（浏览器只放行静音自动播放）；用户点了「开声音」之后这条视频就带声音播
-const videoMuted = ref(true);
 let observer: IntersectionObserver | null = null;
-
-function toggleMute(): void {
-  const v = videoEl.value;
-  if (!v) return;
-  videoMuted.value = !videoMuted.value;
-  v.muted = videoMuted.value;
-  if (!videoMuted.value && v.paused) {
-    userPaused.value = false;
-    togglePlay(true);
-  }
-}
 
 function togglePlay(shouldPlay: boolean): void {
   const v = videoEl.value;
   if (!v) return;
-  if (shouldPlay) {
-    // 用户已手动暂停时，进入视口也不自动播放，直到用户再次点击播放。
-    if (userPaused.value) return;
-    v.muted = videoMuted.value;
-    const p = v.play();
-    if (p) {
-      p.then(() => {
-        videoPaused.value = false;
-      }).catch(() => {
-        // 自动播放被浏览器拦截时保持暂停，用户点击可手动播放
-        videoPaused.value = true;
-      });
-    }
-  } else {
-    v.pause();
-    videoPaused.value = true;
-  }
+  if (!shouldPlay) return v.pause();
+  // 用户已手动暂停时，进入视口也不自动播放，直到用户再次点击播放。
+  if (userPaused.value) return;
+  // 连静音都放不了（如手机省电模式）就保持暂停，显示播放按钮让用户点
+  playWithSound(v).catch(() => (videoPaused.value = true));
 }
 
 function onVideoClick(): void {
   const v = videoEl.value;
   if (!v) return;
-  if (v.paused) {
-    userPaused.value = false; // 用户主动点击播放，解除手动暂停状态
-    togglePlay(true);
-  } else {
-    userPaused.value = true; // 用户主动暂停，标记不再自动重播
-    v.pause();
-    videoPaused.value = true;
-  }
+  userPaused.value = !v.paused; // 点正在播的 = 手动暂停；点暂停的 = 解除
+  togglePlay(v.paused);
 }
 
 onMounted(() => {
@@ -383,11 +353,12 @@ onBeforeUnmount(() => {
           :poster="undefined"
           playsinline
           loop
-          muted
           preload="metadata"
           class="media-video"
           :aria-label="`${title} 视频`"
           @click="onVideoClick"
+          @play="videoPaused = false"
+          @pause="videoPaused = true"
         ></video>
         <button
           v-if="videoPaused"
@@ -398,12 +369,6 @@ onBeforeUnmount(() => {
         >
           <BaseIcon name="i-play" :size="24" />
         </button>
-        <button
-          type="button"
-          class="video-sound"
-          :aria-pressed="!videoMuted"
-          @click.stop="toggleMute"
-        >{{ videoMuted ? "开声音" : "静音" }}</button>
       </div>
 
       <EmbedConsentCard
@@ -805,20 +770,6 @@ a.post-avatar:hover {
 .video-play-hint:hover {
   background: rgba(0, 0, 0, 0.5);
 }
-.video-sound {
-  position: absolute;
-  right: var(--sp-2);
-  bottom: var(--sp-2);
-  min-height: var(--tap);
-  padding: 0 var(--sp-3);
-  border: 0;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  font-size: var(--fs-13);
-  cursor: pointer;
-}
-
 /* 来源行 */
 .post-source {
   display: flex;

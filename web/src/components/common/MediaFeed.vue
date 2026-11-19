@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // MediaFeed：全屏竖向刷媒体（抖音式）。一条占满一屏，上下滑翻一条（CSS scroll-snap）；
-// 滑到的视频自动播放（静音起播，手机浏览器只放行静音自动播放），滑走就暂停。
+// 滑到的视频自动带声音播放，滑走就暂停（声音跟着停）。
 // start 从 -1 变成 >=0 时打开并定位到那一条；Esc / 关闭按钮关闭；点标题打开原帖。
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import BaseIcon from "../base/BaseIcon.vue";
+import { playWithSound } from "../../utils/video";
 
 export type MediaFeedItem = { src: string; video: boolean; post: { content_id: string; title: string } };
 
@@ -12,7 +13,6 @@ const emit = defineEmits<{ (e: "close"): void; (e: "open", contentId: string): v
 
 const list = ref<HTMLElement | null>(null);
 const current = ref(0);
-const muted = ref(true);
 let observer: IntersectionObserver | null = null;
 
 function videoAt(i: number): HTMLVideoElement | null {
@@ -29,7 +29,7 @@ function watchSlides(): void {
         const video = videoAt(i);
         if (entry.isIntersecting) {
           current.value = i;
-          void video?.play().catch(() => undefined);
+          if (video) playWithSound(video).catch(() => undefined);
         } else {
           video?.pause();
         }
@@ -64,7 +64,7 @@ watch(
 
 function togglePlay(i: number): void {
   const video = videoAt(i);
-  if (video) void (video.paused ? video.play().catch(() => undefined) : video.pause());
+  if (video) void (video.paused ? playWithSound(video).catch(() => undefined) : video.pause());
 }
 
 function step(delta: number): void {
@@ -98,7 +98,6 @@ onBeforeUnmount(() => {
             v-if="item.video"
             :src="item.src"
             class="mf-media"
-            :muted="muted"
             loop
             playsinline
             preload="metadata"
@@ -114,15 +113,6 @@ onBeforeUnmount(() => {
 
       <button type="button" class="mf-btn mf-close" aria-label="关闭" @click="emit('close')">
         <BaseIcon name="i-close" :size="24" />
-      </button>
-      <button
-        v-if="items[current]?.video"
-        type="button"
-        class="mf-btn mf-sound"
-        :aria-pressed="!muted"
-        @click="muted = !muted"
-      >
-        {{ muted ? "开声音" : "静音" }}
       </button>
       <div class="mf-count">{{ current + 1 }} / {{ items.length }}</div>
     </div>
@@ -209,9 +199,6 @@ onBeforeUnmount(() => {
 .mf-close {
   right: 12px;
   padding: 0;
-}
-.mf-sound {
-  left: 12px;
 }
 .mf-count {
   position: fixed;
