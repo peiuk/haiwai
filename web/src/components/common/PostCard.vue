@@ -280,7 +280,6 @@ onBeforeUnmount(() => {
           <span v-if="channelBesideJoin" class="post-from">
             来自
             <RouterLink class="post-from-link" :to="{ name: 'channel', params: { id: channelId } }" data-ugc>{{ channelName }}</RouterLink>
-            <BaseIcon v-if="certified" name="i-check" :size="14" class="post-verified" label="官方认证" />
           </span>
           <button
             v-if="showJoin && !isJoined"

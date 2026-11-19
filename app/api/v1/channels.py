@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.uploads import owned_upload
 from app.core.pagination import decode_cursor, encode_cursor, paginate_rows
-from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, content_titles, listing_map, reaction_flags, repost_context
+from app.feed import MAX_LISTING_IMAGES, image_keys_of, author_names, card_extras, content_titles, listing_map, reaction_flags, repost_context
 from app.recommend import country_blocked, effective_region
 from app.reports import ReportBody, limit_reports, report_receipt
 from app.core.audit import write_audit
@@ -725,14 +725,21 @@ def remove_collaborator(
 ENTRY_HOURLY_LIMIT = 30  # 房主一次加好几集，比普通发帖的每小时 5 条宽；仍然防刷
 
 
-class EntryBody(TextBody):
-    body: str = ""  # 可以不写：剧集的一集就是一个视频；写了仍按 TextBody 的长度规则校验
-    season: int | None = None  # 页面不再让填季，不传就是第 1 季；旧数据里多季的房间照常显示
-    episode: int | None = None
-    rights_confirmed: bool = False
+class MediaBody(TextBody):
+    """标题 + 可选正文 + 图片 / 视频 / 视频外链：房主加条目、普通用户投稿共用。"""
+
+    body: str = ""  # 可以不写：带图片或视频时正文可空
     image_keys: list[str] = []  # 最多 6 张，第一张作封面（电影卡片左侧）
     video_key: str | None = None
     video_url: str | None = None  # 视频外链（YouTube / 哔哩哔哩），和上传视频二选一
+
+    @field_validator("body")
+    @classmethod
+    def body_length(cls, value: str) -> str:  # 覆盖 TextBody：允许空正文
+        text = value.strip()
+        if len(text) > 4000:
+            raise ValueError("正文不能超过 4000 个字")
+        return text
 
     @field_validator("image_keys")
     @classmethod
@@ -741,6 +748,12 @@ class EntryBody(TextBody):
         if len(keys) > MAX_LISTING_IMAGES:
             raise ValueError(f"最多上传 {MAX_LISTING_IMAGES} 张图片")
         return keys
+
+
+class EntryBody(MediaBody):
+    season: int | None = None  # 页面不再让填季，不传就是第 1 季；旧数据里多季的房间照常显示
+    episode: int | None = None
+    rights_confirmed: bool = False
 
 
 class MoveBody(BaseModel):
@@ -828,6 +841,24 @@ def _owned_media(session: Session, user: User, key: str, prefix: str, label: str
         raise APIError(400, "VALIDATION_FAILED", f"这里需要上传{label}")
 
 
+def _media(session: Session, user: User, body: MediaBody) -> dict[str, object]:
+    """图片 / 上传视频 / 视频外链 → Content 字段（带外链时调用方把 type 设为 embed）。只校验，不写库。"""
+    video_url = (body.video_url or "").strip()
+    if video_url and body.video_key:
+        raise APIError(400, "VALIDATION_FAILED", "上传视频和视频外链只能选一个")
+    embed = embed_fields(video_url) if video_url else {}  # 不在白名单 / 短链直接报错
+    for key in body.image_keys:
+        _owned_media(session, user, key, "image/", "图片")
+    if body.video_key:
+        _owned_media(session, user, body.video_key, "video/", "视频")
+    return {
+        "image_key": body.image_keys[0] if body.image_keys else None,
+        "image_keys_json": json.dumps(body.image_keys),
+        "video_key": body.video_key,
+        **embed,
+    }
+
+
 @router.post("/{channel_id}/entries")
 def add_entry(
     channel_id: str,
@@ -837,11 +868,8 @@ def add_entry(
 ) -> dict[str, str]:
     channel = _catalog_room(session, channel_id, user)
     check_hourly_limit(session, user.id, ENTRY_HOURLY_LIMIT)
-    video_url = (body.video_url or "").strip()
-    if video_url and body.video_key:
-        raise APIError(400, "VALIDATION_FAILED", "上传视频和视频外链只能选一个")
-    # 外链先校验（不在白名单 / 短链直接报错），再动数据库
-    embed = embed_fields(video_url) if video_url else {}
+    media = _media(session, user, body)
+    embed = "embed_provider_code" in media
     season = body.season if body.season is not None else 1
     episode = body.episode
     if channel.room_type == "series":
@@ -874,10 +902,6 @@ def add_entry(
         )
         sort_key = film_sort_key(int(count or 0) + 1)
         confirmed = False
-    for key in body.image_keys:
-        _owned_media(session, user, key, "image/", "图片")
-    if body.video_key:
-        _owned_media(session, user, body.video_key, "video/", "视频")
     now = utcnow()
     # 房间还在审核：条目先待审，管理员通过任一条后房间自动上线（同公告）。直接发布会经搜索、主页漏出去。
     # 命中敏感词也先待审：房主发的内容和普通发帖同一条规则
@@ -891,10 +915,7 @@ def add_entry(
         body=body.body,
         source_name=user.display_name,
         published_at=None if waiting else now,
-        image_key=body.image_keys[0] if body.image_keys else None,
-        image_keys_json=json.dumps(body.image_keys),
-        video_key=body.video_key,
-        **embed,
+        **media,
     )
     if embed:
         content.type = "embed"
@@ -1105,6 +1126,9 @@ def list_submissions(
                 "content_id": content.id,
                 "title": content.title,
                 "summary": content.summary,
+                "image_keys": image_keys_of(content),  # 房主审核时要看到图片 / 视频
+                "video_key": content.video_key,
+                "embed_source_url": content.embed_source_url,
                 "author_id": content.author_id,
                 "author_name": author.display_name if author else "",
                 "author_handle": author.handle or "" if author else "",
@@ -1117,7 +1141,7 @@ def list_submissions(
 @router.post("/{channel_id}/submissions")
 def create_submission(
     channel_id: str,
-    body: TextBody,
+    body: MediaBody,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, str]:
@@ -1131,15 +1155,19 @@ def create_submission(
     if country_blocked(session, user, channel):
         raise APIError(403, "REGION_BLOCKED", "当前国家看不到这个频道")
     check_hourly_limit(session, user.id)
+    if not (body.body or body.image_keys or body.video_key or (body.video_url or "").strip()):
+        raise APIError(400, "VALIDATION_FAILED", "正文、图片、视频至少要有一样")
+    media = _media(session, user, body)
     now = utcnow()
     content = Content(
-        type="post",
+        type="embed" if "embed_provider_code" in media else "post",
         status="pending",
         author_id=user.id,
         title=body.title,
         summary=body.body[:500],
         body=body.body,
         source_name=user.display_name,
+        **media,
     )
     session.add(content)
     session.flush()

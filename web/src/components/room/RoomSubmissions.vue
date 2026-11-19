@@ -7,6 +7,8 @@ import { useToastStore } from "../../stores/toast";
 import BaseButton from "../base/BaseButton.vue";
 import TextField from "../base/TextField.vue";
 import TextArea from "../base/TextArea.vue";
+import MultiUploadField from "../common/MultiUploadField.vue";
+import UploadField from "../common/UploadField.vue";
 
 const props = defineProps<{
   roomId: string;
@@ -27,6 +29,9 @@ const decidingId = ref("");
 // —— 投稿表单（普通用户）——
 const title = ref("");
 const body = ref("");
+const imageKeys = ref<string[]>([]);
+const videoKey = ref("");
+const videoUrl = ref("");
 const posting = ref(false);
 
 async function loadSubmissions(): Promise<void> {
@@ -61,18 +66,35 @@ async function decide(contentId: string, decision: "accept" | "reject"): Promise
 }
 
 async function submit(): Promise<void> {
-  if (!title.value.trim() || !body.value.trim()) {
-    toast.show("标题和正文都需要填写");
+  if (!title.value.trim()) {
+    toast.show("请填写标题");
+    return;
+  }
+  if (!body.value.trim() && !imageKeys.value.length && !videoKey.value && !videoUrl.value.trim()) {
+    toast.show("正文、图片、视频至少要有一样");
+    return;
+  }
+  if (videoKey.value && videoUrl.value.trim()) {
+    toast.show("上传视频和视频外链只能选一个");
     return;
   }
   posting.value = true;
   try {
     await request(
       `/api/v1/channels/${props.roomId}/submissions`,
-      jsonBody({ title: title.value.trim(), body: body.value.trim() }),
+      jsonBody({
+        title: title.value.trim(),
+        body: body.value.trim(),
+        image_keys: imageKeys.value,
+        video_key: videoKey.value || null,
+        video_url: videoUrl.value.trim() || null,
+      }),
     );
     title.value = "";
     body.value = "";
+    imageKeys.value = [];
+    videoKey.value = "";
+    videoUrl.value = "";
     toast.show("投稿已提交，等待房主审核");
   } catch (err) {
     toast.show(toMessage(err));
@@ -98,6 +120,11 @@ onMounted(() => {
           <div class="sub-main">
             <strong class="sub-item-title" data-ugc>{{ item.title }}</strong>
             <p v-if="item.summary" class="sub-item-summary" data-ugc>{{ item.summary }}</p>
+            <div v-if="item.image_keys.length" class="sub-media">
+              <img v-for="key in item.image_keys" :key="key" :src="`/api/v1/uploads/${key}`" alt="投稿图片" loading="lazy" />
+            </div>
+            <video v-if="item.video_key" class="sub-video" :src="`/api/v1/uploads/${item.video_key}`" controls preload="metadata" aria-label="投稿视频"></video>
+            <a v-if="item.embed_source_url" class="sub-link" :href="item.embed_source_url" target="_blank" rel="noopener noreferrer">视频外链：{{ item.embed_source_url }}</a>
             <p class="sub-item-meta">
               <span data-ugc>{{ item.author_name }}</span>
               <span v-if="item.author_handle">@{{ item.author_handle }}</span>
@@ -127,7 +154,32 @@ onMounted(() => {
       <h2 class="sub-title">投稿到房间</h2>
       <form class="sub-form" @submit.prevent="submit">
         <TextField id="submission-title" v-model="title" label="标题" required />
-        <TextArea id="submission-body" v-model="body" label="正文" :rows="3" required />
+        <TextArea id="submission-body" v-model="body" label="正文（带图片或视频时可以不写）" :rows="3" />
+        <MultiUploadField
+          id="submission-images"
+          v-model="imageKeys"
+          label="图片（可选）"
+          accept="image/jpeg,image/png,image/webp"
+          :max-mb="5"
+          :max="6"
+          hint="jpeg / png / webp，单张最大 5MB；第一张为封面"
+        />
+        <UploadField
+          id="submission-video"
+          v-model="videoKey"
+          label="视频（可选，1 段）"
+          accept="video/mp4,video/webm,video/quicktime"
+          :max-mb="100"
+          hint="mp4 / webm / mov，不超过 100MB"
+        />
+        <TextField
+          id="submission-video-url"
+          v-model="videoUrl"
+          label="或者贴视频外链（可选）"
+          type="url"
+          placeholder="https://youtu.be/… 或 https://www.bilibili.com/video/BV…"
+          hint="支持 YouTube、哔哩哔哩，和上传视频二选一"
+        />
         <div class="sub-form-actions">
           <BaseButton type="submit" :loading="posting" variant="primary">提交投稿</BaseButton>
         </div>
@@ -179,6 +231,27 @@ onMounted(() => {
   margin: 0;
   color: var(--text);
   font-size: var(--fs-13);
+  overflow-wrap: anywhere;
+}
+.sub-media {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.sub-media img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+}
+.sub-video {
+  width: 100%;
+  max-height: 240px;
+  border-radius: var(--r-sm);
+  background: #000;
+}
+.sub-link {
+  font-size: var(--fs-12);
   overflow-wrap: anywhere;
 }
 .sub-item-meta {

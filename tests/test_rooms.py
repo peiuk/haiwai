@@ -1260,3 +1260,31 @@ def test_series_episodes_need_no_season_or_body_and_can_be_added_in_bulk(client)
         assert added.json()["sort_key"] == f"S01E{number:03d}"
     assert client.post(url, headers=headers(owner), json={"title": "重复", "episode": 3}).json()["code"] == "EPISODE_TAKEN"
     assert client.post(url, headers=headers(owner), json={"title": "没集号"}).status_code == 400
+
+
+def test_submission_takes_images_and_video_like_publishing(client):
+    """普通用户投稿和发布一样能带图片、视频，正文可以不写；房主审核时看得到图片视频。"""
+    owner = register(client, "sub-owner@example.com")
+    verify(client, owner, "+447700900281")
+    fan = register(client, "sub-fan@example.com")
+    verify(client, fan, "+447700900282")
+    parent_id = official_channel(client)
+    room_id = client.post("/api/v1/channels", headers=headers(owner), json={"name": "投稿房间", "parent_channel_id": parent_id}).json()["channel_id"]
+    assert client.post(f"/api/v1/moderation/channels/{room_id}/decision", headers=headers(owner), json={"decision": "approve"}).status_code == 200
+
+    url = f"/api/v1/channels/{room_id}/submissions"
+    assert client.post(url, headers=headers(fan), json={"title": "什么都没有"}).status_code == 400
+    others = upload(client, owner, "image/png", b"\x89PNG")
+    assert client.post(url, headers=headers(fan), json={"title": "别人的图", "image_keys": [others]}).status_code == 400
+
+    photo = upload(client, fan, "image/png", b"\x89PNG")
+    clip = upload(client, fan, "video/mp4", b"\x00\x00\x00\x18ftyp")
+    sent = client.post(url, headers=headers(fan), json={"title": "现场图", "image_keys": [photo], "video_key": clip})
+    assert sent.status_code == 200, sent.text
+
+    queue = client.get(url, headers=headers(owner)).json()["items"]
+    assert [(row["title"], row["image_keys"], row["video_key"]) for row in queue] == [("现场图", [photo], clip)]
+    decided = client.post(f"{url}/{sent.json()['content_id']}/decision", headers=headers(owner), json={"decision": "accept"})
+    assert decided.status_code == 200, decided.text
+    row = next(item for item in client.get(f"/api/v1/channels/{room_id}/items").json()["items"] if item["content_id"] == sent.json()["content_id"])
+    assert (row["image_keys"], row["video_key"]) == ([photo], clip)

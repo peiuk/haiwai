@@ -890,6 +890,9 @@ export type Submission = {
   content_id: string;
   title: string;
   summary: string | null;
+  image_keys: string[];
+  video_key: string | null;
+  embed_source_url: string | null;
   author_id: string;
   author_name: string;
   author_handle: string;
