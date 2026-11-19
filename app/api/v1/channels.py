@@ -120,7 +120,7 @@ def recommended_channels(
         {"id": row.id, "code": row.code, "name_hans": row.name_hans, "region_code": row.region_code}
         for row in rows
         if row.id not in joined and (row.region_code == "GLOBAL" or row.region_code == region)
-    ][:3]
+    ][:5]
     return {"items": items}
 
 

@@ -1068,7 +1068,7 @@ def test_image_detail_discover_and_contract(client, monkeypatch, tmp_path):
     guest_uk = client.get("/api/v1/discover/items?region=UK", headers={"X-Region": "GLOBAL"}).json()
     assert guest_uk["region"]["code"] == "GLOBAL" and guest_uk["items"] == []
     session = client.session_factory()
-    for index in range(4):
+    for index in range(6):
         session.add(
             Channel(
                 code=f"uk-extra-{index}",
@@ -1083,7 +1083,7 @@ def test_image_detail_discover_and_contract(client, monkeypatch, tmp_path):
     session.commit()
     session.close()
     recommended = client.get("/api/v1/channels/recommended", headers=headers(owner)).json()["items"]
-    assert len(recommended) == 3
+    assert len(recommended) == 5
     assert all(item["region_code"] in {"UK", "GLOBAL"} for item in recommended)
     guest_recommended = client.get("/api/v1/channels/recommended", headers={"X-Region": "GLOBAL"}).json()["items"]
     assert all(item["region_code"] == "GLOBAL" for item in guest_recommended)

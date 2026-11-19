@@ -8,11 +8,12 @@ import {
   type HomeRailResponse,
   type RailItem,
 } from "../../api";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { RouterLink } from "vue-router";
 import Avatar from "../base/Avatar.vue";
 
 const router = useRouter();
+const route = useRoute();
 
 const hotKeywords = ref<string[]>([]);
 const keywordsLoaded = ref(false);
@@ -81,7 +82,13 @@ onMounted(() => {
       <h3>今日最关注</h3>
       <ol v-if="today.length" class="rail-list rail-list--rank">
         <li v-for="(item, i) in today" :key="item.content_id">
-          <button type="button" class="rail-item" @click="openContent(item)">
+          <button
+            type="button"
+            class="rail-item"
+            :class="{ 'is-current': route.name === 'content' && route.params.id === item.content_id }"
+            :aria-current="route.name === 'content' && route.params.id === item.content_id ? 'page' : undefined"
+            @click="openContent(item)"
+          >
             <span class="rail-rank" :class="{ 'rail-rank--top': i < 3 }">{{ i + 1 }}</span>
             <span class="rail-title" data-ugc>{{ item.title }}</span>
           </button>
@@ -98,6 +105,8 @@ onMounted(() => {
           :key="kw"
           type="button"
           class="hot-key-btn"
+          :class="{ 'is-current': route.name === 'search' && route.query.q === kw }"
+          :aria-pressed="route.name === 'search' && route.query.q === kw"
           :aria-label="`搜索关键词 ${kw}`"
           @click="searchKeyword(kw)"
         >
@@ -178,6 +187,11 @@ onMounted(() => {
 .hot-key-btn:hover {
   background: var(--hover);
 }
+.hot-key-btn:active,
+.hot-key-btn.is-current {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
 .side-channels {
   display: flex;
   flex-direction: column;
@@ -230,6 +244,11 @@ onMounted(() => {
 }
 .rail-item:hover {
   background: var(--hover);
+}
+.rail-item:active,
+.rail-item.is-current {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
 }
 .rail-rank {
   flex: none;
