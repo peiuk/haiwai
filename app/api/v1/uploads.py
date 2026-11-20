@@ -13,6 +13,7 @@ from app.api.v1.auth import current_user
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import APIError
+from app.media import MediaError, compress
 from app.models import UploadObject, User, new_id, utcnow
 
 router = APIRouter(prefix="/uploads")
@@ -74,7 +75,14 @@ def _s3_client(endpoint: str, access_key: str, secret_key: str, region: str):
         aws_secret_access_key=secret_key,
         region_name=region,
         # MinIO 等自建存储用路径风格（endpoint/bucket/key），不用 bucket 子域名
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}, retries={"max_attempts": 3}),
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            retries={"max_attempts": 3},
+            # boto3 1.36 起默认带新的校验头，Backblaze B2 / R2 等兼容存储不一定认：只在接口要求时才带
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
     )
 
 
@@ -197,6 +205,7 @@ async def store_upload(
         raise too_big
     # 边收边写到临时文件，内存里只留一个数据块（100MB 的视频不再整个读进内存）。
     temp = upload_root() / f"{key}.part"
+    output: Path | None = None
     size = 0
     head = b""
     try:
@@ -212,10 +221,18 @@ async def store_upload(
             raise too_big
         if not _matches_type(row.content_type, head):
             raise APIError(400, "UPLOAD_INVALID", f"文件内容不是{kind}，请重新选择")
-        # 传到对象存储可能要几十秒：放到线程池，不然这个进程在此期间处理不了别的请求。
-        await run_in_threadpool(save_object, key, temp, row.content_type)
+        # 转码和传到对象存储都可能要几十秒：放到线程池，不然这个进程在此期间处理不了别的请求。
+        try:
+            output, content_type = await run_in_threadpool(compress, temp, row.content_type)
+        except MediaError as exc:
+            raise APIError(400, "UPLOAD_INVALID", f"{kind}无法处理（{exc}），请换一个文件") from exc
+        await run_in_threadpool(save_object, key, output, content_type)
     finally:
-        temp.unlink(missing_ok=True)  # 本地存储时已经改名走了；失败或走对象存储时清掉临时文件
+        # 本地存储时已经改名走了；失败或走对象存储时清掉临时文件和转码结果
+        temp.unlink(missing_ok=True)
+        if output is not None:
+            output.unlink(missing_ok=True)
+    row.content_type = content_type  # 转码后变成 image/webp / video/mp4
     row.stored = True
     session.commit()
     return {"stored": True}

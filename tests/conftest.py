@@ -58,3 +58,11 @@ def client():
     with TestClient(app) as test_client:
         test_client.session_factory = session_factory
         yield test_client
+
+
+@pytest.fixture(autouse=True)
+def _skip_media_compress(monkeypatch):
+    """大多数用例上传的是几个字节的假图片，只测权限和流程；真正的转码由 test_media.py 单独测。"""
+    from app.api.v1 import uploads
+
+    monkeypatch.setattr(uploads, "compress", lambda source, content_type: (source, content_type))

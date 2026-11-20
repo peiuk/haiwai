@@ -1,6 +1,8 @@
 FROM python:3.12-slim
 
 WORKDIR /srv
+# 上传的视频转成 720p MP4 再存（app/media.py）
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml alembic.ini ./
 COPY app ./app
 COPY alembic ./alembic
