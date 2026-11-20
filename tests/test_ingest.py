@@ -31,7 +31,8 @@ def test_failure_is_recorded_with_reason(client, monkeypatch):
     monkeypatch.setattr(ingest, "run_daily_news", down)
     assert client.post(URL, headers=auth).status_code == 202
     status = client.get(URL, headers=auth).json()
-    assert status == {"running": False, "ok": False, "detail": "AI 调用失败：The read operation timed out"}
+    assert status["running"] is False and status["ok"] is False
+    assert status["detail"].startswith("AI 调用失败：The read operation timed out")
 
 
 def test_busy_while_running_and_stale_run_can_be_restarted(client, monkeypatch):
@@ -50,4 +51,21 @@ def test_busy_while_running_and_stale_run_can_be_restarted(client, monkeypatch):
     session.close()
     monkeypatch.setattr(ingest, "run_daily_news", lambda session: {"fetched": 0, "drafted": 0, "skipped": 0, "to_check": 0, "digest": 0})
     assert client.post(URL, headers=auth).status_code == 202
-    assert client.get(URL, headers=auth).json()["detail"] == "GOV.UK 和 BBC 暂时没有新资讯。"
+    assert client.get(URL, headers=auth).json()["detail"].startswith("GOV.UK 和 BBC 暂时没有新资讯。")
+
+
+def test_button_also_runs_ai_featured(client, monkeypatch):
+    """不用等每天 8 点：抓资讯时顺带跑 AI 精选，结果写进说明；AI 精选失败不影响资讯的成败。"""
+    auth = headers(make_admin(client, "ingest-featured@example.com"))
+    monkeypatch.setattr(ingest, "run_daily_news", lambda session: {"fetched": 0, "drafted": 0, "skipped": 0, "to_check": 0, "digest": 0})
+    monkeypatch.setattr(ingest, "run_ai_featured", lambda session: {"expired": 0, "candidates": 4, "picked": 2})
+    client.post(URL, headers=auth)
+    assert "AI 精选：从 4 条里选了 2 条。" in client.get(URL, headers=auth).json()["detail"]
+
+    def no_key(session):
+        raise ingest.LLMUnavailable("还没有配置 AI 密钥（.env 里的 LLM_API_KEY）")
+
+    monkeypatch.setattr(ingest, "run_ai_featured", no_key)
+    client.post(URL, headers=auth)
+    status = client.get(URL, headers=auth).json()
+    assert status["ok"] is True and "AI 精选没有运行：还没有配置 AI 密钥" in status["detail"]

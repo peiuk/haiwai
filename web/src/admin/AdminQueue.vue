@@ -230,7 +230,7 @@ function targetLink(item: Queue["cases"][number]): string {
           <button type="button" class="btn btn--outline btn--sm" :disabled="fetching" @click="fetchNews">
             {{ fetching ? "正在抓取并生成…" : "抓取今日资讯" }}
           </button>
-          <span class="adm-sub" role="status">{{ fetchNote || "从 GOV.UK 和 BBC 抓最新新闻，AI 写成中文稿后出现在下面（英国的进英国资讯，国际的进国际新闻），通过才会发布。" }}</span>
+          <span class="adm-sub" role="status">{{ fetchNote || "从 GOV.UK 和 BBC 抓最新新闻，AI 写成中文稿后出现在下面（英国的进英国资讯，国际的进国际新闻），通过才会发布；同时让 AI 从最近 48 小时的帖子和分类信息里挑精选。" }}</span>
         </div>
       </section>
 

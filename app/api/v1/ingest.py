@@ -14,6 +14,8 @@ from app.core.db import get_db
 from app.core.errors import APIError
 from app.api.v1.admin import require_admin
 from app.core.audit import note_server_error, write_audit
+from app.ai_featured import run_ai_featured
+from app.llm import LLMUnavailable
 from app.models import AuditLog, User, utcnow
 from app.news import NewsUnavailable, run_daily_news
 
@@ -44,9 +46,26 @@ def describe(result: dict[str, int]) -> str:
     return f"新抓到 {result['fetched']} 条，生成 {result['drafted']} 条中文稿（{result['skipped']} 条和华人生活关系不大，已跳过）{check}。{digest}"
 
 
+def featured_in_background(session: Session) -> str:
+    """顺带跑一次 AI 精选（不用等每天 8 点的定时任务）；出错只写进结果说明，不影响资讯。"""
+    try:
+        result = run_ai_featured(session)
+    except LLMUnavailable as err:
+        session.rollback()
+        return f"AI 精选没有运行：{err}"
+    except Exception as err:
+        session.rollback()
+        note_server_error()
+        return f"AI 精选出错：{err!r}"
+    if not result["candidates"]:
+        return "AI 精选：最近 48 小时没有可选的用户帖子或分类信息。"
+    return f"AI 精选：从 {result['candidates']} 条里选了 {result['picked']} 条。"
+
+
 def fetch_in_background(bind: Engine | Connection, admin_id: str) -> None:
     # 请求用的数据库会话在响应发出后就关了，这里另开一个连同一个库的
     with Session(bind=bind, expire_on_commit=False) as session:
+        featured = featured_in_background(session)
         try:
             action, detail = DONE, describe(run_daily_news(session))
         except NewsUnavailable as err:
@@ -59,7 +78,7 @@ def fetch_in_background(bind: Engine | Connection, admin_id: str) -> None:
             session.rollback()
             note_server_error()
             action, detail = FAILED, f"抓取出错：{err!r}"
-        write_audit(session, admin_id, action, "content", None, detail[:300])
+        write_audit(session, admin_id, action, "content", None, f"{detail} {featured}"[:300])
         session.commit()
 
 
@@ -67,7 +86,7 @@ def fetch_in_background(bind: Engine | Connection, admin_id: str) -> None:
 def fetch_news(
     background: BackgroundTasks, admin: User = Depends(require_admin), session: Session = Depends(get_db)
 ) -> dict:
-    """抓取 GOV.UK 和 BBC 最新资讯并让 AI 写成中文稿，全部进「待审核」，由管理员发布。在后台跑，用 GET 查进度。"""
+    """抓取 GOV.UK 和 BBC 最新资讯并让 AI 写成中文稿，全部进「待审核」，由管理员发布；顺带跑一次 AI 精选。在后台跑，用 GET 查进度。"""
     if news_status(session)["running"]:
         raise APIError(409, "NEWS_BUSY", "已有一次抓取正在进行，完成后会显示结果")
     write_audit(session, admin.id, STARTED, "content")
