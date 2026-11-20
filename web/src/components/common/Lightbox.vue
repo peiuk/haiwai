@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Lightbox：图片灯箱（X 平台式）。点背景 / Esc / 关闭按钮关闭，多图左右切换，键盘 ← → 切换。
+// Lightbox：图片灯箱（X 平台式）。点背景 / Esc / 关闭按钮关闭，多图左右切换，键盘 ← → 切换，手机上左右滑动切换。
 // initial-index 从 -1 变为 >=0 时打开；关闭回传 close 事件。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import BaseIcon from "../base/BaseIcon.vue";
@@ -45,6 +45,26 @@ function onKey(e: KeyboardEvent): void {
   else if (e.key === "ArrowRight") next();
 }
 
+// 手机上左右滑动切换：横向位移 > 50px 且比纵向大才算；在视频上滑不算（会和拖进度条冲突），两指缩放也不算
+let touchX = 0;
+let touchY = 0;
+let swipeable = false;
+
+function onTouchStart(e: TouchEvent): void {
+  swipeable = e.touches.length === 1 && !(e.target instanceof HTMLVideoElement);
+  touchX = e.touches[0].clientX;
+  touchY = e.touches[0].clientY;
+}
+
+function onTouchEnd(e: TouchEvent): void {
+  if (!swipeable) return;
+  const dx = e.changedTouches[0].clientX - touchX;
+  const dy = e.changedTouches[0].clientY - touchY;
+  if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+  if (dx < 0) next();
+  else prev();
+}
+
 onMounted(() => {
   window.addEventListener("keydown", onKey);
 });
@@ -63,6 +83,8 @@ onBeforeUnmount(() => {
       aria-modal="true"
       :aria-label="`${alt} 图片预览`"
       @click.self="close"
+      @touchstart.passive="onTouchStart"
+      @touchend="onTouchEnd"
     >
       <button type="button" class="lightbox-close" aria-label="关闭预览" @click="close">
         <BaseIcon name="i-close" :size="24" />
