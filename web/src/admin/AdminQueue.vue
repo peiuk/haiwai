@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 举报（mode=reports）与待审核（mode=review）共用一份队列数据。
-import { ref } from "vue";
+import { onUnmounted, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { jsonBody, toMessage } from "../api";
+import { ApiRequestError, jsonBody, toMessage } from "../api";
 import { useToastStore } from "../stores/toast";
 import { ADMIN_CHANGED, adminRequest } from "./adminApi";
 import { confirmAction } from "./confirm";
@@ -56,29 +56,50 @@ async function load(): Promise<void> {
 const { busy, act, ask } = useAdminAction(load);
 void load();
 
-// 抓取 GOV.UK 和 BBC 最新资讯，AI 写成中文稿后放进下面的待审列表（要等几十秒）
+// 抓取 GOV.UK 和 BBC 最新资讯，AI 写成中文稿后放进下面的待审列表。要两三分钟，后台在服务器上跑，这里每 5 秒问一次进度
+const NEWS_API = "/api/v1/admin/ingest/news";
+type NewsStatus = { running: boolean; ok: boolean | null; detail: string | null };
 const fetching = ref(false);
 const fetchNote = ref("");
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+async function pollNews(): Promise<void> {
+  try {
+    const status = await adminRequest<NewsStatus>(NEWS_API);
+    if (status.running) {
+      fetching.value = true;
+      fetchNote.value = "正在抓取并让 AI 写中文稿，大约两三分钟；可以先去处理别的，回到这页会接着显示进度。";
+      pollTimer = setTimeout(() => void pollNews(), 5000);
+      return;
+    }
+    if (fetching.value) {
+      fetchNote.value = status.detail ?? "";
+      await load();
+    }
+  } catch (err) {
+    fetchNote.value = toMessage(err);
+  }
+  fetching.value = false;
+}
+
 async function fetchNews(): Promise<void> {
   if (fetching.value) return;
   fetching.value = true;
   fetchNote.value = "";
   try {
-    const result = await adminRequest<{ fetched: number; drafted: number; skipped: number; to_check: number; digest: number }>(
-      "/api/v1/admin/ingest/news",
-      { method: "POST" },
-    );
-    const digest = result.digest ? "已把之前通过的资讯汇成「今日英国要闻」发布。" : "";
-    fetchNote.value = result.fetched
-      ? `新抓到 ${result.fetched} 条，生成 ${result.drafted} 条中文稿（${result.skipped} 条和华人生活关系不大，已跳过）${result.to_check ? `，其中 ${result.to_check} 条数字需要对照原文` : ""}。${digest}`
-      : `GOV.UK 和 BBC 暂时没有新资讯。${digest}`;
-    await load();
+    await adminRequest<NewsStatus>(NEWS_API, { method: "POST" });
   } catch (err) {
-    fetchNote.value = toMessage(err);
-  } finally {
-    fetching.value = false;
+    if (!(err instanceof ApiRequestError && err.code === "NEWS_BUSY")) {
+      fetchNote.value = toMessage(err);
+      fetching.value = false;
+      return;
+    }
   }
+  await pollNews();
 }
+
+onUnmounted(() => clearTimeout(pollTimer));
+if (props.mode === "review") void pollNews(); // 离开时还在抓，回来接着显示
 
 function path(kind: Kind, id: string): string {
   return `/api/v1/moderation/${kind}${id}/decision`;

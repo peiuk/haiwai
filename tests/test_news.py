@@ -206,6 +206,8 @@ def test_openai_compatible_provider(monkeypatch):
     sent = {}
 
     class Reply:
+        status_code = 200
+
         def __init__(self, content: str):
             self.content = content
 
@@ -249,8 +251,9 @@ def test_endpoint_needs_admin_and_key(client, monkeypatch):
     token = register(client, "news-user@example.com")
     assert client.post("/api/v1/admin/ingest/news", headers=headers(token)).status_code == 403
     admin = make_admin(client, "news-boss@example.com")
-    response = client.post("/api/v1/admin/ingest/news", headers=headers(admin))
-    assert response.status_code == 503 and response.json()["code"] == "NEWS_UNAVAILABLE"
+    assert client.post("/api/v1/admin/ingest/news", headers=headers(admin)).status_code == 202  # 在后台跑
+    status = client.get("/api/v1/admin/ingest/news", headers=headers(admin)).json()
+    assert status["ok"] is False and "LLM_API_KEY" in status["detail"]
     session = client.session_factory()
     assert session.scalar(select(Content).where(Content.type == "news")) is None  # 什么都没写
     session.close()
