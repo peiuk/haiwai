@@ -29,7 +29,7 @@ const error = ref("");
 const names = ref<string[]>([]);
 const progress = ref(0);
 const step = ref("");
-// 这次刚传上的图，缩略图上闪一下 ✓（编辑时原有的图不闪）
+// 这次刚传上的图，缩略图上闪一下对勾（编辑时原有的图不闪）
 const justAdded = ref(new Set<string>());
 
 const EXT_TYPE: Record<string, string> = {
@@ -226,7 +226,7 @@ function remove(index: number): void {
 .mu-step {
   font-size: var(--fs-11);
 }
-/* 刚传完的图：✓ 弹出来，1.5 秒后淡掉 */
+/* 刚传完的图：对勾弹出来，1.5 秒后淡掉 */
 .mu-done {
   position: absolute;
   inset: 0;

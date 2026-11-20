@@ -550,7 +550,7 @@ async function submit(): Promise<void> {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-/* 刚传完的图：✓ 弹出来再淡掉 */
+/* 刚传完的图：对勾弹出来再淡掉 */
 .home-compose-done {
   position: absolute;
   inset: 0;
