@@ -2,6 +2,7 @@
 // 帖子详情：弹窗（信息流点开）与独立页（/content/:id）共用一套模板。
 // 结构对齐 X 的帖子详情：作者 → 正文 → 图片/视频 → 发布时间 → 互动栏 → 回复列表 → 底部回复框。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { pauseAllVideos } from "../utils/video";
 import {
   jsonBody,
   request,
@@ -399,7 +400,14 @@ async function toggleCommentLike(comment: RoomComment): Promise<void> {
   }
 }
 
-watch(() => props.contentId, () => void loadDetail(), { immediate: true });
+watch(
+  () => props.contentId,
+  (id) => {
+    if (id) pauseAllVideos(); // 详情盖在信息流上，下面的视频不停会和这里的一起响
+    void loadDetail();
+  },
+  { immediate: true },
+);
 watch(detail, async (value) => {
   if (value && !props.standalone && window.innerWidth > 760) {
     await nextTick();

@@ -2,7 +2,7 @@
 // PostCard：信息流帖子卡（X 式），对齐 MASTER §17.3 与 prototype-x-style.html 的 .card。
 // 结构：头像 + card-head（频道名/官方徽章/handle/时间/置顶）+ 正文 + 媒体网格 + 来源行 + 图标操作栏。
 // FeedTab（关注流）与 RecommendTab（推荐流）共用；差异通过可选 props 表达。
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import Avatar from "../base/Avatar.vue";
 import BaseIcon from "../base/BaseIcon.vue";
 import BaseTag from "../base/BaseTag.vue";
@@ -187,6 +187,9 @@ onMounted(() => {
     if (videoEl.value) observer.observe(videoEl.value);
   }
 });
+
+// 首页被缓存（KeepAlive）时卡片不会卸载，切到别的页面视频要手动停，否则在后台继续出声
+onDeactivated(() => videoEl.value?.pause());
 
 onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", onDocPointer);

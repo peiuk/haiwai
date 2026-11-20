@@ -12,6 +12,22 @@ function unmuteWaiting(e: Event): void {
   waiting.clear();
 }
 
+// 任何视频开始放（包括详情页、大图里用户自己点的），页面上其他视频都停，避免两个一起响。play 不冒泡，用捕获。
+document.addEventListener(
+  "play",
+  (e) => {
+    document.querySelectorAll("video").forEach((v) => v !== e.target && v.pause());
+    if (current && current !== e.target) current.pause(); // 缓存起来的首页已不在页面里，querySelectorAll 找不到它
+  },
+  true,
+);
+
+/** 打开详情等盖在信息流上面的页面时调用：下面的视频还算「看得见」，不手动停会一直放。 */
+export function pauseAllVideos(): void {
+  document.querySelectorAll("video").forEach((v) => v.pause());
+  current?.pause();
+}
+
 export function playWithSound(v: HTMLVideoElement): Promise<void> {
   if (current && current !== v) current.pause();
   current = v;
