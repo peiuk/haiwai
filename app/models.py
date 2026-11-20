@@ -165,6 +165,9 @@ class Content(Base):
     featured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # AI 自动设的精选到这个时间取消（见 app/ai_featured.py）；人工设的精选为空，不过期。
     ai_featured_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # AI 觉得放错频道时建议移去的频道和理由（见 app/ai_tags.py）；管理员移过去或忽略后清空。
+    ai_channel_id: Mapped[str | None] = mapped_column(String(36))
+    ai_channel_reason: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

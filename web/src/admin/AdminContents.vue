@@ -24,6 +24,8 @@ type Row = {
   featured: boolean;
   /** 不为空 = AI 设的精选，到这个时间自动取消 */
   ai_featured_until: string | null;
+  /** AI 觉得放错频道时建议移去的频道（管理员确认后才移） */
+  ai_channel: { name: string; reason: string } | null;
   created_at: string;
 };
 
@@ -103,6 +105,11 @@ async function exportCsv(): Promise<void> {
 
 function restore(item: Row): Promise<void> {
   return act(item.content_id, `/api/v1/admin/contents/${item.content_id}/status`, { action: "restore" }, "已恢复");
+}
+
+function decideChannel(item: Row, action: "move" | "dismiss"): Promise<void> {
+  const done = action === "move" ? `已移到「${item.ai_channel?.name}」，并通知了作者` : "已忽略这条建议";
+  return act(item.content_id, `/api/v1/admin/contents/${item.content_id}/ai-channel`, { action }, done);
 }
 
 function feature(item: Row): Promise<void> {
@@ -220,6 +227,11 @@ async function publish(): Promise<void> {
                   class="tag tag--link"
                   :title="item.ai_featured_until ? `AI 自动设的，${new Date(item.ai_featured_until).toLocaleDateString()} 自动取消` : undefined"
                 >{{ item.ai_featured_until ? "AI 精选" : "精选" }}</span>
+                <div v-if="item.ai_channel" class="adm-sub">
+                  AI 建议移到「{{ item.ai_channel.name }}」<template v-if="item.ai_channel.reason">：{{ item.ai_channel.reason }}</template>
+                  <button type="button" class="btn btn--outline btn--sm" :disabled="busy === item.content_id" @click="decideChannel(item, 'move')">移过去</button>
+                  <button type="button" class="btn btn--ghost btn--sm" :disabled="busy === item.content_id" @click="decideChannel(item, 'dismiss')">忽略</button>
+                </div>
               </td>
               <td v-if="showType" class="adm-nowrap">{{ TYPE_LABELS[item.type] ?? item.type }}</td>
               <td class="adm-nowrap">{{ item.author_name || "—" }}</td>

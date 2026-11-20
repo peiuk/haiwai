@@ -1,11 +1,12 @@
 import json
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.ai_tags import tag_in_background
 from app.embed import embed_fields
 from app.api.v1.auth import current_user, optional_user, require_verified_phone
 from app.api.v1.channels import TextBody  # 标题 + 正文的长度规则只留这一份
@@ -143,6 +144,7 @@ def _approved_posts(session: Session, user_id: str) -> int:
 @router.post("/contents")
 def create_post(
     body: PostBody,
+    background: BackgroundTasks,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
@@ -244,6 +246,7 @@ def create_post(
         if status == "published":
             notify_room_update(session, channel, content)
     session.commit()
+    background.add_task(tag_in_background, session.get_bind(), content.id)  # AI 补关键词、看频道放没放对，不让用户等
     return {
         "content_id": content.id,
         "status": content.status,
@@ -296,6 +299,7 @@ EDITABLE_TYPES = ("post", "video", "embed")  # 分类信息有自己的字段，
 def edit_content(
     content_id: str,
     body: EditBody,
+    background: BackgroundTasks,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
@@ -333,6 +337,7 @@ def edit_content(
         content.published_at = None  # 重新算作没发布过：房主的投稿队列和后台队列靠它分辨
     write_audit(session, user.id, "content.edit", "content", content.id)
     session.commit()
+    background.add_task(tag_in_background, session.get_bind(), content.id)
     return {"content_id": content.id, "status": content.status, "keywords": words}
 
 

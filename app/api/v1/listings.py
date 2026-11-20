@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload
@@ -16,6 +16,7 @@ from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.core.regions import region_name
 from app.guard import first_status
 from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, image_keys_of, like_counts, reaction_flags, repost_context
+from app.ai_tags import tag_in_background
 from app.keywords import clean_city_topic, dump_keywords, resolve_keywords
 from app.models import Channel, ChannelItem, ChannelSubscription, ContactView, Content, ContentReaction, ListingExt, User, new_id, utcnow
 from app.recommend import country_blocked, effective_region, is_roaming
@@ -174,6 +175,7 @@ def _visible(channel: Channel, region: str) -> bool:
 @router.post("/listings")
 def create_listing(
     body: ListingBody,
+    background: BackgroundTasks,
     user: User = Depends(current_user),
     session: Session = Depends(get_db),
 ) -> dict[str, object]:
@@ -233,6 +235,7 @@ def create_listing(
     session.add(ChannelItem(channel_id=channel.id, content_id=content.id, added_at=now))
     write_audit(session, user.id, "listing.create", "content", content.id)
     session.commit()
+    background.add_task(tag_in_background, session.get_bind(), content.id)  # AI 补关键词；分类信息不看频道
     return {
         "content_id": content.id,
         "status": content.status,

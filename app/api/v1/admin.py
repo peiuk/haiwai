@@ -721,6 +721,10 @@ def list_contents(
             .where(ChannelItem.content_id.in_([row.id for row in rows]))
         ).all()
     )
+    suggested = {row.ai_channel_id for row in rows if row.ai_channel_id}
+    suggested_names = (
+        dict(session.execute(select(Channel.id, Channel.name_hans).where(Channel.id.in_(suggested))).all()) if suggested else {}
+    )
     return {
         "total": total,
         "page_size": PAGE,
@@ -735,6 +739,12 @@ def list_contents(
                 "view_count": row.view_count or 0,
                 "featured": row.featured_at is not None,
                 "ai_featured_until": row.ai_featured_until,  # 不为空 = AI 设的精选，到这个时间自动取消
+                # AI 建议移去的频道（见 app/ai_tags.py）；频道已经被删的就不显示
+                "ai_channel": (
+                    {"name": suggested_names[row.ai_channel_id], "reason": row.ai_channel_reason or ""}
+                    if row.ai_channel_id in suggested_names
+                    else None
+                ),
                 "created_at": row.created_at,
             }
             for row in rows
@@ -805,6 +815,49 @@ def set_content_featured(
     write_audit(session, admin.id, "admin.content.feature" if body.featured else "admin.content.unfeature", "content", content.id)
     session.commit()
     return {"content_id": content.id, "featured": body.featured}
+
+
+class AiChannelBody(BaseModel):
+    action: Literal["move", "dismiss"]
+
+
+@guarded.post("/contents/{content_id}/ai-channel")
+def decide_ai_channel(
+    content_id: str,
+    body: AiChannelBody,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    """AI 建议换频道：move 移过去并通知作者，dismiss 忽略。两种都清掉建议。"""
+    content = session.get(Content, content_id)
+    if content is None or content.ai_channel_id is None:
+        raise APIError(404, "NO_SUGGESTION", "这条内容没有待处理的频道建议")
+    target = session.get(Channel, content.ai_channel_id)
+    if body.action == "move":
+        if target is None or not target.is_active:
+            raise APIError(409, "CHANNEL_GONE", "建议的频道已经停用或删除，请点「忽略」")
+        # 只移帖子自己的那一条；房间推到频道的（origin_room_id 不为空）不动
+        home = session.scalar(
+            select(ChannelItem).where(ChannelItem.content_id == content.id, ChannelItem.origin_room_id.is_(None)).limit(1)
+        )
+        if home is None:
+            raise APIError(409, "NO_CHANNEL", "这条内容不在任何频道里")
+        if home.channel_id != target.id:
+            added_at = home.added_at
+            session.delete(home)
+            session.flush()
+            if session.get(ChannelItem, (target.id, content.id)) is None:
+                session.add(ChannelItem(channel_id=target.id, content_id=content.id, added_at=added_at))
+        notify_user(
+            session, content.author_id, f"你的帖子「{content.title[:30]}」已移到「{target.name_hans}」频道，那里看的人更对口", content.id, admin.id
+        )
+        write_audit(session, admin.id, "admin.content.move", "content", content.id, f"按 AI 建议移到 {target.name_hans}")
+    else:
+        write_audit(session, admin.id, "admin.content.ai_channel_dismiss", "content", content.id)
+    content.ai_channel_id = None
+    content.ai_channel_reason = None
+    session.commit()
+    return {"content_id": content.id, "moved": body.action == "move"}
 
 
 class AnnouncementBody(TextBody):
