@@ -493,8 +493,8 @@ watch(
             v-model="videoKey"
             label="原创视频文件"
             accept="video/mp4,video/webm,video/quicktime"
-            :max-mb="100"
-            hint="mp4 / webm / mov，最大 100MB；上传后才会随帖子提交"
+            :max-mb="200"
+            hint="mp4 / webm / mov，最大 200MB、3 分钟；上传后才会随帖子提交"
           />
           </template>
         </div>

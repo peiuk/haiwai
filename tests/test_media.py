@@ -92,3 +92,23 @@ def test_video_kept_as_is_without_ffmpeg(tmp_path, monkeypatch):
     source = tmp_path / "v.part"
     source.write_bytes(b"\x00\x00\x00\x18ftyp")
     assert media.compress(source, "video/webm") == (source, "video/webm")
+
+
+def test_video_over_3_minutes_rejected(tmp_path, monkeypatch):
+    monkeypatch.setattr(media.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(media, "_duration", lambda ffmpeg, source: 181.0)
+    ran = []
+    monkeypatch.setattr(media.subprocess, "run", lambda *a, **k: ran.append(a))
+    source = tmp_path / "v.part"
+    source.write_bytes(b"\x00\x00\x00\x18ftyp")
+    with pytest.raises(media.MediaError, match="3 分钟"):
+        media.compress(source, "video/mp4")
+    assert ran == []  # 没开始转码
+
+
+def test_unknown_duration_is_not_rejected(tmp_path, monkeypatch):
+    class Probe:
+        stdout = "N/A\n"
+
+    monkeypatch.setattr(media.subprocess, "run", lambda *a, **k: Probe())
+    assert media._duration("/usr/bin/ffmpeg", tmp_path / "v.part") == 0.0

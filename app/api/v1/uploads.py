@@ -19,14 +19,14 @@ from app.models import UploadObject, User, new_id, utcnow
 router = APIRouter(prefix="/uploads")
 MAX_OPEN_SLOTS = 20
 DAILY_SLOTS = 100  # 一个人 24 小时内最多申请这么多次上传
-DAILY_VIDEO_SLOTS = 10  # 其中视频单独封顶：100 次全传 100MB 视频就是 10GB，几个号能把磁盘写满
+DAILY_VIDEO_SLOTS = 10  # 其中视频单独封顶：100 次全传 200MB 视频就是 20GB，几个号能把磁盘写满
 LIMITS = {
     "image/jpeg": 5_000_000,
     "image/png": 5_000_000,
     "image/webp": 5_000_000,
-    "video/mp4": 100_000_000,
-    "video/webm": 100_000_000,
-    "video/quicktime": 100_000_000,
+    "video/mp4": 200_000_000,  # 约手机 1080p 拍 3 分钟；时长另由 app/media.py 限制在 3 分钟内
+    "video/webm": 200_000_000,
+    "video/quicktime": 200_000_000,
 }
 
 
@@ -203,7 +203,7 @@ async def store_upload(
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > limit:
         raise too_big
-    # 边收边写到临时文件，内存里只留一个数据块（100MB 的视频不再整个读进内存）。
+    # 边收边写到临时文件，内存里只留一个数据块（200MB 的视频不会整个读进内存）。
     temp = upload_root() / f"{key}.part"
     output: Path | None = None
     size = 0

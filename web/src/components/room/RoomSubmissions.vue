@@ -169,8 +169,8 @@ onMounted(() => {
           v-model="videoKey"
           label="视频（可选，1 段）"
           accept="video/mp4,video/webm,video/quicktime"
-          :max-mb="100"
-          hint="mp4 / webm / mov，不超过 100MB"
+          :max-mb="200"
+          hint="mp4 / webm / mov，不超过 200MB、3 分钟"
         />
         <TextField
           id="submission-video-url"

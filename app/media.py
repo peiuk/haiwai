@@ -11,6 +11,7 @@ log = logging.getLogger(__name__)
 IMAGE_MAX_SIDE = 2048  # 长边超过就等比缩小；手机原图 4000px 在网页上看不出区别
 IMAGE_MAX_PIXELS = 60_000_000  # 解码前先看尺寸：5MB 的 PNG 也能声明几亿像素，解开会撑爆内存
 VIDEO_SHORT_SIDE = 720  # 短边（横屏的高、竖屏的宽）超过就缩到 720，要 1080p 改这里
+VIDEO_MAX_SECONDS = 180  # 超过 3 分钟直接拒绝：转码时间可预期，也防有人传超长视频占满 CPU
 VIDEO_TIMEOUT = 240  # 秒；要比 web/nginx.conf 的 proxy_read_timeout 300s 短，超时给用户明确的错误
 
 
@@ -47,6 +48,8 @@ def _to_mp4(source: Path, content_type: str) -> tuple[Path, str]:
         # shortcut: 本机开发没装 ffmpeg 时按原文件存；Docker 镜像里装了（见 Dockerfile），线上一定会转码
         log.warning("没有找到 ffmpeg，视频按原文件存储，没有压缩")
         return source, content_type
+    if _duration(ffmpeg, source) > VIDEO_MAX_SECONDS:
+        raise MediaError(f"视频不能超过 {VIDEO_MAX_SECONDS // 60} 分钟")
     out = source.with_suffix(".mp4")
     side = VIDEO_SHORT_SIDE
     # 只缩不放大；-2 / trunc(...)*2 保证宽高是偶数（H.264 的要求）
@@ -72,3 +75,19 @@ def _to_mp4(source: Path, content_type: str) -> tuple[Path, str]:
         log.info("ffmpeg 转码失败: %s", exc.stderr.decode(errors="replace")[-500:])
         raise MediaError("视频无法解码") from exc
     return out, "video/mp4"
+
+
+def _duration(ffmpeg: str, source: Path) -> float:
+    """视频时长（秒）。读不出（如录屏的 webm 不写时长）返回 0，交给转码超时兜底。"""
+    ffprobe = shutil.which("ffprobe") or str(Path(ffmpeg).with_name("ffprobe"))
+    try:
+        probe = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(source)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return 0.0
+    try:
+        return float(probe.stdout.strip())
+    except ValueError:
+        return 0.0
