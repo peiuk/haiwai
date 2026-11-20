@@ -5,6 +5,8 @@
 import { ref } from "vue";
 import { uploadFile } from "../../api";
 import { useToastStore } from "../../stores/toast";
+import BaseIcon from "../base/BaseIcon.vue";
+import Progress from "../base/Progress.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -25,6 +27,8 @@ const toast = useToastStore();
 const busy = ref(false);
 const error = ref("");
 const fileName = ref("");
+const pendingName = ref("");
+const progress = ref(0);
 
 const EXT_TYPE: Record<string, string> = {
   jpg: "image/jpeg",
@@ -60,13 +64,15 @@ async function onFile(event: Event): Promise<void> {
     return;
   }
   busy.value = true;
+  progress.value = 0;
+  pendingName.value = file.name;
   try {
-    const key = await uploadFile(file, contentType);
+    const key = await uploadFile(file, contentType, (p) => (progress.value = p));
     fileName.value = file.name;
     emit("update:modelValue", key);
-    toast.show("文件已上传，提交后才会公开");
+    toast.show(`「${file.name}」已上传，提交后才会公开`);
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "上传没有成功";
+    error.value = `「${file.name}」${err instanceof Error ? err.message : "上传没有成功"}`;
     input.value = "";
   } finally {
     busy.value = false;
@@ -92,11 +98,20 @@ function clear(): void {
       @change="onFile"
     />
     <p v-if="hint" class="field-hint">{{ hint }}</p>
-    <p v-if="busy" class="field-status" aria-live="polite">上传中…</p>
-    <p v-else-if="modelValue" class="field-status" aria-live="polite">
-      已上传：{{ fileName || modelValue }}
-      <button type="button" class="clear-btn" :disabled="disabled" @click="clear">移除</button>
-    </p>
+    <div v-if="busy" class="upload-card" aria-live="polite">
+      <span class="upload-name">{{ pendingName }}</span>
+      <Progress :value="progress" :pending="progress >= 100" :label="`${pendingName} 上传进度`" />
+      <span class="upload-state">{{ progress >= 100 ? "处理中…（压缩需要一会儿）" : `上传中 ${progress}%` }}</span>
+    </div>
+    <div v-else-if="modelValue" :key="modelValue" class="upload-card is-done" aria-live="polite">
+      <span class="upload-name">
+        <span class="upload-check"><BaseIcon name="i-check" :size="12" /></span>
+        {{ fileName || modelValue }}
+      </span>
+      <span class="upload-state">已上传
+        <button type="button" class="clear-btn" :disabled="disabled" @click="clear">移除</button>
+      </span>
+    </div>
     <p v-if="error" class="field-error" role="alert">{{ error }}</p>
   </div>
 </template>
@@ -132,6 +147,57 @@ label {
 }
 .field-error {
   color: var(--danger);
+}
+.upload-card {
+  display: grid;
+  gap: 4px;
+  padding: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface2);
+  font-size: var(--fs-12);
+}
+.upload-card.is-done {
+  border-color: var(--accent);
+  animation: upload-done 0.4s var(--ease-out, ease-out);
+}
+.upload-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.upload-state {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.upload-check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  animation: upload-pop 0.35s var(--ease-out, ease-out);
+}
+@keyframes upload-done {
+  from { background: var(--accent-soft); }
+}
+@keyframes upload-pop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.25); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .upload-card.is-done,
+  .upload-check { animation: none; }
 }
 .clear-btn {
   min-height: var(--tap);

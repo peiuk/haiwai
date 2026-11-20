@@ -200,16 +200,32 @@ export function jsonBody(value: unknown): RequestInit {
   };
 }
 
-/** 上传链路：POST /uploads/sign 申请名额 → PUT 原文件 → 返回 object_key。 */
-export async function uploadFile(file: File, contentType?: string): Promise<string> {
+/** 上传链路：POST /uploads/sign 申请名额 → PUT 原文件 → 返回 object_key。
+ *  onProgress 给 0-100 的发送进度；到 100 之后服务器还要压缩转码，界面应显示「处理中」。 */
+export async function uploadFile(
+  file: File,
+  contentType?: string,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
   const type = contentType ?? file.type;
   const signed = await request<UploadSignResponse>("/api/v1/uploads/sign", jsonBody({ content_type: type }));
-  const put = await fetch(signed.upload_url, {
-    method: "PUT",
-    headers: { "Content-Type": signed.content_type, ...authHeaders() },
-    body: file,
+  // fetch 拿不到上传进度，PUT 改用 XHR
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", signed.upload_url);
+    for (const [name, value] of Object.entries({ "Content-Type": signed.content_type, ...authHeaders() })) {
+      xhr.setRequestHeader(name, value);
+    }
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = async () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      reject(await parseError(new Response(xhr.responseText, { status: xhr.status })));
+    };
+    xhr.onerror = () => reject(new ApiRequestError(0, "NETWORK_ERROR", "网络中断，上传没有成功"));
+    xhr.send(file);
   });
-  if (!put.ok) throw await parseError(put);
   return signed.object_key;
 }
 

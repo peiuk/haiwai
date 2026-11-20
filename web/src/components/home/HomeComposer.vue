@@ -11,6 +11,7 @@ import { useAuthStore } from "../../stores/auth";
 import { useToastStore } from "../../stores/toast";
 import Avatar from "../base/Avatar.vue";
 import BaseIcon from "../base/BaseIcon.vue";
+import Progress from "../base/Progress.vue";
 
 const auth = useAuthStore();
 const toast = useToastStore();
@@ -32,7 +33,12 @@ const cityTopic = ref("");
 const cityInited = ref(false);
 const imageKeys = ref<string[]>([]);
 const imageBusy = ref(false);
+const imageProgress = ref(0);
+const justAdded = ref(new Set<string>());
 const videoKey = ref("");
+const videoName = ref("");
+const videoBusy = ref(false);
+const videoProgress = ref(0);
 const busy = ref(false);
 const error = ref("");
 
@@ -62,6 +68,8 @@ function triggerImage(): void {
   document.getElementById("home-composer-image")?.click();
 }
 function triggerVideo(): void {
+  // 工具栏点「视频」也切到视频帖，否则传上去的视频发帖时不会带上
+  setType("video");
   document.getElementById("home-composer-video")?.click();
 }
 
@@ -77,9 +85,11 @@ async function onImage(e: Event): Promise<void> {
   imageBusy.value = true;
   let failed = 0;
   for (const file of picked) {
+    imageProgress.value = 0;
     try {
-      const key = await uploadFile(file);
+      const key = await uploadFile(file, undefined, (p) => (imageProgress.value = p));
       imageKeys.value.push(key);
+      justAdded.value.add(key);
     } catch (err) {
       failed += 1;
     }
@@ -101,14 +111,25 @@ async function onVideo(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
+  videoBusy.value = true;
+  videoProgress.value = 0;
+  videoName.value = file.name;
+  videoKey.value = "";
   try {
-    videoKey.value = await uploadFile(file);
-    toast.show("视频已上传，提交发布后才会公开");
+    videoKey.value = await uploadFile(file, undefined, (p) => (videoProgress.value = p));
+    toast.show(`视频「${file.name}」已上传，提交发布后才会公开`);
   } catch (err) {
-    toast.show(err instanceof Error ? err.message : "视频上传没有成功");
+    videoName.value = "";
+    toast.show(`视频「${file.name}」${err instanceof Error ? err.message : "上传没有成功"}`);
   } finally {
+    videoBusy.value = false;
     input.value = "";
   }
+}
+
+function removeVideo(): void {
+  videoKey.value = "";
+  videoName.value = "";
 }
 
 const emit = defineEmits<{ (e: "published"): void }>();
@@ -149,6 +170,7 @@ async function submit(): Promise<void> {
     title.value = "";
     imageKeys.value = [];
     videoKey.value = "";
+    videoName.value = "";
     bg.value = "";
     currentType.value = "text";
     open.value = false;
@@ -239,13 +261,33 @@ async function submit(): Promise<void> {
         <div v-if="imageKeys.length" class="home-compose-thumbs" aria-label="已选择的图片">
           <div v-for="(key, i) in imageKeys" :key="key" class="home-compose-thumb">
             <img :src="`/api/v1/uploads/${key}`" :alt="`已上传图片 ${i + 1}`" loading="lazy" />
+            <span v-if="justAdded.has(key)" class="home-compose-done" aria-hidden="true"><BaseIcon name="i-check" :size="14" /></span>
             <button type="button" :aria-label="`移除第 ${i + 1} 张图片`" @click="removeImage(i)">
               <BaseIcon name="i-close" :size="14" />
             </button>
           </div>
-          <div v-if="imageBusy" class="home-compose-thumb home-compose-thumb--busy" aria-label="图片上传中">
-            <BaseIcon name="i-image" :size="18" />
+          <div v-if="imageBusy" class="home-compose-thumb home-compose-thumb--busy" aria-live="polite">
+            <span>{{ imageProgress >= 100 ? "处理中" : `${imageProgress}%` }}</span>
+            <Progress :value="imageProgress" :pending="imageProgress >= 100" label="图片上传进度" />
           </div>
+        </div>
+
+        <!-- 视频：上传中显示文件名 + 进度，传完打勾 -->
+        <div v-if="videoBusy || videoKey" :key="videoKey || 'busy'" class="home-compose-video" :class="{ 'is-done': !videoBusy }" aria-live="polite">
+          <span class="home-compose-video-icon">
+            <BaseIcon :name="videoBusy ? 'i-video' : 'i-check'" :size="16" />
+          </span>
+          <div class="home-compose-video-info">
+            <span class="home-compose-video-name">{{ videoName || "视频" }}</span>
+            <template v-if="videoBusy">
+              <Progress :value="videoProgress" :pending="videoProgress >= 100" :label="`${videoName} 上传进度`" />
+              <span class="home-compose-video-state">{{ videoProgress >= 100 ? "处理中…（压缩需要一会儿）" : `上传中 ${videoProgress}%` }}</span>
+            </template>
+            <span v-else class="home-compose-video-state">已上传</span>
+          </div>
+          <button v-if="!videoBusy" type="button" :aria-label="`移除视频 ${videoName}`" @click="removeVideo">
+            <BaseIcon name="i-close" :size="14" />
+          </button>
         </div>
       </div>
 
@@ -265,7 +307,7 @@ async function submit(): Promise<void> {
         <button
           type="button"
           class="home-compose-submit"
-          :disabled="!canPublish || busy"
+          :disabled="!canPublish || busy || imageBusy || videoBusy"
           @click="submit"
         >
           {{ busy ? "发布中…" : "发布" }}
@@ -500,13 +542,108 @@ async function submit(): Promise<void> {
 }
 .home-compose-thumb--busy {
   display: grid;
-  place-items: center;
+  align-content: center;
+  gap: 6px;
+  padding: 0 8px;
   color: var(--muted);
-  animation: thumb-pulse 1s var(--ease-out) infinite;
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
-@keyframes thumb-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+/* 刚传完的图：✓ 弹出来再淡掉 */
+.home-compose-done {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  pointer-events: none;
+  animation: compose-done 1.8s var(--ease-out, ease-out) forwards;
+}
+@keyframes compose-done {
+  0% { transform: scale(0); opacity: 1; }
+  15% { transform: scale(1.2); }
+  25%, 75% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
+}
+.home-compose-video {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface2);
+}
+.home-compose-video.is-done {
+  border-color: var(--accent);
+  animation: compose-video-done 0.4s var(--ease-out, ease-out);
+}
+@keyframes compose-video-done {
+  from { background: var(--accent-soft); }
+}
+.home-compose-video-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.home-compose-video.is-done .home-compose-video-icon {
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  animation: compose-pop 0.35s var(--ease-out, ease-out);
+}
+@keyframes compose-pop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.2); }
+}
+.home-compose-video-info {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.home-compose-video-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+.home-compose-video-state {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.home-compose-video button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.home-compose-video button:hover {
+  background: var(--hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-compose-done { animation: none; opacity: 0; }
+  .home-compose-video.is-done,
+  .home-compose-video.is-done .home-compose-video-icon { animation: none; }
 }
 .home-compose-toolbar {
   display: flex;

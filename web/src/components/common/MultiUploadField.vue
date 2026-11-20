@@ -5,6 +5,7 @@ import { computed, ref } from "vue";
 import { toMessage, uploadFile } from "../../api";
 import { useToastStore } from "../../stores/toast";
 import BaseIcon from "../base/BaseIcon.vue";
+import Progress from "../base/Progress.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -26,6 +27,10 @@ const toast = useToastStore();
 const busy = ref(false);
 const error = ref("");
 const names = ref<string[]>([]);
+const progress = ref(0);
+const step = ref("");
+// 这次刚传上的图，缩略图上闪一下 ✓（编辑时原有的图不闪）
+const justAdded = ref(new Set<string>());
 
 const EXT_TYPE: Record<string, string> = {
   jpg: "image/jpeg",
@@ -66,10 +71,13 @@ async function onFile(event: Event): Promise<void> {
   try {
     const keys: string[] = [];
     const added: string[] = [];
-    for (const file of picked) {
-      const key = await uploadFile(file, resolveType(file));
+    for (const [i, file] of picked.entries()) {
+      step.value = `${i + 1}/${picked.length}`;
+      progress.value = 0;
+      const key = await uploadFile(file, resolveType(file), (p) => (progress.value = p));
       keys.push(key);
       added.push(file.name);
+      justAdded.value.add(key);
     }
     emit("update:modelValue", [...props.modelValue, ...keys].slice(0, props.max));
     names.value = [...names.value, ...added].slice(0, props.max);
@@ -100,13 +108,16 @@ function remove(index: number): void {
       <li v-for="(key, index) in modelValue" :key="key" class="mu-tile">
         <img :src="`/api/v1/uploads/${key}`" :alt="`第 ${index + 1} 张图片预览`" :title="names[index] || undefined" loading="lazy" />
         <span v-if="index === 0 && max > 1" class="mu-cover">封面</span>
+        <span v-if="justAdded.has(key)" class="mu-done" aria-hidden="true"><BaseIcon name="i-check" :size="16" /></span>
         <button type="button" class="mu-remove" :disabled="disabled" :aria-label="`移除第 ${index + 1} 张图片`" @click="remove(index)">
           <BaseIcon name="i-close" :size="14" />
         </button>
       </li>
       <li v-if="busy" class="mu-tile mu-busy" aria-live="polite">
         <BaseIcon name="i-image" :size="22" />
-        <span>上传中…</span>
+        <span>{{ progress >= 100 ? "处理中…" : `上传中 ${progress}%` }}</span>
+        <Progress class="mu-bar" :value="progress" :pending="progress >= 100" :label="`第 ${step} 张上传进度`" />
+        <span class="mu-step">第 {{ step }} 张</span>
       </li>
       <li v-else-if="!atLimit">
         <!-- 真正的 input 藏起来但仍可 Tab 聚焦，点整块虚线框就是选图 -->
@@ -203,16 +214,41 @@ function remove(index: number): void {
 .mu-busy {
   align-content: center;
   gap: 4px;
+  padding: 0 10px;
   border: 1px dashed var(--line);
   color: var(--muted);
   font-size: var(--fs-12);
-  animation: mu-pulse 1.2s ease-in-out infinite;
+  font-variant-numeric: tabular-nums;
 }
-@keyframes mu-pulse {
-  50% { opacity: 0.55; }
+.mu-bar {
+  width: 100%;
+}
+.mu-step {
+  font-size: var(--fs-11);
+}
+/* 刚传完的图：✓ 弹出来，1.5 秒后淡掉 */
+.mu-done {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  pointer-events: none;
+  animation: mu-done 1.8s var(--ease-out, ease-out) forwards;
+}
+@keyframes mu-done {
+  0% { transform: scale(0); opacity: 1; }
+  15% { transform: scale(1.2); }
+  25%, 75% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mu-busy { animation: none; }
+  .mu-done { animation: none; opacity: 0; }
 }
 .mu-input {
   position: absolute;
