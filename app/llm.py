@@ -60,10 +60,11 @@ def _openai_compatible(settings, system: str, prompt: str, schema: type[T]) -> T
     url = f"{settings.llm_api_base.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
     try:
-        response = httpx.post(url, headers=headers, json=body, timeout=180)
+        # 300 秒：每日资讯给 GOV.UK 稿写几百字正文，一次输出上万字；nginx 的 proxy_read_timeout 也是 300
+        response = httpx.post(url, headers=headers, json=body, timeout=300)
         if response.status_code == 400:  # 不支持 reasoning_effort 的模型会拒收，去掉再试一次
             body.pop("reasoning_effort")
-            response = httpx.post(url, headers=headers, json=body, timeout=180)
+            response = httpx.post(url, headers=headers, json=body, timeout=300)
         response.raise_for_status()
         return schema.model_validate_json(response.json()["choices"][0]["message"]["content"])
     except httpx.HTTPError as err:

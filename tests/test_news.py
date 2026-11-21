@@ -150,6 +150,38 @@ def test_same_article_in_two_feeds_is_drafted_once(client):
     session.close()
 
 
+def test_govuk_drafts_get_longer_body_bbc_does_not(client, monkeypatch):
+    """GOV.UK 开放许可：取正文给 AI，存几百字正文；BBC 有版权，AI 写了正文也不存。正文里的数字也要对得上原文。"""
+    channels(client)
+    seen: list[str] = []
+
+    class Page:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"details": {"body": "<p>The fee rises to &pound;524 on 1 April.</p><p>Students are affected.</p>"}}
+
+    monkeypatch.setattr(news.httpx, "get", lambda url, timeout: seen.append(url) or Page())
+    monkeypatch.setattr(
+        news,
+        "ask_json",
+        lambda system, listing, schema, shape: news.Drafts(
+            items=[
+                d.model_copy(update={"body_zh": "签证费4月1日起涨到524英镑。\n\n学生受影响。" if d.scope == "uk" else "BBC 的正文"})
+                for d in fake_write(ITEMS[:3] + ITEMS[4:])
+            ]
+        ),
+    )
+    session = client.session_factory()
+    news.run_daily_news(session, fetch=lambda: ITEMS)
+    rows = {row.title: row for row in session.scalars(select(Content).where(Content.type == "news")).all()}
+    assert seen == ["https://www.gov.uk/api/content/n/visa", "https://www.gov.uk/api/content/n/nhs", "https://www.gov.uk/api/content/n/visit"]
+    assert rows["签证费涨到524英镑"].body.startswith("签证费4月1日起") and rows["签证费涨到524英镑"].ai_status == "ok"
+    assert rows["中欧达成贸易协议"].body is None  # BBC 不存正文
+    session.close()
+
+
 def test_mismatched_ai_items_write_nothing(client):
     channels(client)
 
@@ -194,6 +226,21 @@ def test_fetch_bbc_parses_rss(monkeypatch):
     assert first["url"] == "https://www.bbc.co.uk/news/articles/abc"
     assert first["source"] == "BBC" and first["licence"] == "© BBC"
     assert news._parse_time(first["published"]) == datetime(2026, 11, 19, 8, 0, tzinfo=timezone.utc)
+
+
+def test_fetch_govuk_also_queries_visa_topic(monkeypatch):
+    """全站新闻之外再查「入境和居留英国」话题，签证新闻不会被别的部门挤掉；提示里标明是签证移民。"""
+    calls: list[dict] = []
+
+    class JsonResponse(FakeResponse):
+        def json(self):
+            return {"results": [{"title": "New visa rules", "link": "/government/news/visa", "description": "", "public_timestamp": NOW}]}
+
+    monkeypatch.setattr(news.httpx, "get", lambda url, params, timeout: calls.append(params) or JsonResponse())
+    items = news.fetch_govuk()
+    assert "filter_part_of_taxonomy_tree" not in calls[0] and calls[1]["filter_part_of_taxonomy_tree"]
+    assert [item["hint"] for item in items] == ["英国", "英国·签证移民"]
+    assert items[1]["url"] == "https://www.gov.uk/government/news/visa" and items[1]["source"] == "GOV.UK"
 
 
 def test_one_source_down_does_not_block_others(monkeypatch):

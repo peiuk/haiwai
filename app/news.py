@@ -7,6 +7,7 @@ GOV.UK 是 Open Government Licence v3.0（允许翻译改编，须署名并附�
 `python -m app.news --daily` 常驻、每天伦敦时间 8 点自动跑（docker compose 的 news 服务）。
 """
 import hashlib
+import html
 import re
 import sys
 import time
@@ -35,11 +36,20 @@ BBC_FEEDS = (
     ("https://feeds.bbci.co.uk/news/world/rss.xml", "国际"),
 )
 MAX_ITEMS = 20  # 每个源最多取这么多条
+# GOV.UK 的两次查询：全站新闻按时间只取最新 20 条，签证政策常被别的部门挤掉，
+# 所以再单独查「入境和居留英国」话题（签证、移民、入籍，taxon content_id）。后面的字给 AI 当提示。
+GOVUK_QUERIES = (
+    ({}, "英国"),
+    ({"filter_part_of_taxonomy_tree": "ba3a9702-da22-487f-86c1-8334a730e559"}, "英国·签证移民"),
+)
 
-SYSTEM = """你是华人社区 App「海外圈」的资讯编辑。下面是 GOV.UK 和 BBC 刚发布的新闻（来源、标题和简介，英文）。
+SYSTEM = """你是华人社区 App「海外圈」的资讯编辑。下面是 GOV.UK 和 BBC 刚发布的新闻（来源、标题和简介，英文；GOV.UK 的还附了正文）。
 为每一条写：
 - title_zh：简体中文标题，不超过 30 个字。
-- summary_zh：简体中文摘要，不超过 120 个字，说清发生了什么、谁受影响。
+- summary_zh：简体中文摘要，2～3 句、不超过 150 个字，说清发生了什么、谁受影响；没附正文的（BBC），
+  要把标题和简介里的信息都写进去，不要只写一句。
+- body_zh：附了「正文」的，写 200～400 字的简体中文正文，分 2～4 段（段落之间空一行），讲清背景、具体变化、
+  谁受影响、什么时候生效、要做什么；只写正文里有的内容。没有附正文的（BBC）留空字符串。
 - scope：英国本地的新闻为 "uk"；英国以外的国际新闻为 "international"。
 - relevant：
   · scope 为 uk 时，对在英华人有实际影响（签证移民政策、租房、医疗、税务、教育、交通、工作、治安、物价、福利等）
@@ -54,6 +64,7 @@ class Draft(BaseModel):
     index: int
     title_zh: str  # 不设长度上限：一条写长了不该让整批作废，保存时会截断
     summary_zh: str
+    body_zh: str = ""  # 只有 GOV.UK 的稿子有（开放许可，可以给 AI 看正文）；BBC 有版权，只写摘要
     relevant: bool
     scope: Scope
 
@@ -67,33 +78,38 @@ class NewsUnavailable(Exception):
 
 
 def fetch_govuk(limit: int = MAX_ITEMS) -> list[dict[str, str]]:
-    try:
-        response = httpx.get(
-            GOVUK_SEARCH,
-            params={
-                "filter_content_store_document_type": ["news_story", "press_release"],
-                "order": "-public_timestamp",
-                "count": limit,
-                "fields": "title,link,description,public_timestamp",
-            },
-            timeout=20,
-        )
-        response.raise_for_status()
-    except httpx.HTTPError as err:
-        raise NewsUnavailable(f"GOV.UK 暂时打不开：{err}") from err
-    return [
-        {
-            "title": row.get("title") or "",
-            "description": row.get("description") or "",
-            "url": f"https://www.gov.uk{row['link']}",
-            "published": row.get("public_timestamp") or "",
-            "source": SOURCE,
-            "licence": LICENCE,
-            "hint": "英国",
-        }
-        for row in response.json().get("results", [])
-        if row.get("link") and row.get("title")
-    ]
+    """全站新闻 + 签证移民话题；两边重复的同一篇由 run_daily_news 按链接去重。"""
+    items: list[dict[str, str]] = []
+    for extra, hint in GOVUK_QUERIES:
+        try:
+            response = httpx.get(
+                GOVUK_SEARCH,
+                params={
+                    "filter_content_store_document_type": ["news_story", "press_release"],
+                    "order": "-public_timestamp",
+                    "count": limit,
+                    "fields": "title,link,description,public_timestamp",
+                    **extra,
+                },
+                timeout=20,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as err:
+            raise NewsUnavailable(f"GOV.UK 暂时打不开：{err}") from err
+        items += [
+            {
+                "title": row.get("title") or "",
+                "description": row.get("description") or "",
+                "url": f"https://www.gov.uk{row['link']}",
+                "published": row.get("public_timestamp") or "",
+                "source": SOURCE,
+                "licence": LICENCE,
+                "hint": hint,
+            }
+            for row in response.json().get("results", [])
+            if row.get("link") and row.get("title")
+        ]
+    return items
 
 
 def fetch_bbc(limit: int = MAX_ITEMS) -> list[dict[str, str]]:
@@ -142,14 +158,32 @@ def fetch_all() -> list[dict[str, str]]:
 
 
 JSON_SHAPE = (
-    '\n只输出一个 JSON 对象，不要任何其他文字，格式：{"items":[{"index":0,"title_zh":"…","summary_zh":"…",'
+    '\n只输出一个 JSON 对象，不要任何其他文字，格式：{"items":[{"index":0,"title_zh":"…","summary_zh":"…","body_zh":"…",'
     '"relevant":true,"scope":"uk"}]}。每条输入都要有一项；scope 只能是 uk 或 international。'
 )
+MAX_TEXT = 2500  # 每篇正文最多给 AI 这么多字，控制费用
+
+
+def govuk_text(url: str) -> str:
+    """GOV.UK 内容接口取正文（HTML 去标签）。取不到就返回空，这条只写摘要，不影响整批。"""
+    try:
+        response = httpx.get(url.replace("https://www.gov.uk/", "https://www.gov.uk/api/content/", 1), timeout=20)
+        response.raise_for_status()
+        body = response.json().get("details", {}).get("body") or ""
+    except (httpx.HTTPError, ValueError, AttributeError):
+        return ""
+    text = html.unescape(re.sub(r"<[^>]+>", " ", body if isinstance(body, str) else ""))
+    return re.sub(r"\s+", " ", text).strip()[:MAX_TEXT]
 
 
 def write_drafts(items: list[dict[str, str]]) -> list[Draft]:
+    for item in items:
+        # 写进 item：run_daily_news 核对数字时也要对照正文
+        item["text"] = govuk_text(item["url"]) if item["source"] == SOURCE else ""
     listing = "\n\n".join(
-        f"[{i}] 来源：{item['source']}（{item['hint']}）\n{item['title']}\n{item['description']}" for i, item in enumerate(items)
+        f"[{i}] 来源：{item['source']}（{item['hint']}）\n{item['title']}\n{item['description']}"
+        + (f"\n正文：{item['text']}" if item["text"] else "")
+        for i, item in enumerate(items)
     )
     try:
         return ask_json(SYSTEM, listing, Drafts, JSON_SHAPE).items
@@ -273,13 +307,18 @@ def run_daily_news(session: Session, fetch=None, write=None) -> dict[str, int]:
         channel = _news_channel(session, draft.scope)
         if channel is None:
             continue
-        verified = numbers_match(f"{item['title']} {item['description']}", f"{draft.title_zh} {draft.summary_zh}")
+        # BBC 有版权：就算 AI 写了正文也不存，只留标题和摘要
+        body = draft.body_zh.strip()[:3000] if item["source"] == SOURCE else ""
+        verified = numbers_match(
+            f"{item['title']} {item['description']} {item.get('text', '')}", f"{draft.title_zh} {draft.summary_zh} {body}"
+        )
         to_check += 0 if verified else 1
         content = Content(
             type="news",
             status="pending",
             title=draft.title_zh[:200],
             summary=draft.summary_zh[:200],
+            body=body or None,  # 详情页有正文就显示正文，信息流卡片仍显示摘要
             canonical_url=item["url"],
             source_name=item["source"],
             licence_ref=item["licence"],
