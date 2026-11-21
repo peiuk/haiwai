@@ -447,7 +447,7 @@ def approve_join(
         raise APIError(404, "REQUEST_NOT_FOUND", "没有这条申请")
     if session.get(ChannelSubscription, (request.user_id, room.id)) is None:
         session.add(ChannelSubscription(user_id=request.user_id, channel_id=room.id))
-        room.subscriber_count += 1
+        room.bump_subscribers(1)
     session.delete(request)
     write_audit(session, user.id, "room.join.approve", "channel", room.id)
     session.commit()
@@ -519,7 +519,7 @@ def ban_member(
     subscription = session.get(ChannelSubscription, (member_id, room.id))
     if subscription is not None:
         session.delete(subscription)
-        room.subscriber_count = max(0, room.subscriber_count - 1)
+        room.bump_subscribers(-1)
     session.execute(
         delete(ChannelCollaborator).where(ChannelCollaborator.channel_id == room.id, ChannelCollaborator.user_id == member_id)
     )

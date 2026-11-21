@@ -232,7 +232,7 @@ def join_channels_by_code(session: Session, user_id: str, codes: list[str]) -> i
         if exists is not None:
             continue
         session.add(ChannelSubscription(user_id=user_id, channel_id=channel.id))
-        channel.subscriber_count += 1
+        channel.bump_subscribers(1)
         joined += 1
     return joined
 

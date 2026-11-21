@@ -218,7 +218,7 @@ def join_channel(
     subscription = session.get(ChannelSubscription, (user.id, channel.id))
     if subscription is None:
         session.add(ChannelSubscription(user_id=user.id, channel_id=channel.id))
-        channel.subscriber_count += 1
+        channel.bump_subscribers(1)
         session.commit()
     return {"joined": True, "subscriber_count": channel.subscriber_count}
 
@@ -283,8 +283,8 @@ def leave_channel(
     if subscription is None:
         raise APIError(404, "SUBSCRIPTION_NOT_FOUND", "还没有加入这个频道")
     channel = session.get(Channel, channel_id)
-    if channel is not None and channel.subscriber_count > 0:
-        channel.subscriber_count -= 1
+    if channel is not None:
+        channel.bump_subscribers(-1)
     session.delete(subscription)
     write_audit(session, user.id, "subscription.leave", "channel", channel_id)
     session.commit()
@@ -853,8 +853,8 @@ def erase_account(user: User = Depends(current_user), session: Session = Depends
     subscriptions = session.scalars(select(ChannelSubscription).where(ChannelSubscription.user_id == user.id)).all()
     for subscription in subscriptions:
         channel = session.get(Channel, subscription.channel_id)
-        if channel is not None and channel.subscriber_count > 0:
-            channel.subscriber_count -= 1
+        if channel is not None:
+            channel.bump_subscribers(-1)
         session.delete(subscription)
     # 隐私政策承诺「删除或匿名化」：帖子不只是标成已删除，正文和分类信息里的联系方式（电话、微信）也抹掉，
     # 不然它们原样留在数据库和备份里。以前自己删过的帖子同样处理。

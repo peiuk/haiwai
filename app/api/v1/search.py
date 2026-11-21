@@ -25,18 +25,13 @@ def trending_keywords(limit: int = 5, session: Session = Depends(get_db)) -> dic
     """
     bounded = min(max(limit, 1), 20)
     cutoff = utcnow() - timedelta(days=30)
-    # 私密房间的内容在 SQL 里排除，只取关键词这一列：原来每条内容再查一次库，右栏每次加载都要跑几百上千次查询。
-    in_private_room = exists(
-        select(ChannelItem.content_id)
-        .join(Channel, Channel.id == ChannelItem.channel_id)
-        .where(ChannelItem.content_id == Content.id, Channel.kind == "room", Channel.is_private.is_(True))
-    )
+    # 私密 / 下架房间的内容在 SQL 里排除（和列表同一条规则），只取关键词这一列
     rows = session.scalars(
         select(Content.keywords_json).where(
             Content.status == "published",
             Content.deleted_at.is_(None),
             Content.published_at >= cutoff,
-            ~in_private_room,
+            viewable(None),
         )
     ).all()
     counter: Counter[str] = Counter()

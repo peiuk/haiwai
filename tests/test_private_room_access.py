@@ -116,6 +116,33 @@ def test_profile_shows_public_post_behind_many_private_posts(client):
     assert client.get(f"/api/v1/users/{author_id}").json()["post_count"] == 1
 
 
+def test_private_room_post_stays_off_home_rail_and_trending(client):
+    """首页右栏排行和热门关键词：私密房间里再热的帖子也不能露出来，成员看得到。"""
+    from datetime import datetime, timezone
+
+    room_id, owner, _viewer = private_room(client)
+    session = client.session_factory()
+    hot = Content(
+        type="post", status="published", title="私密热帖", summary="", keywords_json='["私密词"]',
+        published_at=datetime.now(timezone.utc), view_count=99,
+    )
+    session.add(hot)
+    session.flush()
+    session.add(ChannelItem(channel_id=room_id, content_id=hot.id))
+    session.commit()
+    hot_id = hot.id
+    session.close()
+
+    def rail_ids(headers=None):
+        rail = client.get("/api/v1/discover/home-rail", headers=headers or {}).json()
+        return {item["content_id"] for item in rail["today"] + rail["week"]}
+
+    assert hot_id not in rail_ids()
+    assert hot_id in rail_ids(auth(owner))
+    words = client.get("/api/v1/search/trending-keywords").json()["keywords"]
+    assert "私密词" not in [item["keyword"] for item in words]
+
+
 def test_private_room_content_is_not_public_by_id_or_search(client):
     room_id, owner, viewer = private_room(client)
     created = client.post(

@@ -82,6 +82,13 @@ def test_view_count_is_saved(client):
         assert client.get(f"/api/v1/contents/{content_id}").status_code == 200
     session = client.session_factory()
     assert session.get(Content, content_id).view_count == 2
+    # 作者自己看不算：不然刷新自己的帖子就能刷上首页排行
+    author = register(client, "view-author@example.com")
+    session.get(Content, content_id).author_id = user_id(client, "view-author@example.com")
+    session.commit()
+    assert client.get(f"/api/v1/contents/{content_id}", headers=headers(author)).status_code == 200
+    session.expire_all()
+    assert session.get(Content, content_id).view_count == 2
     session.close()
 
 

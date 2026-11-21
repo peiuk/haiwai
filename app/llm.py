@@ -24,7 +24,8 @@ def ask_json(system: str, prompt: str, schema: type[T], json_shape: str) -> T:
         raise LLMUnavailable("还没有配置 AI 密钥（.env 里的 LLM_API_KEY）")
     if settings.llm_api_base:
         return _openai_compatible(settings, system + json_shape, prompt, schema)
-    client = anthropic.Anthropic(api_key=settings.llm_api_key)
+    # 默认 10 分钟、再重试两次：AI 卡住时后台任务能挂半小时。和 OpenAI 兼容接口一样封顶 300 秒
+    client = anthropic.Anthropic(api_key=settings.llm_api_key, timeout=300)
     try:
         # 用流式：思考也算在 max_tokens 里，一次 60 条资讯 16000 不够；超过约 2 万的上限 SDK 要求流式，否则会超时
         with client.beta.messages.stream(

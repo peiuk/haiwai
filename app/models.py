@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, case
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -84,6 +84,11 @@ class Channel(Base):
     @property
     def certified(self) -> bool:
         return (self.kind or "").startswith("official") or bool(self.is_certified)
+
+    def bump_subscribers(self, delta: int) -> None:
+        """成员数在数据库里原地加减（两个人同时加入不会少算一个），最少减到 0。提交后再读会拿到新值。"""
+        new = Channel.subscriber_count + delta
+        self.subscriber_count = case((new < 0, 0), else_=new)
 
 
 class Region(Base):

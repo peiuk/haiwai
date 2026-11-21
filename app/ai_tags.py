@@ -87,7 +87,9 @@ def tag_content(session: Session, content_id: str, ask=None) -> None:
     current, options = channel_options(session, content)
     if content.keyword_source == "user" and not options:
         return
-    verdict = (ask or ask_ai)(_prompt(session, content, current, options))
+    prompt = _prompt(session, content, current, options)
+    session.commit()  # 等 AI 的几十秒里不占数据库连接：连接池就那么几条，AI 一慢全站都会排队
+    verdict = (ask or ask_ai)(prompt)
     session.refresh(content)  # AI 想了几十秒，这期间作者可能改过帖子
     if content.deleted_at is not None:
         return

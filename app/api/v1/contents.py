@@ -356,8 +356,10 @@ def get_content(
         raise APIError(404, "CONTENT_NOT_FOUND", "内容不存在")
     # 浏览埋点：详情页每次打开自增一次浏览计数，供「本周看得最多」排行使用。
     # 在数据库里原地加一并提交：原来改了内存对象却没提交，计数从没保存过；同时打开也不会少算。
-    session.execute(update(Content).where(Content.id == content.id).values(view_count=func.coalesce(Content.view_count, 0) + 1))
-    session.commit()
+    # 作者自己看不算：不然刷新自己的帖子就能顶上首页「本周点击最多」
+    if user is None or user.id != content.author_id:
+        session.execute(update(Content).where(Content.id == content.id).values(view_count=func.coalesce(Content.view_count, 0) + 1))
+        session.commit()
     author = session.get(User, content.author_id) if content.author_id else None
     liked = False
     favorited = False

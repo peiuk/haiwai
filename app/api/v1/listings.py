@@ -15,6 +15,7 @@ from app.core.errors import APIError
 from app.core.pagination import decode_cursor, encode_cursor, parse_added_at
 from app.core.regions import region_name
 from app.guard import first_status
+from app.privacy import viewable
 from app.feed import MAX_LISTING_IMAGES, author_names, card_extras, image_keys_of, like_counts, reaction_flags, repost_context
 from app.ai_tags import tag_in_background
 from app.keywords import clean_city_topic, dump_keywords, resolve_keywords
@@ -670,6 +671,7 @@ def home_rail(
                 *window,
                 ChannelItem.origin_room_id.is_(None),
                 Channel.region_code.in_(("GLOBAL", region)),  # 和 _visible 同一条规则
+                viewable(user.id if user else None),  # 私密 / 下架房间里的帖子不能上首页排行
             )
             .order_by(score.desc(), published.desc(), Content.id)
             .limit(limit * 4)  # 同一条内容可能挂在几个频道里，多取一些留给去重
