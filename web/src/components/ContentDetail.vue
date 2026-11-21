@@ -54,16 +54,29 @@ function onKeydown(ev: KeyboardEvent): void {
   }
 }
 
+// 手机弹出键盘时浏览器会把页面往上推，固定定位的弹层下面就露出信息流。
+// 弹层改为贴着「实际可见区域」（visualViewport）：键盘起来就跟着变矮、跟着位移。
+const overlayStyle = ref<Record<string, string>>({});
+function fitViewport(): void {
+  const vv = window.visualViewport;
+  if (vv) overlayStyle.value = { top: `${vv.offsetTop}px`, height: `${vv.height}px`, bottom: "auto" };
+}
+
 onMounted(() => {
   if (!props.standalone) {
     document.addEventListener("keydown", onKeydown);
     document.body.style.overflow = "hidden";
+    fitViewport();
+    window.visualViewport?.addEventListener("resize", fitViewport);
+    window.visualViewport?.addEventListener("scroll", fitViewport);
   }
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKeydown);
   document.body.style.overflow = "";
+  window.visualViewport?.removeEventListener("resize", fitViewport);
+  window.visualViewport?.removeEventListener("scroll", fitViewport);
 });
 
 const auth = useAuthStore();
@@ -419,7 +432,7 @@ watch(detail, async (value) => {
 <template>
   <Teleport to="body" :disabled="standalone">
     <!-- 弹窗模式外面套遮罩；独立页模式直接内联 -->
-    <div v-if="contentId" :class="standalone ? 'cd-page' : 'cd-overlay'" @click.self="!standalone && emit('close')">
+    <div v-if="contentId" :class="standalone ? 'cd-page' : 'cd-overlay'" :style="standalone ? undefined : overlayStyle" @click.self="!standalone && emit('close')">
       <section
         class="content-detail"
         :class="{ 'cd-dialog': !standalone }"
@@ -1111,7 +1124,7 @@ watch(detail, async (value) => {
 
 @media (max-width: 760px) {
   .cd-overlay { padding: 0; place-items: stretch; }
-  .cd-dialog { max-width: none; max-height: 100dvh; height: 100dvh; border: 0; border-radius: 0; box-shadow: none; }
+  .cd-dialog { max-width: none; max-height: none; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
   .cd-original { padding: var(--sp-3) var(--sp-4) 0; }
   .cd-compose { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   /* 独立页：回复框停在底部导航栏上方 */

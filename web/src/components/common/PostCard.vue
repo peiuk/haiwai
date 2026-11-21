@@ -137,6 +137,14 @@ watch(menuOpen, (open) => {
   else document.removeEventListener("pointerdown", onDocPointer);
 });
 
+// 点卡片空白处、正文都能进详情（X 式）；点到链接、按钮、图片、视频、菜单时交给它们自己
+function onCardClick(ev: MouseEvent): void {
+  const target = ev.target as HTMLElement;
+  if (target.closest("a, button, input, textarea, select, label, video, [role=button], [role=link], .post-more")) return;
+  if (window.getSelection()?.toString()) return; // 在选文字，不跳转
+  emit("open");
+}
+
 // ---- 图片灯箱（X 平台式：点击放大、多图左右切换） ----
 const lightboxIndex = ref(-1);
 
@@ -204,7 +212,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <article class="post-card" :class="{ 'post-card--unread': unread }">
+  <article class="post-card" :class="{ 'post-card--unread': unread }" @click="onCardClick">
     <!-- 有发帖人时头像进发帖人主页（X 式）；官方/抓取内容没有发帖人，仍显示频道头像 -->
     <RouterLink
       v-if="authorId"
@@ -436,6 +444,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 12px 16px 6px;
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out);
 }
 .post-card:hover {
