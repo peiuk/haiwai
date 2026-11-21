@@ -244,14 +244,17 @@ def run_daily_news(session: Session, fetch=None, write=None) -> dict[str, int]:
     digest = publish_digest(session)  # 先汇总已通过的，再抓新的；后面 AI 出错也不影响这一篇
     since = utcnow() - timedelta(hours=36)
     fresh: list[dict[str, str]] = []
+    seen: set[str] = set()
     for item in fetch():
         url_hash = hashlib.sha256(item["url"].strip().lower().encode()).hexdigest()
         published = _parse_time(item["published"])
         # shortcut: 判为不相关的不落库，36 小时内重跑会再让 AI 判一次；量大或费用敏感时再记下已判过的链接。
         if published and published < since:
             continue
-        if session.scalar(select(Content.id).where(Content.content_hash == url_hash)) is not None:
+        # 同一篇 BBC 新闻常同时出现在好几个栏目里：这一批里重复的也要跳过，否则存第二遍撞唯一约束，整批作废
+        if url_hash in seen or session.scalar(select(Content.id).where(Content.content_hash == url_hash)) is not None:
             continue
+        seen.add(url_hash)
         fresh.append({**item, "hash": url_hash})
     if not fresh:
         return {"fetched": 0, "drafted": 0, "skipped": 0, "to_check": 0, "digest": digest}

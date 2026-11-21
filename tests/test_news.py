@@ -134,6 +134,22 @@ def test_daily_news_drafts_wait_for_review(client):
     session.close()
 
 
+def test_same_article_in_two_feeds_is_drafted_once(client):
+    """BBC 同一篇会同时出现在英国和国际栏目：这一批里重复的只送 AI、只存一次，不能撞唯一约束整批失败。"""
+    channels(client)
+    seen: list[int] = []
+
+    def write(items):
+        seen.append(len(items))
+        return fake_write(items)
+
+    session = client.session_factory()
+    result = news.run_daily_news(session, fetch=lambda: ITEMS + [{**ITEMS[4], "hint": "英国"}], write=write)
+    assert seen == [4] and result["fetched"] == 4 and result["drafted"] == 3
+    assert len(session.scalars(select(Content).where(Content.canonical_url == ITEMS[4]["url"])).all()) == 1
+    session.close()
+
+
 def test_mismatched_ai_items_write_nothing(client):
     channels(client)
 
