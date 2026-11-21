@@ -14,7 +14,7 @@ import { ATTR_FIELDS } from "../../utils/listing";
 
 const props = defineProps<{ channels: Channel[]; presetChannelId?: string }>();
 
-const emit = defineEmits<{ (e: "submitted"): void }>();
+const emit = defineEmits<{ (e: "submitted", contentId: string): void }>();
 
 const toast = useToastStore();
 const auth = useAuthStore();
@@ -182,7 +182,7 @@ async function submit(): Promise<void> {
     prefillContact();
     attrs.value = {};
     imageKeys.value = [];
-    emit("submitted");
+    emit("submitted", result.content_id);
   } catch (err) {
     const message = err instanceof Error ? err.message : "发布没有成功";
     error.value = message.includes("手机") ? "发布前需要先验证手机号，请到「我的」完成手机验证。" : message;

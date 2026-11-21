@@ -240,28 +240,11 @@ async function submit(): Promise<void> {
     const result = await request<PublishResponse>("/api/v1/contents", jsonBody(payload));
     success.value = result.status === "pending" ? "已提交，审核通过后会公开" : "已发布";
     toast.show(success.value);
-    const target = allTargets.value.find((item) => item.id === channelId.value);
-    if (target?.kind === "room") {
-      // 从房间来的：发完回房间，刚发的这条在房间里就能看到
-      clearDraft();
-      void router.push({ name: "room", params: { id: target.id } });
-      return;
-    }
-    body.value = "";
-    title.value = "";
-    videoKey.value = "";
-    videoUrl.value = "";
-    imageKeys.value = [];
-    bg.value = "";
-    // 发布成功后恢复默认城市话题（下次发帖仍默认带上）
-    cityTopic.value = auth.profile?.city_label ?? "";
-    cityInited.value = true;
-    showImage.value = false;
-    showExtras.value = false;
-    channelId.value = "";
     clearDraft();
-    await loadFeed();
-    feedOpen.value = true; // 展开「我的发布」，刚发的这条（审核中）马上能看到
+    const target = allTargets.value.find((item) => item.id === channelId.value);
+    // 从房间来的：发完回房间，刚发的这条在房间里就能看到；其他的打开刚发的这条
+    if (target?.kind === "room") void router.push({ name: "room", params: { id: target.id } });
+    else openPost(result.content_id);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "发布没有成功";
     submitError.value = msg;
@@ -271,6 +254,11 @@ async function submit(): Promise<void> {
   } finally {
     busy.value = false;
   }
+}
+
+// 发完离开发布页，打开刚发的这条（审核中的作者自己也看得到）；用 replace，按返回不会回到空白的发布页
+function openPost(contentId: string): void {
+  void router.replace({ name: "content", params: { id: contentId } });
 }
 
 // ---- 我的发布 feed ----
@@ -437,7 +425,7 @@ watch(
         </div>
 
         <div v-if="currentType === 'info'" class="listing-wrap">
-          <ListingForm :channels="channels" :preset-channel-id="presetChannelId" @submitted="loadFeed" />
+          <ListingForm :channels="channels" :preset-channel-id="presetChannelId" @submitted="openPost" />
         </div>
 
         <template v-else>
@@ -547,7 +535,7 @@ watch(
         <p v-if="feedLoading" class="feed-note">正在加载…</p>
         <p v-else-if="!feed.length" class="feed-note">还没有发布内容。</p>
         <template v-else>
-          <article v-for="item in feed" :key="item.content_id" class="post">
+          <RouterLink v-for="item in feed" :key="item.content_id" :to="{ name: 'content', params: { id: item.content_id } }" class="post">
             <Avatar :name="auth.displayName || '我'" :size="42" :image="auth.profile?.avatar_key" />
             <div class="post-body">
               <div class="post-head">
@@ -557,7 +545,7 @@ watch(
               <strong v-if="hasOwnTitle(item.title, item.summary)" class="post-title">{{ item.title }}</strong>
               <p v-if="item.summary" class="post-copy">{{ item.summary }}</p>
             </div>
-          </article>
+          </RouterLink>
         </template>
       </section>
     </details>
@@ -879,6 +867,8 @@ watch(
   gap: var(--sp-3);
   padding: var(--sp-3) 0;
   border-bottom: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
 }
 .post-body { flex: 1; min-width: 0; }
 .post-head { display: flex; align-items: center; gap: var(--sp-2); }
