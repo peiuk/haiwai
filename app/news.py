@@ -48,8 +48,9 @@ SYSTEM = """你是华人社区 App「海外圈」的资讯编辑。下面是 GOV
 - title_zh：简体中文标题，不超过 30 个字。
 - summary_zh：简体中文摘要，2～3 句、不超过 150 个字，说清发生了什么、谁受影响；没附正文的（BBC），
   要把标题和简介里的信息都写进去，不要只写一句。
-- body_zh：附了「正文」的，写 200～400 字的简体中文正文，分 2～4 段（段落之间空一行），讲清背景、具体变化、
-  谁受影响、什么时候生效、要做什么；只写正文里有的内容。没有附正文的（BBC）留空字符串。
+- body_zh：附了「正文」的，写 300 字左右的简体中文正文（稍多一点没关系，但每段都要写完整），分 2～3 段（段落之间空一行）。
+  只讲主要事件：发生了什么、具体变化、谁受影响、什么时候生效；官员表态、引语、次要细节和背景铺陈都省掉。
+  只写正文里有的内容。没有附正文的（BBC）留空字符串。
 - scope：英国本地的新闻为 "uk"；英国以外的国际新闻为 "international"。
 - relevant：
   · scope 为 uk 时，对在英华人有实际影响（签证移民政策、租房、医疗、税务、教育、交通、工作、治安、物价、福利等）
@@ -308,6 +309,7 @@ def run_daily_news(session: Session, fetch=None, write=None) -> dict[str, int]:
         if channel is None:
             continue
         # BBC 有版权：就算 AI 写了正文也不存，只留标题和摘要
+        # 字数只在提示里要求，不硬截（截了会断在半句话）；3000 只防 AI 失控
         body = draft.body_zh.strip()[:3000] if item["source"] == SOURCE else ""
         verified = numbers_match(
             f"{item['title']} {item['description']} {item.get('text', '')}", f"{draft.title_zh} {draft.summary_zh} {body}"
